@@ -1,0 +1,29 @@
+# API
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+
+# Database
+sqlalchemy[asyncio]==2.0.*
+alembic==1.14.*
+asyncpg==0.30.*
+
+# Cache/Queue
+redis==5.2.*
+
+# Validation
+pydantic==2.10.*
+pydantic-settings==2.7.*
+
+# LLM
+ollama==0.4.*
+
+# Testing
+pytest==8.4.*
+pytest-asyncio==0.25.*
+pytest-cov==6.0.*
+httpx==0.28.*
+factory-boy==3.3.*
+faker==33.*
+
+# Utils
+python-dotenv==1.1.*
