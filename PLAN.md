@@ -1,451 +1,318 @@
-# 🛡️ Fraud Detector Hybrid — Plan de Desarrollo
+# 🛡️ Plan de Desarrollo: Fraud Detector Hybrid + ML
 
-> **Fecha:** 2026-06-11
-> **Autor:** OWL (Hermes) + Mikel
-> **Duración:** 21 días (3 semanas)
-> **Stack:** FastAPI + PostgreSQL + Redis + Ollama + React
-> **Coste:** 0€ (VPS Oracle Cloud Always Free)
-
----
-
-## 🎯 Visión del Proyecto
-
-Sistema híbrido de detección de fraude que combina:
-- **Motor de reglas** (backend sólido, determinista)
-- **LLM local con Ollama** (informes explicativos, contexto)
-
-> *"El motor de reglas detecta. El LLM explica por qué."*
+> **Proyecto:** Sistema híbrido de detección de fraude con motor de reglas + ML + LLM local
+> **Duración estimada:** 28 días (4 semanas)
+> **Stack:** FastAPI + PostgreSQL + Redis + Ollama + scikit-learn + React
+> **Coste:** 0€ (Oracle Cloud Always Free + modelos open source)
 
 ---
 
-## 📐 Arquitectura
+## 📐 Arquitectura Final
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  FRONTEND                        │
-│              React + TailwindCSS                 │
-│     Dashboard │ Alertas │ Informes │ Config      │
-└──────────────────────┬──────────────────────────┘
-                       │ REST API / WebSocket
-┌──────────────────────▼──────────────────────────┐
-│                  BACKEND (FastAPI)                │
-│                                                  │
-│  ┌──────────────┐  ┌──────────────┐             │
-│  │  API Layer   │  │  WebSocket   │             │
-│  │  (endpoints) │  │  (tiempo     │             │
-│  │              │  │   real)      │             │
-│  └──────┬───────┘  └──────┬───────┘             │
-│         │                 │                      │
-│  ┌──────▼─────────────────▼───────┐             │
-│  │     FRAUD DETECTION ENGINE     │             │
-│  │                                │             │
-│  │  ┌─────────┐  ┌────────────┐  │             │
-│  │  │ REGLAS  │  │  LLM       │  │             │
-│  │  │ Motor   │──│  Ollama    │  │             │
-│  │  │         │  │  Llama 3B  │  │             │
-│  │  └─────────┘  └────────────┘  │             │
-│  └──────────────┬────────────────┘             │
-│                 │                                │
-│  ┌──────────────▼────────────────┐             │
-│  │    DATA LAYER                 │             │
-│  │  PostgreSQL │ Redis │ Docker  │             │
-│  └───────────────────────────────┘             │
-└─────────────────────────────────────────────────┘
+Transacción entrante
+       ↓
+┌─────────────────────────────────────────┐
+│  CAPA 1: Motor de Reglas (determinista) │
+│  - Reglas de negocio (if/then)          │
+│  - Límites, geolocalización, frecuencia │
+│  → Score parcial + alertas inmediatas   │
+└─────────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────────┐
+│  CAPA 2: ML Model (estadístico)         │
+│  - XGBoost: clasificación supervisada   │
+│  - Isolation Forest: detección anomalías│
+│  - Feature engineering (50+ features)   │
+│  → Score ML + probabilidad fraude       │
+└─────────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────────┐
+│  CAPA 3: LLM Worker (explicativo)       │
+│  - Ollama (Llama 3.2 3B)                │
+│  - Genera informe explicativo           │
+│  - Contexto: score + features + reglas  │
+│  → Informe en lenguaje natural          │
+└─────────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────────┐
+│  Dashboard (React)                      │
+│  - Visualización en tiempo real         │
+│  - Métricas, gráficos, alertas          │
+│  - Revisión de informes LLM             │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
-## 📅 Fase 1: API + Base de Datos (Días 1-5)
+## 🎯 Fases de Desarrollo
 
-### Día 1: Setup del proyecto
+### **FASE 1: API + Base de Datos + Motor de Reglas** (días 1-6)
 
-```bash
-mkdir -p ~/projects/fraud-detector/{src/{api,models,schemas,services,workers,utils},tests/{unit,integration},frontend}
-cd ~/projects/fraud-detector
-python3 -m venv .venv
-source .venv/bin/activate
-pip install fastapi uvicorn[standard] sqlalchemy asyncpg pydantic pydantic-settings redis pytest pytest-asyncio httpx factory-boy faker python-dotenv alembic
-```
+**Objetivo:** Backend funcional con motor de reglas determinista.
 
-**Tareas:**
-- [ ] Crear estructura de carpetas
-- [ ] Configurar venv + requirements.txt
-- [ ] Configurar `.env` y `.env.example`
-- [ ] Configurar `.gitignore`
-- [ ] Docker Compose (PostgreSQL + Redis)
-- [ ] README.md inicial
+#### Día 1-2: Setup y modelos de datos
+- [ ] Configurar entorno de desarrollo (venv, pre-commit, ruff)
+- [ ] Modelo SQLAlchemy: `Transaction`
+  - Campos: id, amount, currency, timestamp, merchant_id, merchant_category,
+    card_country, ip_country, device_id, user_id, status, risk_score, metadata
+- [ ] Modelo SQLAlchemy: `FraudAlert`
+  - Campos: id, transaction_id, alert_type, severity, score, description, created_at
+- [ ] Modelo SQLAlchemy: `MLModel` (metadata de modelos entrenados)
+  - Campos: id, name, version, type, accuracy, f1_score, trained_at, is_active
+- [ ] Migraciones Alembic
+- [ ] Tests unitarios de modelos
 
-**docker-compose.yml:**
-```yaml
-version: '3.8'
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: fraud_detector
-      POSTGRES_USER: fraud_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+#### Día 3-4: Motor de reglas
+- [ ] `src/services/rules_engine.py`
+  - Regla 1: Transacción > 10.000€ → score +30
+  - Regla 2: País diferente al habitual → score +25
+  - Regla 3: Múltiples transacciones en < 1h → score +20
+  - Regla 4: Merchant en lista negra → score +40
+  - Regla 5: Hora inusual (3-6 AM) → score +10
+  - Regla 6: Dispositivo nuevo → score +15
+- [ ] Sistema de pesos configurables (YAML/JSON)
+- [ ] `src/services/transaction_service.py`
+  - POST /api/v1/transactions → evalúa reglas → guarda → retorna score
+  - GET /api/v1/transactions/{id} → detalle + alertas
+  - GET /api/v1/transactions → lista con filtros
+- [ ] Tests de integración del motor de reglas
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+#### Día 5-6: API endpoints + autenticación
+- [ ] Endpoints CRUD completos
+- [ ] Autenticación JWT (opcional, puede ser API key)
+- [ ] Rate limiting (Redis)
+- [ ] Documentación OpenAPI completa
+- [ ] Tests E2E con pytest + httpx
 
-volumes:
-  pgdata:
-```
-
-### Día 2: Modelos de datos
-
-**Tareas:**
-- [ ] Modelo `Transaction` (id, amount, currency, merchant, location, timestamp, user_id, status, risk_score)
-- [ ] Modelo `FraudRule` (id, name, description, condition, severity, active)
-- [ ] Modelo `Alert` (id, transaction_id, rule_id, severity, message, created_at, resolved)
-- [ ] Modelo `User` (id, name, email, risk_profile)
-- [ ] Alembic migrations
-- [ ] Pydantic schemas (request/response)
-
-**src/models/transaction.py:**
-```python
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Enum
-from sqlalchemy.orm import relationship
-from datetime import datetime
-import enum
-
-class TransactionStatus(str, enum.Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    FLAGGED = "flagged"
-    BLOCKED = "blocked"
-
-class Transaction(Base):
-    __tablename__ = "transactions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    amount = Column(Float, nullable=False)
-    currency = Column(String(3), default="EUR")
-    merchant = Column(String(255))
-    merchant_category = Column(String(100))
-    location_lat = Column(Float)
-    location_lon = Column(Float)
-    country = Column(String(2))
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    status = Column(Enum(TransactionStatus), default=TransactionStatus.PENDING)
-    risk_score = Column(Float, default=0.0)
-
-    user = relationship("User", back_populates="transactions")
-    alerts = relationship("Alert", back_populates="transaction")
-```
-
-### Día 3: Endpoints REST
-
-**Tareas:**
-- [ ] `POST /api/v1/transactions` — Crear transacción
-- [ ] `GET /api/v1/transactions/{id}` — Obtener transacción
-- [ ] `GET /api/v1/transactions` — Listar con filtros (status, fecha, user_id)
-- [ ] `GET /api/v1/alerts` — Listar alertas
-- [ ] `PATCH /api/v1/alerts/{id}/resolve` — Resolver alerta
-- [ ] `GET /api/v1/rules` — Listar reglas
-- [ ] `POST /api/v1/rules` — Crear regla
-- [ ] `GET /api/v1/stats` — Estadísticas del dashboard
-
-### Día 4: Motor de reglas
-
-**Tareas:**
-- [ ] Servicio `RuleEngine` — evalúa transacciones contra reglas activas
-- [ ] Reglas predefinidas:
-  - **Monto alto:** > 5000€ → riesgo alto
-  - **Velocidad:** > 3 transacciones en 5 minutos → sospechoso
-  - **Ubicación:** país diferente al habitual → revisar
-  - **Hora inusual:** transacción entre 00:00-06:00 → revisar
-  - **Merchant de riesgo:** lista negra de merchants
-- [ ] Sistema de scoring: cada regla suma puntos de riesgo
-- [ ] Umbrales: 0-30 bajo, 30-70 medio, 70-100 alto
-
-**src/services/rule_engine.py:**
-```python
-class RuleEngine:
-    def __init__(self, db_session):
-        self.db = db_session
-        self.rules = []
-
-    async def load_rules(self):
-        """Carga reglas activas de la BD"""
-        ...
-
-    async def evaluate(self, transaction: Transaction) -> RiskAssessment:
-        """Evalúa una transacción contra todas las reglas"""
-        score = 0.0
-        triggered_rules = []
-
-        for rule in self.rules:
-            if await rule.check(transaction):
-                score += rule.weight
-                triggered_rules.append(rule)
-
-        return RiskAssessment(
-            score=min(score, 100.0),
-            level=self._get_level(score),
-            triggered_rules=triggered_rules
-        )
-```
-
-### Día 5: Tests Fase 1
-
-**Tareas:**
-- [ ] Tests unitarios del motor de reglas
-- [ ] Tests de integración de endpoints
-- [ ] Tests con datos de ejemplo (factory_boy)
-- [ ] Cobertura > 80%
-- [ ] CI local (pre-commit hooks)
+**Entregable:** API funcional que evalúa transacciones con motor de reglas.
 
 ---
 
-## 📅 Fase 2: LLM Worker (Días 6-10)
+### **FASE 2: ML — Modelos de Clasificación y Anomalías** (días 7-14) ⭐ NUEVO
 
-### Día 6: Setup Ollama
+**Objetivo:** Entrenar modelos de ML con datos sintéticos y integrarlos en el pipeline.
 
-```bash
-# Instalar Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-# Descargar modelo ligero (3B, ~2GB RAM)
-ollama pull llama3.2:3b
-```
+#### Día 7-8: Generación de datos sintéticos
+- [ ] `src/ml/data_generator.py`
+  - Generar 100.000 transacciones sintéticas
+  - Distribución: 95% legítimas, 5% fraudulentas
+  - Features: amount, hour, country_match, device_age, merchant_risk, etc.
+  - Patrones de fraude:
+    - Transacciones grandes en países no habituales
+    - Múltiples transacciones pequeñas en corto tiempo
+    - Compras en merchants de alto riesgo
+    - Uso de dispositivos nuevos con montos altos
+- [ ] Guardar dataset en `data/synthetic_transactions.csv`
+- [ ] Split train/test (80/20)
 
-**Tareas:**
-- [ ] Instalar Ollama en VPS
-- [ ] Descargar `llama3.2:3b` (~2GB)
-- [ ] Verificar que funciona: `ollama run llama3.2:3b "Hello"`
-- [ ] Crear script de inicio automático con Docker
+#### Día 9-10: Feature engineering
+- [ ] `src/ml/feature_engineering.py`
+  - Features temporales: hora del día, día de semana, es_fin_de_semana
+  - Features de agregación: promedio de transacciones últimas 24h, 7d, 30d
+  - Features de distancia: distancia entre país IP y país tarjeta
+  - Features de dispositivo: edad del dispositivo, número de dispositivos del usuario
+  - Features de merchant: riesgo del merchant, categoría, historial
+  - Normalización (StandardScaler)
+  - Encoding de variables categóricas (LabelEncoder, OneHotEncoder)
+- [ ] Pipeline de preprocessing (scikit-learn Pipeline)
 
-### Día 7: Servicio LLM
+#### Día 11-12: Entrenamiento de modelos
+- [ ] `src/ml/models/classifier.py`
+  - **XGBoost Classifier** (modelo principal)
+    - Hiperparámetros: max_depth=6, learning_rate=0.1, n_estimators=200
+    - Validación cruzada (5-fold)
+    - Métricas: accuracy, precision, recall, F1, AUC-ROC
+    - Guardar modelo: `models/xgboost_fraud_v1.pkl`
+  - **Random Forest** (baseline)
+    - Comparación con XGBoost
+- [ ] `src/ml/models/anomaly_detector.py`
+  - **Isolation Forest** (detección de anomalías)
+    - Contamination: 0.05 (esperamos 5% de fraude)
+    - n_estimators: 100
+    - Guardar modelo: `models/isolation_forest_v1.pkl`
+- [ ] `src/ml/model_trainer.py`
+  - Script de entrenamiento completo
+  - Logging de métricas (MLflow opcional)
+  - Guardar modelos + metadata en BD
 
-**Tareas:**
-- [ ] Servicio `LLMService` — se conecta a Ollama via API
-- [ ] Prompt engineering para análisis de fraude
-- [ ] Generación de informes explicativos
-- [ ] Cache de respuestas en Redis (evitar llamadas repetidas)
+#### Día 13-14: Integración en el pipeline
+- [ ] `src/services/ml_service.py`
+  - Cargar modelos al iniciar la API
+  - Método `predict(transaction)` → retorna score ML + probabilidad
+  - Método `detect_anomaly(transaction)` → retorna score anomalía
+  - Combinar scores: `final_score = 0.4 * rules + 0.4 * xgboost + 0.2 * isolation`
+- [ ] Endpoint GET /api/v1/ml/status → estado de modelos cargados
+- [ ] Endpoint POST /api/v1/ml/retrain → reentrenamiento manual (admin)
+- [ ] Tests de predicción con datos sintéticos
 
-**src/services/llm_service.py:**
-```python
-class LLMService:
-    def __init__(self, ollama_url: str = "http://localhost:11434"):
-        self.client = httpx.AsyncClient(base_url=ollama_url)
-
-    async def analyze_transaction(
-        self,
-        transaction: Transaction,
-        risk_assessment: RiskAssessment
-    ) -> str:
-        """Genera informe explicativo del riesgo"""
-        prompt = self._build_prompt(transaction, risk_assessment)
-        response = await self.client.post("/api/generate", json={
-            "model": "llama3.2:3b",
-            "prompt": prompt,
-            "stream": False
-        })
-        return response.json()["response"]
-
-    def _build_prompt(self, tx, risk) -> str:
-        return f"""Eres un analista de fraude experto. Analiza esta transacción:
-
-Transacción:
-- Monto: {tx.amount} {tx.currency}
-- Merchant: {tx.merchant}
-- País: {tx.country}
-- Hora: {tx.timestamp}
-
-Evaluación de riesgo:
-- Score: {risk.score}/100
-- Nivel: {risk.level}
-- Reglas activadas: {[r.name for r in risk.triggered_rules]}
-
-Genera un informe breve (3-5 líneas) explicando:
-1. Por qué es sospechosa (o por qué no)
-2. Recomendación: aprobar, revisar, o bloquear
-3. Contexto adicional relevante
-
-Informe:"""
-```
-
-### Día 8: Worker asíncrono
-
-**Tareas:**
-- [ ] Worker que procesa transacciones en cola (Redis)
-- [ ] Flujo: transacción creada → evaluar reglas → si riesgo medio/alto → LLM analiza
-- [ ] Resultados guardados en BD
-- [ ] WebSocket para notificaciones en tiempo real
-
-### Día 9: Endpoints LLM
-
-**Tareas:**
-- [ ] `GET /api/v1/transactions/{id}/analysis` — Informe LLM
-- [ ] `POST /api/v1/analyze` — Análisis manual de una transacción
-- [ ] `GET /api/v1/reports` — Informes generados
-- [ ] Tests del servicio LLM (con mocks)
-
-### Día 10: Tests Fase 2
-
-**Tareas:**
-- [ ] Tests del LLMService con mocks
-- [ ] Tests del worker asíncrono
-- [ ] Tests de integración completos
-- [ ] Verificar uso de RAM (< 4GB total con Ollama)
+**Entregable:** Modelos ML entrenados, integrados en el pipeline de evaluación.
 
 ---
 
-## 📅 Fase 3: Dashboard React (Días 11-15)
+### **FASE 3: LLM Worker — Informes Explicativos** (días 15-19)
 
-### Día 11: Setup frontend
+**Objetivo:** Usar Ollama para generar informes en lenguaje natural.
 
-```bash
-cd ~/projects/fraud-detector/frontend
-npm create vite@latest . -- --template react-ts
-npm install tailwindcss @tailwindcss/vite recharts lucide-react
-```
+#### Día 15-16: Setup Ollama + prompts
+- [ ] Docker Compose: servicio Ollama (ya incluido)
+- [ ] Pull del modelo: `ollama pull llama3.2:3b`
+- [ ] `src/workers/llm_worker.py`
+  - Conectar con Ollama API (http://localhost:11434)
+  - Template de prompt:
+    ```
+    Eres un analista de fraude financiero. Genera un informe conciso sobre esta transacción.
 
-**Tareas:**
+    Datos:
+    - Monto: {amount}€
+    - Merchant: {merchant_name} ({merchant_category})
+    - País: {country}
+    - Hora: {timestamp}
+    - Score reglas: {rules_score}/100
+    - Score ML: {ml_score}/100
+    - Score final: {final_score}/100
+    - Alertas: {alerts}
+
+    Genera un informe de 3-4 párrafos explicando:
+    1. Por qué esta transacción es sospechosa (o no)
+    2. Qué factores contribuyen al riesgo
+    3. Recomendación (aprobar, revisar manualmente, bloquear)
+    ```
+  - Timeout: 30s
+  - Retry logic (3 intentos)
+
+#### Día 17-18: Cola de tareas asíncrona
+- [ ] Redis Queue (RQ) o Celery
+  - Cola: `fraud_reports`
+  - Worker: procesa solicitudes de informes LLM
+- [ ] `src/workers/tasks.py`
+  - Task: `generate_fraud_report(transaction_id)`
+  - Guarda informe en BD (campo `llm_report` en Transaction)
+- [ ] Endpoint POST /api/v1/transactions/{id}/report → encola generación
+- [ ] Endpoint GET /api/v1/transactions/{id}/report → retorna informe (si existe)
+
+#### Día 19: Integración completa
+- [ ] Al crear transacción con score > 70 → encola generación de informe automáticamente
+- [ ] Tests de integración LLM (mock de Ollama para tests rápidos)
+
+**Entregable:** Informes LLM generados automáticamente para transacciones de alto riesgo.
+
+---
+
+### **FASE 4: Dashboard React** (días 20-24)
+
+**Objetivo:** Interfaz visual para revisar transacciones, alertas e informes.
+
+#### Día 20-21: Setup React + layout
 - [ ] Vite + React + TypeScript
-- [ ] TailwindCSS
-- [ ] Recharts (gráficos)
-- [ ] Estructura de componentes
+- [ ] Tailwind CSS + shadcn/ui
+- [ ] Layout: sidebar + main content
+- [ ] Rutas:
+  - `/` → Dashboard (métricas generales)
+  - `/transactions` → Lista de transacciones
+  - `/transactions/:id` → Detalle + informe LLM
+  - `/alerts` → Alertas de fraude
+  - `/ml` → Estado de modelos ML
 
-### Día 12: Componentes principales
+#### Día 22-23: Componentes principales
+- [ ] Tabla de transacciones (paginación, filtros, búsqueda)
+- [ ] Tarjetas de métricas:
+  - Total transacciones hoy
+  - Transacciones fraudulentas detectadas
+  - Score promedio
+  - Alertas activas
+- [ ] Gráficos (Recharts):
+  - Transacciones por hora
+  - Distribución de scores
+  - Tendencia de fraude (últimos 7 días)
+- [ ] Detalle de transacción:
+  - Info básica (monto, merchant, país)
+  - Scores (reglas, ML, final)
+  - Alertas activadas
+  - Informe LLM (si existe)
+  - Botones: Aprobar / Rechazar / Marcar para revisión
 
-**Tareas:**
-- [ ] `Dashboard` — vista general con métricas
-- [ ] `TransactionList` — lista de transacciones
-- [ ] `AlertPanel` — panel de alertas
-- [ ] `RiskMeter` — medidor de riesgo visual
+#### Día 24: Conexión con API
+- [ ] React Query (TanStack Query) para fetching
+- [ ] WebSocket (opcional) para actualizaciones en tiempo real
+- [ ] Auth (JWT o API key)
 
-### Día 13: Gráficos y visualización
-
-**Tareas:**
-- [ ] Gráfico de transacciones por día (línea)
-- [ ] Gráfico de alertas por tipo (barras)
-- [ ] Mapa de calor de fraude por país
-- [ ] Tabla de transacciones con filtros
-
-### Día 14: Tiempo real
-
-**Tareas:**
-- [ ] Conexión WebSocket al backend
-- [ ] Notificaciones de nuevas alertas
-- [ ] Actualización en tiempo real del dashboard
-- [ ] Estado global (React Context o Zustand)
-
-### Día 15: Tests Fase 3
-
-**Tareas:**
-- [ ] Tests de componentes con Vitest
-- [ ] Tests de integración frontend
-- [ ] E2E con Playwright (opcional)
-- [ ] Responsive design
+**Entregable:** Dashboard funcional conectado a la API.
 
 ---
 
-## 📅 Fase 4: Pulido + Deploy (Días 16-21)
+### **FASE 5: Pulido, Deploy y Documentación** (días 25-28)
 
-### Día 16-17: Seguridad
+#### Día 25: Testing completo
+- [ ] Tests unitarios: 80%+ cobertura
+- [ ] Tests de integración
+- [ ] Tests E2E (Playwright opcional)
+- [ ] Load testing (Locust: 100 req/s)
 
-**Tareas:**
-- [ ] Autenticación JWT
-- [ ] Rate limiting
-- [ ] CORS configurado
-- [ ] Input validation completa
-- [ ] Headers de seguridad
+#### Día 26: Optimización
+- [ ] Caché Redis para queries frecuentes
+- [ ] Índices en BD (transaction_id, user_id, timestamp)
+- [ ] Compresión de respuestas API (gzip)
+- [ ] Rate limiting por IP
 
-### Día 18-19: Deploy
+#### Día 27: Deploy en VPS
+- [ ] Docker Compose production (ya configurado)
+- [ ] Nginx reverse proxy (HTTPS con Let's Encrypt)
+- [ ] Variables de entorno production
+- [ ] Backup automático de BD (cron diario)
+- [ ] Monitoreo básico (logs, uptime)
 
-**Tareas:**
-- [ ] Docker Compose de producción
-- [ ] Nginx como reverse proxy
-- [ ] SSL con Let's Encrypt (si hay dominio)
-- [ ] Variables de entorno de producción
-- [ ] Health checks
-
-### Día 20: Documentación
-
-**Tareas:**
-- [ ] README.md completo con:
-  - Descripción del proyecto
-  - Arquitectura
-  - Instalación
-  - API docs
-  - Screenshots
-- [ ] API docs automática (FastAPI /docs)
-- [ ] Diagrama de arquitectura
-
-### Día 21: Demo + Video
-
-**Tareas:**
-- [ ] Semilla de datos de prueba realistas
-- [ ] Grabar video demo (30-60 seg)
+#### Día 28: Documentación + Demo
+- [ ] README.md completo (instalación, uso, arquitectura)
+- [ ] Video demo (2-3 min):
+  - Crear transacción legítima → score bajo
+  - Crear transacción fraudulenta → score alto + alerta + informe LLM
+  - Mostrar dashboard con métricas
+  - Mostrar modelo ML entrenado
 - [ ] Subir a YouTube (no listado)
-- [ ] Actualizar CV/LinkedIn con links
+- [ ] Documentar decisiones técnicas (ADRs)
+
+**Entregable:** Proyecto completo, desplegado, documentado, con video demo.
 
 ---
 
-## 📊 Resumen de Planning
+## 📊 Resumen de Tecnologías
 
-| Fase | Días | Entregable |
+| Capa | Tecnología | Función |
 |---|---|---|
-| **F1: API + BD** | 1-5 | API funcional con motor de reglas |
-| **F2: LLM** | 6-10 | Ollama integrado, informes automáticos |
-| **F3: Dashboard** | 11-15 | React dashboard con gráficos en tiempo real |
-| **F4: Pulido** | 16-21 | Deploy, seguridad, docs, demo |
-
----
-
-## 💰 Presupuesto de RAM
-
-| Servicio | RAM |
-|---|---|
-| PostgreSQL | ~500MB |
-| Redis | ~100MB |
-| Ollama (llama3.2:3b) | ~2.5GB |
-| FastAPI + Workers | ~300MB |
-| React (build estático) | ~0MB (Nginx) |
-| Nginx | ~50MB |
-| **Total** | **~3.5GB** |
-| **Disponible** | **24GB** |
-| **Margen** | **20.5GB** ✅ |
-
----
-
-## 🛠️ Stack Final
-
-| Capa | Tecnología |
-|---|---|
-| Backend | Python 3.11 + FastAPI |
-| Base de datos | PostgreSQL 16 |
-| Cache | Redis 7 |
-| LLM | Ollama + Llama 3.2 3B |
-| Frontend | React 19 + TypeScript + TailwindCSS |
-| Gráficos | Recharts |
-| Deploy | Docker Compose + Nginx |
-| Tests | pytest + Vitest |
-| VPS | Oracle Cloud ARM64 (4 cores, 24GB RAM) |
+| **API** | FastAPI + Python 3.11 | Endpoints REST |
+| **BD** | PostgreSQL 16 (async) | Almacenamiento transacciones |
+| **Cache** | Redis 7 | Cola de tareas, caché |
+| **ML** | scikit-learn + XGBoost | Clasificación + anomalías |
+| **LLM** | Ollama (Llama 3.2 3B) | Informes explicativos |
+| **Frontend** | React + TypeScript + Vite | Dashboard |
+| **Contenedores** | Docker + docker-compose | Deploy |
+| **Proxy** | Nginx | HTTPS, reverse proxy |
 
 ---
 
 ## 🎯 Criterios de Éxito
 
-- [ ] API recibe transacciones y las evalúa en < 200ms
-- [ ] Motor de reglas detecta patrones conocidos con > 90% precisión
-- [ ] LLM genera informes coherentes en < 5 segundos
-- [ ] Dashboard muestra datos en tiempo real
-- [ ] Cobertura de tests > 80%
-- [ ] Seguridad: 0 vulnerabilidades críticas
-- [ ] Video demo funcionando
-- [ ] Código en GitHub con README profesional
+- ✅ API responde en < 200ms (sin LLM)
+- ✅ Motor de reglas detecta 100% de patrones definidos
+- ✅ Modelo XGBoost alcanza F1 > 0.85 en test set
+- ✅ Isolation Forest detecta anomalías no cubiertas por reglas
+- ✅ LLM genera informes en < 30s
+- ✅ Dashboard carga en < 2s
+- ✅ Sistema soporta 100 transacciones/segundo
+- ✅ Cobertura de tests > 80%
 
 ---
 
-*Documento creado por OWL (Hermes) — 2026-06-11*
-*Actualizar según evolución del desarrollo*
+## 🚀 Próximos Pasos
+
+1. **Hoy:** Crear rama `feat/api-rules` y empezar Fase 1
+2. **Día 7:** Crear rama `feat/ml-models` y empezar Fase 2
+3. **Día 15:** Crear rama `feat/llm-worker` y empezar Fase 3
+4. **Día 20:** Crear rama `feat/dashboard` y empezar Fase 4
+5. **Día 25:** Crear rama `release/v1.0` y empezar Fase 5
+
+---
+
+*Plan creado por OWL (Hermes) + Mikel — 2026-06-11*
+*Actualizado con ML incluido*
