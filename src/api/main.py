@@ -1,9 +1,31 @@
 """Fraud Detector Hybrid — API Entry Point."""
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.v1.router import router as v1_router
 from src.core.config import settings
+from src.core.database import engine
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan — initialize and tear down resources."""
+    # Startup: verify DB connection
+    try:
+        async with engine.connect() as conn:
+            await conn.run_sync(lambda _: None)
+    except Exception as e:
+        print(f"⚠️  Database connection failed: {e}")
+
+    yield
+
+    # Shutdown: dispose engine
+    await engine.dispose()
+
 
 app = FastAPI(
     title="Fraud Detector Hybrid",
@@ -11,6 +33,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -20,6 +43,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount v1 router
+app.include_router(v1_router)
 
 
 @app.get("/health", tags=["health"])

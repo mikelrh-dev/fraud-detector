@@ -26,6 +26,30 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.2:3b"
 
+    # JWT
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_exp_minutes: int = 15
+
+    # Ensemble Weights
+    ensemble_rule_weight: float = 0.45
+    ensemble_ml_weight: float = 0.45
+    ensemble_context_weight: float = 0.10
+
+    # Threshold Tiers
+    threshold_tiers: list[dict] = [
+        {"min_amount": 0, "max_amount": 1000, "threshold": 70, "label": "low"},
+        {"min_amount": 1001, "max_amount": 10000, "threshold": 60, "label": "medium"},
+        {"min_amount": 10001, "max_amount": 50000, "threshold": 50, "label": "high"},
+        {"min_amount": 50001, "max_amount": float("inf"), "threshold": 40, "label": "critical"},
+    ]
+
+    # Ollama
+    ollama_timeout: int = 30
+
+    # Feature Flags
+    fraud_detection_enabled: bool = True
+
     # Frontend
     frontend_url: str = "http://localhost:3000"
 

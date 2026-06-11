@@ -1,0 +1,33 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Python 3.11 + FastAPI (async), PostgreSQL 16 (asyncpg/SQLAlchemy), Redis 7, Ollama (Llama 3.2 3B)
+  Architecture: Hexagonal — API layer, services, models, schemas, workers (LLM queue-based)
+  Testing: pytest + pytest-asyncio + pytest-cov + httpx + factory-boy + faker
+  Style: ruff (lint), mypy (types), English code artifacts, Spanish comments
+
+strict_tdd: true
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Motor de reglas primero; LLM solo genera informes, no decide
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    - Follow existing code patterns
+    tdd: true
+    test_command: "pytest tests/ -v --cov=src"
+  verify:
+    test_command: "pytest tests/ -v --cov=src"
+    build_command: "ruff check src/ && mypy src/"
+    coverage_threshold: 80
+  archive:
+    - Warn before merging destructive deltas

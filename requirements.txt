@@ -17,6 +17,14 @@ pydantic-settings==2.7.*
 # LLM
 ollama==0.4.*
 
+# Auth / Security
+python-jose[cryptography]==3.5.*
+passlib[bcrypt]==1.7.*
+bcrypt==4.0.*
+
+# Email validation
+email-validator==2.3.*
+
 # Testing
 pytest==8.4.*
 pytest-asyncio==0.25.*
@@ -25,5 +33,12 @@ httpx==0.28.*
 factory-boy==3.3.*
 faker==33.*
 
+# Data Science / ML
+scikit-learn==1.5.*
+joblib==1.4.*
+numpy==1.26.*
+pandas==2.2.*
+
 # Utils
 python-dotenv==1.1.*
+python-multipart==0.0.*
