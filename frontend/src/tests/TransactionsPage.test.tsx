@@ -1,0 +1,93 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
+import TransactionsPage from "../pages/TransactionsPage";
+import { useAuthStore } from "../store/authStore";
+import type { AuthState } from "../store/authStore";
+import type { ReactNode } from "react";
+
+vi.mock("../store/authStore", () => ({
+  useAuthStore: vi.fn(),
+}));
+
+const mockUseAuthStore = useAuthStore as unknown as ReturnType<typeof vi.fn>;
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </QueryClientProvider>
+    );
+  };
+}
+
+function renderPage() {
+  return render(<TransactionsPage />, { wrapper: createWrapper() });
+}
+
+describe("TransactionsPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuthStore.mockImplementation(
+      (selector?: (state: AuthState) => unknown) => {
+        const state = {
+          user: { id: "test-user-id", role: "analista" },
+          logout: vi.fn(),
+          isAuthenticated: true,
+          token: "mock-token",
+          refreshToken: null,
+          login: vi.fn(),
+        };
+        return selector ? selector(state) : state;
+      },
+    );
+  });
+
+  it("renders page title and transaction rows", async () => {
+    renderPage();
+
+    // Wait for data to load
+    await waitFor(() => {
+      expect(screen.getByText("Merchant 0")).toBeInTheDocument();
+    });
+
+    // Heading is an h1
+    const heading = screen.getAllByText("Transacciones");
+    expect(heading.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders filter status pills", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Todas")).toBeInTheDocument();
+      expect(screen.getByText("Legítimo")).toBeInTheDocument();
+      expect(screen.getByText("Revisión")).toBeInTheDocument();
+      expect(screen.getByText("Fraude")).toBeInTheDocument();
+    });
+  });
+
+  it("has a 'Nueva transacción' button that links to /transactions/new", async () => {
+    renderPage();
+    await waitFor(() => {
+      const button = screen.getByRole("link", { name: /nueva transacción/i });
+      expect(button).toBeInTheDocument();
+      expect(button).toHaveAttribute("href", "/transactions/new");
+    });
+  });
+
+  it("renders pagination controls", async () => {
+    renderPage();
+    await waitFor(() => {
+      // Pagination should show page info (50 total / 10 per page = 5 pages)
+      expect(screen.getByText(/50/)).toBeInTheDocument();
+    });
+  });
+});
