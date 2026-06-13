@@ -1,1 +1,103 @@
-export const handlers: import("msw").HttpHandler[] = [];
+import { http, HttpResponse } from "msw";
+import type { ScoreResponse } from "../../api/transactions";
+
+interface FixtureBase {
+  transaction_id: string;
+  threshold: number;
+  created_at: string;
+}
+
+const baseResponse: FixtureBase = {
+  transaction_id: "test-uuid",
+  threshold: 40,
+  created_at: new Date().toISOString(),
+};
+
+const fixtures: Record<string, ScoreResponse> = {
+  legitimate: {
+    ...baseResponse,
+    rule_score: 10,
+    ml_score: 12.3,
+    ensemble_score: 11,
+    classification: "legitimate",
+    fired_rules: [],
+  },
+  review: {
+    ...baseResponse,
+    rule_score: 50,
+    ml_score: 55,
+    ensemble_score: 62,
+    classification: "review",
+    fired_rules: ["high_amount"],
+  },
+  fraud: {
+    ...baseResponse,
+    rule_score: 90,
+    ml_score: 88,
+    ensemble_score: 91,
+    classification: "fraud",
+    fired_rules: ["high_amount", "high_velocity", "new_merchant"],
+  },
+  ml_not_trained: {
+    ...baseResponse,
+    rule_score: 10,
+    ml_score: null,
+    ensemble_score: 11,
+    classification: "legitimate",
+    fired_rules: [],
+  },
+};
+
+export const handlers = [
+  http.post("*/api/v1/transactions", async ({ request }) => {
+    const body = (await request.json()) as { amount?: number };
+    const amount = body?.amount ?? 0;
+    const key = amount > 5000 ? "fraud" : amount > 1000 ? "review" : "legitimate";
+    return HttpResponse.json(fixtures[key]);
+  }),
+
+  http.get("*/api/v1/transactions", ({ request }) => {
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get("page") || 1);
+    const items = Array.from({ length: 10 }, (_, i) => ({
+      id: `tx-${page}-${i}`,
+      amount: 100 + Math.random() * 5000,
+      currency: "USD",
+      merchant_name: `Merchant ${i}`,
+      merchant_category: "retail",
+      card_last4: "1234",
+      status: i % 3 === 0 ? "flagged" : "approved",
+      risk_score: Math.random() * 100,
+      user_id: "00000000-0000-0000-0000-000000000001",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+    return HttpResponse.json({ items, total: 50, page, page_size: 10 });
+  }),
+
+  http.get("*/api/v1/transactions/:id", ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      amount: 1500,
+      currency: "USD",
+      merchant_name: "Test Merchant",
+      merchant_category: "retail",
+      card_last4: "1234",
+      status: "flagged",
+      risk_score: 62.0,
+      user_id: "00000000-0000-0000-0000-000000000001",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }),
+
+  http.get("*/api/v1/monitoring/dashboard", () => {
+    return HttpResponse.json({
+      total_transactions: 1234,
+      fraud_percentage: 2.3,
+      avg_score: 18.5,
+      active_alerts: 5,
+      model_status: "active",
+    });
+  }),
+];

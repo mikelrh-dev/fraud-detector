@@ -33,7 +33,7 @@ export interface CreateTransactionRequest {
 export interface ScoreResponse {
   transaction_id: string;
   rule_score: number;
-  ml_score: number;
+  ml_score: number | null;
   ensemble_score: number;
   threshold: number;
   classification: string;
