@@ -16,6 +16,22 @@
   --color-slate-300: #cbd5e1;
   --color-slate-200: #e2e8f0;
   --color-slate-100: #f1f5f9;
+  --color-status-approved: #22c55e;
+  --color-status-flagged: #eab308;
+  --color-status-blocked: #ef4444;
+  --color-status-info: #3b82f6;
+  --color-focus-ring: #ef4444;
+  --color-page-bg: #020617;
+  --color-border-subtle: #1e293b;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-text-disabled: #64748b;
+  --color-divider: #334155;
+  --color-primary-container: #dc2626;
+  --color-action-hover: #b91c1c;
+  --spacing-sidebar-width: 224px;
+  --spacing-max-content: 1280px;
 }
 
 :root {
