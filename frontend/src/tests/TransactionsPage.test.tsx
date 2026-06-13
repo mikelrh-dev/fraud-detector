@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import TransactionsPage from "../pages/TransactionsPage";
@@ -87,7 +86,7 @@ describe("TransactionsPage", () => {
     renderPage();
     await waitFor(() => {
       // Pagination should show page info (50 total / 10 per page = 5 pages)
-      expect(screen.getByText(/50/)).toBeInTheDocument();
+      expect(screen.getByText(/50 transacciones/)).toBeInTheDocument();
     });
   });
 });

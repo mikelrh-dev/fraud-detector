@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { classificationColor, classificationLabel, formatScore, isMLTrained } from "./score";
 
-type ScoreClassification = "legitimate" | "review" | "fraud";
-
 describe("classificationColor", () => {
   it('returns "approved" for legitimate', () => {
     expect(classificationColor("legitimate")).toBe("approved");

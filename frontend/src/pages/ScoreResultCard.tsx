@@ -13,12 +13,6 @@ const colorMap: Record<string, string> = {
   blocked: "text-status-blocked border-status-blocked/30 bg-status-blocked/10",
 };
 
-const gaugeColorMap: Record<string, string> = {
-  approved: "bg-status-approved",
-  flagged: "bg-status-flagged",
-  blocked: "bg-status-blocked",
-};
-
 function ScoreGauge({ score, threshold }: { score: number; threshold: number }) {
   const clamped = Math.min(Math.max(score, 0), 100);
   return (
@@ -140,9 +134,6 @@ export function ScoreResultCard({ result, isLoading }: ScoreResultCardProps) {
   }
 
   const classification = result.classification;
-  const cls = classification as ScoreClassification;
-  const token = classificationColor(cls);
-  const gaugeToken = gaugeColorMap[token] || gaugeColorMap.flagged;
   const mlTrained = isMLTrained(result.ml_score);
 
   return (
