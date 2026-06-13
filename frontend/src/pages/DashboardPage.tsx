@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuthStore } from "../store/authStore";
 import { listTransactions } from "../api/transactions";
 import type { Transaction } from "../api/transactions";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +7,7 @@ import apiClient from "../api/client";
 import ScoreHistogram from "../components/ScoreHistogram";
 import ScoreTrendChart, { buildDailyAverages } from "../components/ScoreTrendChart";
 import TransactionTable from "../components/TransactionTable";
+import { Sidebar } from "../components/Sidebar";
 
 interface DashboardMetrics {
   total_transactions: number;
@@ -29,8 +29,6 @@ const RECENT_PAGE_SIZE = 10;
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
-
   // Transaction table state
   const [page, setPage] = useState(1);
   const [sortField, setSortField] = useState<keyof Transaction>("created_at");
@@ -110,86 +108,9 @@ export default function DashboardPage() {
     [sortField],
   );
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
-  };
-
-  const sidebarItems = [
-    { label: "Dashboard", active: true, icon: "📊" },
-    { label: "Transacciones", active: false, icon: "💳" },
-    { label: "Alertas", active: false, icon: "🔔" },
-  ];
-
   return (
     <div className="min-h-screen bg-slate-950 flex">
-      {/* Sidebar */}
-      <aside className="w-56 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0">
-        <div className="p-4 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-red-900/30 border border-red-800/40 flex items-center justify-center">
-              <svg
-                className="w-4 h-4 text-red-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
-                />
-              </svg>
-            </div>
-            <span className="text-sm font-bold text-slate-100">
-              Fraud Detector
-            </span>
-          </div>
-        </div>
-
-        <nav className="flex-1 p-3 space-y-1">
-          {sidebarItems.map((item) => (
-            <button
-              key={item.label}
-              onClick={() => {
-                if (item.label === "Transacciones")
-                  navigate("/transactions");
-                else if (item.label === "Alertas") navigate("/alerts");
-              }}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                item.active
-                  ? "bg-slate-800 text-slate-200"
-                  : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-300"
-              }`}
-            >
-              <span className="text-base">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        {/* User info */}
-        <div className="p-3 border-t border-slate-800">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-300 font-medium">
-              {user?.id?.slice(0, 2).toUpperCase() || "?"}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-slate-300 truncate">
-                {user?.role || "Analista"}
-              </p>
-              <p className="text-[10px] text-slate-500">ID: {user?.id?.slice(0, 8) || "—"}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full text-xs text-slate-500 hover:text-red-400 transition-colors py-1"
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      </aside>
+      <Sidebar activeItem="dashboard" />
 
       {/* Main content */}
       <main className="flex-1 overflow-auto p-6">
