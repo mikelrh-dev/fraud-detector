@@ -4,6 +4,8 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import TransactionDetail from "./pages/TransactionDetail";
 import AlertsPage from "./pages/AlertsPage";
+import TransactionsPage from "./pages/TransactionsPage";
+import CreateTransactionPage from "./pages/CreateTransactionPage";
 import type { ReactNode } from "react";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -25,6 +27,22 @@ export default function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/transactions/new"
+        element={
+          <ProtectedRoute>
+            <CreateTransactionPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/transactions"
+        element={
+          <ProtectedRoute>
+            <TransactionsPage />
           </ProtectedRoute>
         }
       />
