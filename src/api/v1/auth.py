@@ -18,21 +18,17 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register_endpoint(
     request: RegisterRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ) -> UserResponse:
-    """Register a new user (admin only)."""
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can create users",
-        )
+    """Register a new user (public registration)."""
     try:
         user = await register_user(db, request)
+        # Handle both enum and string cases for role
+        role_value = user.role.value if hasattr(user.role, 'value') else user.role
         return UserResponse(
             id=user.id,
             username=user.username,
             email=user.email,
-            role=user.role.value,
+            role=role_value,
             is_active=user.is_active,
             created_at=user.created_at,
         )

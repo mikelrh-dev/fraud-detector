@@ -64,13 +64,16 @@ async def login(db: AsyncSession, request: LoginRequest) -> TokenResponse:
     if not verify_password(request.password, user.hashed_password):
         raise ValueError("Invalid credentials")
 
+    # Handle both enum and string cases for role
+    role_value = user.role.value if hasattr(user.role, 'value') else user.role
+
     access_token = create_access_token(
         user_id=str(user.id),
-        role=user.role.value,
+        role=role_value,
     )
     refresh_token = create_access_token(
         user_id=str(user.id),
-        role=user.role.value,
+        role=role_value,
     )
 
     return TokenResponse(
