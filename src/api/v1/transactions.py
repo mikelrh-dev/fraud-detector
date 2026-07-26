@@ -1,8 +1,11 @@
 """Transaction endpoints — CRUD with fraud scoring pipeline."""
 
+import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -11,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.v1.rate_limit import check_rate_limit
 from src.core.config import settings
 from src.core.dependencies import get_current_user, get_db, require_role
+from src.core.redis import enqueue
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
 from src.models.transaction import Transaction, TransactionStatus
@@ -70,16 +74,45 @@ async def create_and_score_transaction(
         user_id=payload.user_id,
     )
 
-    # 2. Rule engine evaluation
+    # 2. Build context for rule engine
+    # Fetch recent transactions for velocity + known cards
+    five_min_ago = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    recent_query = select(Transaction).where(
+        Transaction.user_id == payload.user_id,
+        Transaction.deleted_at.is_(None),
+        Transaction.created_at >= five_min_ago,
+    )
+    recent_result = await db.execute(recent_query)
+    recent_txns = list(recent_result.scalars().all())
+
+    # All user's non-deleted transactions for known cards
+    all_user_query = select(Transaction).where(
+        Transaction.user_id == payload.user_id,
+        Transaction.deleted_at.is_(None),
+    )
+    all_user_result = await db.execute(all_user_query)
+    all_user_txns = list(all_user_result.scalars().all())
+    known_cards = list({t.card_last4 for t in all_user_txns if t.card_last4})
+
+    # 3. Rule engine evaluation with timestamp and context
+    now = datetime.now(tz=timezone.utc)
     tx_data: dict[str, Any] = {
         "amount": payload.amount,
         "merchant_name": payload.merchant_name,
         "card_last4": payload.card_last4,
         "user_id": str(payload.user_id),
+        "timestamp": now.isoformat(),
+        "country": "AR",  # simulate home country for demo purposes
     }
-    rule_score, fired_rules = _rule_engine.evaluate(tx_data)
+    context: dict[str, Any] = {
+        "recent_transactions": len(recent_txns),
+        "known_cards": known_cards,
+        "merchant_blacklist": ["crypto exchange pro", "online gambling", "money transfer now"],
+        "home_country": "AR",
+    }
+    rule_score, fired_rules = _rule_engine.evaluate(tx_data, context)
 
-    # 3. Ensemble scoring (ML score defaults to 0 when model not available)
+    # 4. Ensemble scoring (ML score defaults to 0 when model not available)
     ml_score = 0.0
     threshold = _ensemble_scorer.get_threshold(payload.amount)
     ensemble_score = _ensemble_scorer.combine(
@@ -88,7 +121,7 @@ async def create_and_score_transaction(
     )
     classification = _ensemble_scorer.classify(ensemble_score, threshold)
 
-    # 4. Persist the score
+    # 5. Persist the score
     fraud_score = FraudScore(
         transaction_id=txn.id,
         rule_score=rule_score,
@@ -99,7 +132,7 @@ async def create_and_score_transaction(
     )
     db.add(fraud_score)
 
-    # 5. Create alert if fraud
+    # 6. Create alert if fraud
     if classification == "fraud":
         alert = FraudAlert(
             transaction_id=txn.id,
@@ -110,7 +143,7 @@ async def create_and_score_transaction(
         )
         db.add(alert)
 
-    # 6. Update transaction status
+    # 7. Update transaction status
     status_map: dict[str, TransactionStatus] = {
         "legitimate": TransactionStatus.APPROVED,
         "review": TransactionStatus.FLAGGED,
@@ -120,7 +153,7 @@ async def create_and_score_transaction(
 
     await db.flush()
 
-    # 7. Record audit trail for the scoring decision
+    # 8. Record audit trail for the scoring decision
     await _audit_service.create_entry(
         db=db,
         action_type="transaction_scored",
@@ -135,6 +168,29 @@ async def create_and_score_transaction(
             "fired_rules": fired_rules,
         },
     )
+
+    # 9. Enqueue LLM report request (best-effort, non-blocking)
+    try:
+        await enqueue("fraud:reports", {
+            "transaction_id": str(txn.id),
+            "score_breakdown": {
+                "rule_score": rule_score,
+                "ml_score": ml_score,
+                "ensemble_score": ensemble_score,
+                "threshold": threshold,
+                "classification": classification,
+                "fired_rules": fired_rules,
+            },
+            "transaction": {
+                "id": str(txn.id),
+                "amount": payload.amount,
+                "currency": payload.currency,
+                "merchant_name": payload.merchant_name,
+                "merchant_category": payload.merchant_category,
+            },
+        })
+    except Exception:
+        logger.exception("Failed to enqueue LLM report request")
 
     return ScoreResponse(
         transaction_id=txn.id,

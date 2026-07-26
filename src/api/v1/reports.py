@@ -42,7 +42,7 @@ async def get_transaction_report(
         transaction_id=report.transaction_id,
         report_text=report.report_text,
         model_name=report.model_name,
-        status=report.status.value,
+        status=report.status,
         generation_time_ms=report.generation_time_ms,
         created_at=report.created_at,
     )

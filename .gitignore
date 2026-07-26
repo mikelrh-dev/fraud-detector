@@ -49,3 +49,6 @@ frontend/.env
 # Logs
 *.log
 logs/
+
+# Implementation guides (user-managed)
+implementacionML/

@@ -54,7 +54,7 @@ class LLMService:
         self,
         ollama_url: str | None = None,
         model: str | None = None,
-        timeout: int = 15,
+        timeout: int = 60,
     ) -> None:
         """Initialize the LLM service.
 

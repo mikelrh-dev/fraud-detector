@@ -238,3 +238,8 @@ async def run_worker(
         iterations += 1
 
     logger.info("LLM worker stopped after %d iterations", iterations)
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(run_worker())

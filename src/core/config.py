@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:3b"
+    ollama_model: str = "qwen2.5:0.5b"
 
     # JWT
     jwt_secret_key: str = "change-me-in-production"
@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     jwt_exp_minutes: int = 15
 
     # Ensemble Weights
-    ensemble_rule_weight: float = 0.45
-    ensemble_ml_weight: float = 0.45
+    ensemble_rule_weight: float = 0.80
+    ensemble_ml_weight: float = 0.10
     ensemble_context_weight: float = 0.10
 
     # Threshold Tiers
