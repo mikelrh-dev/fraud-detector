@@ -1,7 +1,7 @@
-"""ML model service — loads and runs IsolationForest for anomaly detection.
+"""ML model service — loads and runs a trained XGBoost classifier.
 
 Provides a consistent scoring interface: load_model() loads a serialized
-IsolationForest via joblib, predict() converts the anomaly score (-1/1)
+XGBoost model via joblib, predict() converts predict_proba() output
 to a 0-100 risk score. If the model file is missing, returns 0 silently.
 """
 
@@ -10,28 +10,27 @@ from pathlib import Path
 
 import joblib  # type: ignore[import-untyped]
 import numpy as np
-from sklearn.ensemble import IsolationForest  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
 
 class MLModelService:
-    """Service for ML-based anomaly detection scoring.
+    """Service for ML-based fraud scoring.
 
-    Wraps a serialized IsolationForest model and provides a predict()
-    method that normalizes the raw model output to a 0-100 risk score.
+    Wraps a serialized XGBoost classifier and provides a predict()
+    method that converts the model's probability output to a 0-100 risk score.
 
     The service handles missing model files gracefully — if the model
     is not available, predict() returns 0 and logs a warning.
     """
 
-    def __init__(self, model_path: str = "models/isolation_forest_v1.joblib") -> None:
+    def __init__(self, model_path: str = "models/xgboost_paysim_v1.joblib") -> None:
         """Initialize the service with a model path.
 
         The model is NOT loaded until load_model() is called explicitly.
         """
         self._model_path: str = model_path
-        self._model: IsolationForest | None = None
+        self._model = None
 
     def load_model(self) -> bool:
         """Load the serialized model from disk.
@@ -57,15 +56,13 @@ class MLModelService:
             return False
 
     def predict(self, features: np.ndarray) -> float:
-        """Score a feature vector using the loaded model.
+        """Score a feature vector using the loaded XGBoost model.
 
-        Converts the IsolationForest output:
-            - Internal anomaly score (lower = more anomalous) is inverted
-              and normalized to 0-100.
-            - If no model is loaded, returns 0.0.
+        Uses predict_proba() and returns the probability of fraud (class 1)
+        scaled to 0-100. If no model is loaded, returns 0.0.
 
         Args:
-            features: NumPy array of shape (10,) containing the feature vector.
+            features: NumPy array of shape (n_features,) containing the feature vector.
 
         Returns:
             Risk score between 0 (normal) and 100 (highly anomalous).
@@ -73,16 +70,11 @@ class MLModelService:
         if self._model is None:
             return 0.0
 
-        # IsolationForest.decision_function returns lower scores for anomalies
-        raw_score = self._model.decision_function([features])[0]
+        # XGBoost.predict_proba returns [P(legit), P(fraud)]
+        probability = self._model.predict_proba([features])[0, 1]
 
-        # Normalize: raw_score range is typically [-0.5, 0.5] for contamination=0.1
-        # We map: raw_score → ml_score where lower raw = higher risk
-        # Normalize to 0-100 using a sigmoid-like mapping
-        # raw_score > 0 → normal (low risk), raw_score < 0 → anomaly (high risk)
-        normalized = 100.0 * (1.0 - (raw_score + 0.5))
-        normalized = max(0.0, min(100.0, normalized))
-        return normalized
+        # Scale probability [0, 1] to risk score [0, 100]
+        return float(probability * 100.0)
 
     @property
     def is_available(self) -> bool:

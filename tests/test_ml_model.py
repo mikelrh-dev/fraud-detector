@@ -1,41 +1,40 @@
-"""ML model tests — scoring with serialized mock model, missing model,
-score range 0-100, anomaly score normalization.
-
-These tests verify the second scoring layer: anomaly detection via
-Isolation Forest.
+"""ML model tests — scoring with serialized XGBoost model, missing model,
+score range 0-100, probability normalization.
 """
 
 import os
 import tempfile
-from unittest.mock import patch
 
 import joblib
 import numpy as np
 import pytest
-from sklearn.ensemble import IsolationForest
+import xgboost as xgb
 
 from src.services.ml_model import MLModelService
 
 
 @pytest.fixture(scope="module")
 def mock_model_path():
-    """Create a temporary IsolationForest model for testing.
+    """Create a temporary XGBoost model for testing.
 
-    Uses 10 features matching the FeatureEngine output dimensionality.
+    Trains a tiny XGBClassifier on synthetic 10-feature data so that
+    predict() can return meaningful scores in [0, 100].
     """
-    # Train a tiny IsolationForest on dummy 10-feature data
     rng = np.random.RandomState(42)
-    # Normal transactions (50 samples)
-    X_normal = rng.normal(loc=50, scale=10, size=(50, 10))
-    # Anomalous transactions (10 samples)
-    X_anomaly = rng.normal(loc=500, scale=100, size=(10, 10))
-    X = np.vstack([X_normal, X_anomaly])
-    model = IsolationForest(
-        n_estimators=10,
+    # Class 0 — low values around 50
+    X0 = rng.normal(loc=50, scale=10, size=(50, 10))
+    # Class 1 — high values around 500
+    X1 = rng.normal(loc=500, scale=100, size=(50, 10))
+    X = np.vstack([X0, X1])
+    y = np.array([0] * 50 + [1] * 50)
+
+    model = xgb.XGBClassifier(
+        n_estimators=20,
+        max_depth=3,
         random_state=42,
-        contamination=0.1,
+        use_label_encoder=False,
     )
-    model.fit(X)
+    model.fit(X, y)
 
     with tempfile.NamedTemporaryFile(suffix=".joblib", delete=False) as f:
         path = f.name
@@ -60,32 +59,20 @@ class TestMLModelScore:
         assert isinstance(score, float)
         assert 0.0 <= score <= 100.0
 
-    def test_anomaly_gets_high_score(self, mock_model_path):
-        """An anomaly (-1) should map to a high score (> 50)."""
+    def test_high_value_gets_higher_score(self, mock_model_path):
+        """A feature vector near class 1 should score higher than one near class 0."""
         service = MLModelService(model_path=mock_model_path)
         service.load_model()
 
-        # A very large amount (100000) should be anomalous
-        features = np.array([100000.0, 5.0, 3.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0])
-        score = service.predict(features)
-        # Anomalous features should score higher
-        assert score > 50
+        # Values near class 0 (mean ~50)
+        low_features = np.array([50.0, 0.0, 0.0, 0.0, 0.0, 14.0, 0.0, 0.0, 0.0, 0.0])
+        low_score = service.predict(low_features)
 
-    def test_normal_gets_low_score(self, mock_model_path):
-        """A normal transaction should map to a lower score."""
-        service = MLModelService(model_path=mock_model_path)
-        service.load_model()
+        # Values near class 1 (mean ~500)
+        high_features = np.array([500.0, 5.0, 3.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0])
+        high_score = service.predict(high_features)
 
-        # Normal values near the training data mean
-        normal_features = np.array([50.0, 0.0, 0.0, 0.0, 0.0, 14.0, 0.0, 0.0, 0.0, 0.0])
-        normal_score = service.predict(normal_features)
-
-        # Anomalous values far from training distribution
-        anomaly_features = np.array([100000.0, 5.0, 3.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0])
-        anomaly_score = service.predict(anomaly_features)
-
-        # Normal should score lower than the anomaly
-        assert normal_score < anomaly_score
+        assert low_score < high_score
 
     def test_predict_without_loading_returns_zero(self, mock_model_path):
         """Predict should return 0 if model hasn't been loaded."""
@@ -139,11 +126,10 @@ class TestMLModelScoreRange:
     """Score normalization — the model must always return 0-100."""
 
     def test_score_capped_at_100(self, mock_model_path):
-        """Score should not exceed 100 even for extreme anomalies."""
+        """Score should not exceed 100."""
         service = MLModelService(model_path=mock_model_path)
         service.load_model()
 
-        # Extreme values
         features = np.array([1e9, 100.0, 100.0, 100.0, 100.0, 3.0, 0.0, 0.0, 0.0, 1.0])
         score = service.predict(features)
         assert score <= 100.0

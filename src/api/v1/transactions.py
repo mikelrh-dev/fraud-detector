@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -26,6 +28,8 @@ from src.schemas.transaction import (
 )
 from src.services.audit import AuditService
 from src.services.ensemble import EnsembleScorer
+from src.services.feature_engine import FeatureEngine
+from src.services.ml_model import MLModelService
 from src.services.rule_engine import RuleEngine
 from src.services.transaction import (
     create_transaction,
@@ -42,6 +46,11 @@ router = APIRouter(
 _rule_engine = RuleEngine()
 _ensemble_scorer = EnsembleScorer()
 _audit_service = AuditService()
+_ml_service = MLModelService()
+_feature_engine = FeatureEngine()
+
+# Load ML model at startup (synchronous, runs once)
+_ml_service.load_model()
 
 
 @router.post("", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
@@ -112,8 +121,17 @@ async def create_and_score_transaction(
     }
     rule_score, fired_rules = _rule_engine.evaluate(tx_data, context)
 
-    # 4. Ensemble scoring (ML score defaults to 0 when model not available)
-    ml_score = 0.0
+    # 4. ML scoring via XGBoost
+    user_history = {
+        "avg_amount": float(np.mean([t.amount for t in all_user_txns])) if all_user_txns else 0.0,
+        "std_amount": float(np.std([t.amount for t in all_user_txns])) if len(all_user_txns) > 1 else 0.0,
+        "tx_count_last_5min": len(recent_txns),
+        "tx_count_last_1h": len(recent_txns),
+    }
+    features = _feature_engine.transform(tx_data, user_history=user_history)
+    ml_score = _ml_service.predict(features)
+
+    # 5. Ensemble scoring
     threshold = _ensemble_scorer.get_threshold(payload.amount)
     ensemble_score = _ensemble_scorer.combine(
         rule_score=rule_score,
@@ -121,7 +139,7 @@ async def create_and_score_transaction(
     )
     classification = _ensemble_scorer.classify(ensemble_score, threshold)
 
-    # 5. Persist the score
+    # 6. Persist the score
     fraud_score = FraudScore(
         transaction_id=txn.id,
         rule_score=rule_score,
@@ -132,7 +150,7 @@ async def create_and_score_transaction(
     )
     db.add(fraud_score)
 
-    # 6. Create alert if fraud
+    # 7. Create alert if fraud
     if classification == "fraud":
         alert = FraudAlert(
             transaction_id=txn.id,
@@ -143,7 +161,7 @@ async def create_and_score_transaction(
         )
         db.add(alert)
 
-    # 7. Update transaction status
+    # 8. Update transaction status
     status_map: dict[str, TransactionStatus] = {
         "legitimate": TransactionStatus.APPROVED,
         "review": TransactionStatus.FLAGGED,
@@ -153,7 +171,7 @@ async def create_and_score_transaction(
 
     await db.flush()
 
-    # 8. Record audit trail for the scoring decision
+    # 9. Record audit trail for the scoring decision
     await _audit_service.create_entry(
         db=db,
         action_type="transaction_scored",
@@ -169,7 +187,7 @@ async def create_and_score_transaction(
         },
     )
 
-    # 9. Enqueue LLM report request (best-effort, non-blocking)
+    # 10. Enqueue LLM report request (best-effort, non-blocking)
     try:
         await enqueue("fraud:reports", {
             "transaction_id": str(txn.id),
