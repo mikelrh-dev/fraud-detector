@@ -108,6 +108,7 @@ async def create_and_score_transaction(
     tx_data: dict[str, Any] = {
         "amount": payload.amount,
         "merchant_name": payload.merchant_name,
+        "merchant_category": payload.merchant_category,
         "card_last4": payload.card_last4,
         "user_id": str(payload.user_id),
         "timestamp": now.isoformat(),
