@@ -52,3 +52,8 @@ logs/
 
 # Implementation guides (user-managed)
 implementacionML/
+
+# Local artifacts — never commit
+register.json
+transaccion/
+notebooks/.ipynb_checkpoints/
