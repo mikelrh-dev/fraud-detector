@@ -88,7 +88,7 @@ Chain strategy: pending
 
 ## Phase 8: Full Verification
 
-- [ ] **8.1 — Full suite + static checks** — Run backend `.\.venv\Scripts\python -m pytest tests/` (245 → all green incl. new tests), `ruff check src/`, `mypy src/` (clean); frontend `npm test` in `frontend/` (32 green), `npx tsc --noEmit`. Confirm FRD-DASH-SCORE-004: POST response unchanged (`TestCreateTransaction`/`test_integration_pipeline.py` untouched, still includes `fired_rules`). Confirm FRD-DASH-SCORE-005: no Alembic migration files added. Confirm no `fired_rules` field added to any GET response schema. Deps: all. DoD: all suites + linters green on the feature branch.
+- [x] **8.1 — Full suite + static checks** — Run backend `.\.venv\Scripts\python -m pytest tests/` (245 → all green incl. new tests), `ruff check src/`, `mypy src/` (clean); frontend `npm test` in `frontend/` (32 green), `npx tsc --noEmit`. Confirm FRD-DASH-SCORE-004: POST response unchanged (`TestCreateTransaction`/`test_integration_pipeline.py` untouched, still includes `fired_rules`). Confirm FRD-DASH-SCORE-005: no Alembic migration files added. Confirm no `fired_rules` field added to any GET response schema. Deps: all. DoD: all suites + linters green on the feature branch.
 
 ---
 
