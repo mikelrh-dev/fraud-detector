@@ -1,16 +1,19 @@
 """Tests for Pydantic schemas."""
 
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
 
+from src.models.fraud_score import FraudClassification
 from src.schemas.auth import (
     LoginRequest,
     RegisterRequest,
     TokenResponse,
     UserResponse,
 )
+from src.schemas.transaction import ScoreBreakdown, TransactionResponse
 
 
 class TestAuthSchemas:
@@ -94,3 +97,72 @@ class TestAuthSchemas:
         assert data.id == user_id
         assert data.role == "analyst"
         assert data.is_active is True
+
+
+class TestScoreBreakdown:
+    """ScoreBreakdown nested schema validation tests."""
+
+    def test_model_validate_from_fraud_score_maps_all_attrs(self):
+        """ScoreBreakdown should map all five fields from a FraudScore."""
+        score = MagicMock()
+        score.rule_score = 45.0
+        score.ml_score = 60.0
+        score.ensemble_score = 52.0
+        score.threshold = 70.0
+        score.classification = FraudClassification.REVIEW
+
+        breakdown = ScoreBreakdown.model_validate(score)
+
+        assert breakdown.rule_score == 45.0
+        assert breakdown.ml_score == 60.0
+        assert breakdown.ensemble_score == 52.0
+        assert breakdown.threshold == 70.0
+        assert breakdown.classification == "review"
+
+    def test_transaction_response_optional_fields_default_to_none(self):
+        """risk_score/classification/scoring should default to None."""
+        txn_id = uuid.uuid4()
+        data = TransactionResponse(
+            id=txn_id,
+            amount=100.0,
+            currency="USD",
+            merchant_name="Test Store",
+            merchant_category="retail",
+            card_last4="1234",
+            status="pending",
+            user_id=uuid.uuid4(),
+            created_at="2024-01-15T12:00:00+00:00",
+            updated_at="2024-01-15T12:00:00+00:00",
+        )
+        assert data.risk_score is None
+        assert data.classification is None
+        assert data.scoring is None
+
+    def test_transaction_response_accepts_scoring_breakdown(self):
+        """TransactionResponse should accept a nested scoring breakdown."""
+        txn_id = uuid.uuid4()
+        data = TransactionResponse(
+            id=txn_id,
+            amount=100.0,
+            currency="USD",
+            merchant_name="Test Store",
+            merchant_category="retail",
+            card_last4="1234",
+            status="flagged",
+            user_id=uuid.uuid4(),
+            risk_score=52.0,
+            classification="review",
+            scoring=ScoreBreakdown(
+                rule_score=45.0,
+                ml_score=60.0,
+                ensemble_score=52.0,
+                threshold=70.0,
+                classification="review",
+            ),
+            created_at="2024-01-15T12:00:00+00:00",
+            updated_at="2024-01-15T12:00:00+00:00",
+        )
+        assert data.risk_score == 52.0
+        assert data.classification == "review"
+        assert data.scoring.ensemble_score == 52.0
+        assert data.scoring.classification == "review"

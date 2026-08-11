@@ -17,6 +17,22 @@ class TransactionCreate(BaseModel):
     user_id: uuid.UUID
 
 
+class ScoreBreakdown(BaseModel):
+    """Scoring breakdown nested in transaction responses.
+
+    Mirrors ScoreResponse minus transaction_id/created_at/fired_rules
+    (fired_rules is not persisted in fraud_scores).
+    """
+
+    rule_score: float
+    ml_score: float
+    ensemble_score: float
+    threshold: float
+    classification: str
+
+    model_config = {"from_attributes": True}  # enables model_validate(FraudScore)
+
+
 class TransactionResponse(BaseModel):
     """Transaction details returned to clients."""
 
@@ -28,6 +44,8 @@ class TransactionResponse(BaseModel):
     card_last4: str
     status: str
     risk_score: float | None = None
+    classification: str | None = None
+    scoring: ScoreBreakdown | None = None
     user_id: uuid.UUID
     created_at: datetime
     updated_at: datetime

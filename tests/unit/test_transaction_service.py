@@ -1,16 +1,18 @@
 """Tests for the transaction service (CRUD with soft delete)."""
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.fraud_score import FraudScore
 from src.models.transaction import Transaction, TransactionStatus
 from src.services.transaction import (
     create_transaction,
     delete_transaction,
+    get_scores_for_transactions,
     get_transaction,
     list_transactions,
 )
@@ -97,3 +99,64 @@ class TestTransactionService:
         await delete_transaction(mock_db, uuid4())
         assert transaction.deleted_at is not None
         assert mock_db.flush.called
+
+
+class TestGetScoresForTransactions:
+    """get_scores_for_transactions batch helper tests."""
+
+    def _make_score(self, transaction_id, created_at):
+        score = MagicMock(spec=FraudScore)
+        score.transaction_id = transaction_id
+        score.created_at = created_at
+        return score
+
+    async def test_empty_ids_returns_empty_without_sql(self, mock_db):
+        """Empty id list should return {} and never touch the DB."""
+        mock_db.execute = AsyncMock()
+
+        result = await get_scores_for_transactions(mock_db, [])
+
+        assert result == {}
+        mock_db.execute.assert_not_called()
+
+    async def test_batch_returns_all_scores_from_single_query(self, mock_db):
+        """A batch of ids should return a score per id from one query."""
+        id_a, id_b = uuid4(), uuid4()
+        now = datetime.now(tz=timezone.utc)
+        score_a = self._make_score(id_a, now)
+        score_b = self._make_score(id_b, now - timedelta(minutes=1))
+
+        mock_scalar_result = MagicMock()
+        mock_scalar_result.all.return_value = [score_a, score_b]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalar_result
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await get_scores_for_transactions(mock_db, [id_a, id_b])
+
+        assert result == {id_a: score_a, id_b: score_b}
+        assert mock_db.execute.call_count == 1
+
+        # The query must use a single IN clause over the batch
+        query_str = str(mock_db.execute.call_args[0][0])
+        assert "fraud_scores" in query_str
+        assert "IN" in query_str
+        assert "ORDER BY" in query_str
+
+    async def test_duplicate_transaction_keeps_newest(self, mock_db):
+        """When a transaction has multiple score rows, the newest wins."""
+        txn_id = uuid4()
+        now = datetime.now(tz=timezone.utc)
+        newer = self._make_score(txn_id, now)
+        older = self._make_score(txn_id, now - timedelta(hours=2))
+
+        # DB returns newest first (ORDER BY created_at DESC)
+        mock_scalar_result = MagicMock()
+        mock_scalar_result.all.return_value = [newer, older]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalar_result
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await get_scores_for_transactions(mock_db, [txn_id])
+
+        assert result == {txn_id: newer}
