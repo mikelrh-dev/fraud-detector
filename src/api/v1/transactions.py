@@ -20,6 +20,7 @@ from src.models.fraud_score import FraudClassification, FraudScore
 from src.models.transaction import Transaction, TransactionStatus
 from src.schemas.scoring import ScoreResponse
 from src.schemas.transaction import (
+    ScoreBreakdown,
     TransactionCreate,
     TransactionListResponse,
     TransactionResponse,
@@ -32,6 +33,7 @@ from src.services.rule_engine import RuleEngine
 from src.services.transaction import (
     create_transaction,
     delete_transaction,
+    get_scores_for_transactions,
     get_transaction,
 )
 
@@ -42,6 +44,11 @@ router = APIRouter(
     tags=["transactions"],
     dependencies=[Depends(check_rate_limit)],
 )
+
+
+def _classification_str(value: FraudClassification | str) -> str:
+    """Normalize FraudClassification to its string value."""
+    return value.value if hasattr(value, "value") else value
 
 _rule_engine = RuleEngine()
 _ensemble_scorer = EnsembleScorer()
@@ -261,8 +268,12 @@ async def list_transactions_endpoint(
     result = await db.execute(query)
     transactions = list(result.scalars().all())
 
+    # Single batched score query over the page ids — never per-row (no N+1)
+    scores = await get_scores_for_transactions(db, [t.id for t in transactions])
+
     items = []
     for t in transactions:
+        score = scores.get(t.id)
         items.append(
             TransactionResponse(
                 id=t.id,
@@ -273,6 +284,10 @@ async def list_transactions_endpoint(
                 card_last4=t.card_last4,
                 status=t.status.value if hasattr(t.status, "value") else t.status,
                 user_id=t.user_id,
+                risk_score=score.ensemble_score if score else None,
+                classification=(
+                    _classification_str(score.classification) if score else None
+                ),
                 created_at=t.created_at,
                 updated_at=t.updated_at,
             )
@@ -299,6 +314,8 @@ async def get_transaction_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Transaction not found",
         )
+    scores = await get_scores_for_transactions(db, [transaction_id])
+    score = scores.get(transaction_id)
     return TransactionResponse(
         id=txn.id,
         amount=float(txn.amount),
@@ -308,6 +325,9 @@ async def get_transaction_endpoint(
         card_last4=txn.card_last4,
         status=txn.status.value if hasattr(txn.status, "value") else txn.status,
         user_id=txn.user_id,
+        risk_score=score.ensemble_score if score else None,
+        classification=_classification_str(score.classification) if score else None,
+        scoring=ScoreBreakdown.model_validate(score) if score else None,
         created_at=txn.created_at,
         updated_at=txn.updated_at,
     )
