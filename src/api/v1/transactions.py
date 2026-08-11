@@ -7,8 +7,6 @@ from typing import Any
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +34,8 @@ from src.services.transaction import (
     delete_transaction,
     get_transaction,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/transactions",

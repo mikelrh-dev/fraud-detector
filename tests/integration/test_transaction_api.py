@@ -10,7 +10,6 @@ import pytest
 from httpx import AsyncClient
 
 from src.models.transaction import Transaction, TransactionStatus
-from src.services.transaction import create_transaction
 
 pytestmark = pytest.mark.asyncio
 
@@ -37,6 +36,15 @@ class TestCreateTransaction:
 
     async def test_create_transaction_returns_score(self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict):
         """Creating a valid transaction should return 201 with scoring breakdown."""
+        # Mock the two context queries (recent + all-user) used by the scoring pipeline
+        mock_scalar_result = MagicMock()
+        mock_scalar_result.all.return_value = []
+
+        mock_select_result = MagicMock()
+        mock_select_result.scalars.return_value = mock_scalar_result
+
+        mock_db.execute = AsyncMock(return_value=mock_select_result)
+
         response = await test_client.post(
             "/api/v1/transactions",
             json={
