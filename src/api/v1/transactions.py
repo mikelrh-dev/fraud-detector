@@ -123,8 +123,8 @@ async def create_and_score_transaction(
 
     # 4. ML scoring via XGBoost
     user_history = {
-        "avg_amount": float(np.mean([t.amount for t in all_user_txns])) if all_user_txns else 0.0,
-        "std_amount": float(np.std([t.amount for t in all_user_txns])) if len(all_user_txns) > 1 else 0.0,
+        "avg_amount": float(np.mean([float(t.amount) for t in all_user_txns])) if all_user_txns else 0.0,
+        "std_amount": float(np.std([float(t.amount) for t in all_user_txns])) if len(all_user_txns) > 1 else 0.0,
         "tx_count_last_5min": len(recent_txns),
         "tx_count_last_1h": len(recent_txns),
     }
