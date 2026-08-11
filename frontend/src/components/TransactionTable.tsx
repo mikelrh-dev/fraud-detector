@@ -155,7 +155,8 @@ export default function TransactionTable({
               </tr>
             ) : (
               transactions.map((tx) => {
-                const classification = getClassification(tx.status);
+                const classification =
+                  tx.classification ?? getClassification(tx.status);
                 const colorClass =
                   CLASSIFICATION_COLORS[classification] ||
                   CLASSIFICATION_COLORS.pending;

@@ -9,6 +9,14 @@ export interface Transaction {
   card_last4: string;
   status: string;
   risk_score: number | null;
+  classification: string | null;
+  scoring?: {
+    rule_score: number;
+    ml_score: number; // backend guarantees non-nullable float
+    ensemble_score: number;
+    threshold: number;
+    classification: string | null; // defensive; backend non-null
+  } | null;
   user_id: string;
   created_at: string;
   updated_at: string;

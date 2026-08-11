@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, Link } from "react-router-dom";
 import { listTransactions } from "../api/transactions";
+import { ClassificationBadge } from "../components/ClassificationBadge";
 import { Sidebar } from "../components/Sidebar";
 import type { Transaction } from "../api/transactions";
 
@@ -139,6 +140,7 @@ export default function TransactionsPage() {
                     <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Moneda</th>
                     <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Estado</th>
                     <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Score</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Clasificación</th>
                     <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Fecha</th>
                   </tr>
                 </thead>
@@ -175,6 +177,13 @@ export default function TransactionsPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-300">
                         {tx.risk_score !== null ? tx.risk_score.toFixed(1) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {tx.classification ? (
+                          <ClassificationBadge classification={tx.classification} />
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-400 text-xs">
                         {new Date(tx.created_at).toLocaleDateString("es-AR", {

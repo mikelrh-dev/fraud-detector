@@ -59,19 +59,24 @@ export const handlers = [
   http.get("*/api/v1/transactions", ({ request }) => {
     const url = new URL(request.url);
     const page = Number(url.searchParams.get("page") || 1);
-    const items = Array.from({ length: 10 }, (_, i) => ({
-      id: `tx-${page}-${i}`,
-      amount: 100 + Math.random() * 5000,
-      currency: "USD",
-      merchant_name: `Merchant ${i}`,
-      merchant_category: "retail",
-      card_last4: "1234",
-      status: i % 3 === 0 ? "flagged" : "approved",
-      risk_score: Math.random() * 100,
-      user_id: "00000000-0000-0000-0000-000000000001",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }));
+    const items = Array.from({ length: 10 }, (_, i) => {
+      const isReview = i % 3 === 0;
+      return {
+        id: `tx-${page}-${i}`,
+        amount: 100 + i * 500,
+        currency: "USD",
+        merchant_name: `Merchant ${i}`,
+        merchant_category: "retail",
+        card_last4: "1234",
+        status: isReview ? "flagged" : "approved",
+        risk_score: isReview ? 62 : 15,
+        classification: isReview ? "review" : "legitimate",
+        scoring: null,
+        user_id: "00000000-0000-0000-0000-000000000001",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    });
     return HttpResponse.json({ items, total: 50, page, page_size: 10 });
   }),
 
@@ -85,11 +90,23 @@ export const handlers = [
       card_last4: "1234",
       status: "flagged",
       risk_score: 62.0,
+      classification: "review",
+      scoring: {
+        rule_score: 50,
+        ml_score: 55,
+        ensemble_score: 62,
+        threshold: 60,
+        classification: "review",
+      },
       user_id: "00000000-0000-0000-0000-000000000001",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
   }),
+
+  http.get("*/api/v1/transactions/:id/report", () =>
+    HttpResponse.json({ detail: "Report not found" }, { status: 404 }),
+  ),
 
   http.get("*/api/v1/monitoring/dashboard", () => {
     return HttpResponse.json({
