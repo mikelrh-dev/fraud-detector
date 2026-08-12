@@ -13,10 +13,10 @@ class TestEnsembleCombine:
     """Weighted combination of rule and ML scores."""
 
     def test_default_weights(self):
-        """Default weights (rule=0.80, ml=0.10, ctx=0.10) → 90 without context."""
+        """Default weights (rule=0.60, ml=0.25, ctx=0.15) → 85 without context."""
         scorer = EnsembleScorer()
         score = scorer.combine(rule_score=100, ml_score=100)
-        assert score == 90.0
+        assert score == 85.0
 
     def test_custom_weights_exact_math(self):
         """rule_score=60, ml_score=80, weights={rules:0.4, ml:0.6} → 72."""
@@ -144,7 +144,7 @@ class TestEnsembleClassification:
         threshold = scorer.get_threshold(amount)
         ensemble_score = scorer.combine(rule_score=rule_score, ml_score=ml_score)
         classification = scorer.classify(ensemble_score, threshold)
-        # rule=80*0.80=64, ml=60*0.10=6 → 70, threshold=70 → review
+        # rule=80*0.60=48, ml=60*0.25=15 → 63, threshold=70 → legitimate
         assert threshold == 70
-        assert ensemble_score == pytest.approx(70.0)
-        assert classification == "review"
+        assert ensemble_score == pytest.approx(63.0)
+        assert classification == "legitimate"

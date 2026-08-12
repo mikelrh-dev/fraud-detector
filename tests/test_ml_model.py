@@ -142,3 +142,75 @@ class TestMLModelScoreRange:
         features = np.array([50.0, 0.0, 0.0, 0.0, 0.0, 14.0, 0.0, 1.0, 1.0, 0.0])
         score = service.predict(features)
         assert score >= 0.0
+
+
+class TestMLModelAlignment:
+    """Integration tests for ML model alignment with production FeatureEngine (ML-ALIGN-001..005)."""
+
+    @pytest.fixture(scope="class")
+    def production_model_service(self):
+        """Load the actual production model (xgboost_paysim_v1.joblib)."""
+        service = MLModelService(model_path="models/xgboost_paysim_v1.joblib")
+        loaded = service.load_model()
+        if not loaded:
+            pytest.skip("Production model not found or failed to load")
+        return service
+
+    @pytest.fixture(scope="class")
+    def feature_engine(self):
+        """Production FeatureEngine instance."""
+        from src.services.feature_engine import FeatureEngine
+        return FeatureEngine()
+
+    def test_ml_score_high_for_crypto_large_amount(self, production_model_service, feature_engine):
+        """ML-ALIGN-004: High-risk crypto transaction should yield ml_score > 20."""
+        tx = {
+            "amount": 50000.0,
+            "merchant_name": "CryptoExchange",
+            "merchant_category": "cryptocurrency",
+            "timestamp": "2024-01-15T03:00:00+00:00",
+            "card_last4": "9999",
+        }
+        history = {
+            "avg_amount": 200.0,
+            "std_amount": 500.0,
+            "tx_count_last_5min": 10,
+            "tx_count_last_1h": 50,
+        }
+        features = feature_engine.transform(tx, user_history=history)
+        assert len(features) == 10  # ML-ALIGN-002: 10 features exact
+
+        score = production_model_service.predict(features)
+        assert score > 20.0, f"Expected ml_score > 20 for high-risk crypto tx, got {score}"
+
+    def test_ml_score_low_for_normal_grocery(self, production_model_service, feature_engine):
+        """ML-ALIGN-004: Normal grocery transaction should yield ml_score < 10."""
+        tx = {
+            "amount": 50.0,
+            "merchant_name": "Supermercado",
+            "merchant_category": "groceries",
+            "timestamp": "2024-01-15T12:00:00+00:00",
+            "card_last4": "1234",
+        }
+        history = {
+            "avg_amount": 100.0,
+            "std_amount": 20.0,
+            "tx_count_last_5min": 0,
+            "tx_count_last_1h": 2,
+        }
+        features = feature_engine.transform(tx, user_history=history)
+        assert len(features) == 10  # ML-ALIGN-002: 10 features exact
+
+        score = production_model_service.predict(features)
+        assert score < 10.0, f"Expected ml_score < 10 for normal grocery tx, got {score}"
+
+    def test_model_loads_aligned_features(self, production_model_service, feature_engine):
+        """ML-ALIGN-001/002: Production model loads and accepts 10 features from FeatureEngine."""
+        tx = {"amount": 100.0, "merchant_category": "groceries", "timestamp": "2024-01-15T12:00:00"}
+        features = feature_engine.transform(tx)
+        assert features.shape == (10,)
+        assert all(isinstance(f, (int, float, np.floating)) for f in features)
+
+        score = production_model_service.predict(features)
+        assert isinstance(score, float)
+        assert 0.0 <= score <= 100.0

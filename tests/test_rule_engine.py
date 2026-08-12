@@ -90,6 +90,108 @@ class TestRuleEngineSingleRule:
         assert score == 15
 
 
+class TestRuleEngineMerchantCategory:
+    """unusual_merchant fires on risky merchant categories (RULE-MERCH-001..004).
+
+    Uses a non-blacklisted merchant name and amount <= 5000 so the only
+    possible 20-point contribution is the category-based unusual_merchant fire.
+    """
+
+    engine = RuleEngine()
+    name = "CryptoBuy"
+    base_tx = {"amount": 100, "merchant_name": name, "card_last4": "1234"}
+
+    def test_btc_category_fires(self):
+        """Category 'btc' fires unusual_merchant with exactly 20 points."""
+        tx = {**self.base_tx, "merchant_category": "btc"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_crypto_category_fires(self):
+        """Category 'crypto' fires unusual_merchant."""
+        tx = {**self.base_tx, "merchant_category": "crypto"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_gambling_category_fires(self):
+        """Category 'gambling' fires unusual_merchant."""
+        tx = {**self.base_tx, "merchant_category": "gambling"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_casino_category_fires(self):
+        """Category 'casino' fires unusual_merchant."""
+        tx = {**self.base_tx, "merchant_category": "casino"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_money_transfer_category_fires(self):
+        """Category 'money_transfer' fires unusual_merchant."""
+        tx = {**self.base_tx, "merchant_category": "money_transfer"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_blacklisted_name_without_category_still_fires(self):
+        """Exact-name blacklist match still fires without a category (RULE-MERCH-002)."""
+        tx = {**self.base_tx, "merchant_name": "Suspicious Shop"}
+        context = {"merchant_blacklist": ["Suspicious Shop"]}
+        score, fired = self.engine.evaluate(tx, context=context)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_blacklisted_name_with_safe_category_fires(self):
+        """Blacklisted name + non-risk category fires via OR semantics (RULE-MERCH-002)."""
+        tx = {
+            **self.base_tx,
+            "merchant_name": "Suspicious Shop",
+            "merchant_category": "retail",
+        }
+        context = {"merchant_blacklist": ["Suspicious Shop"]}
+        score, fired = self.engine.evaluate(tx, context=context)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_non_risk_category_does_not_fire(self):
+        """Category 'groceries' does not fire unusual_merchant (RULE-MERCH-003)."""
+        tx = {**self.base_tx, "merchant_category": "groceries"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" not in fired
+        assert score == 0
+
+    def test_missing_category_no_crash(self):
+        """Missing merchant_category key falls back to name check without crashing."""
+        tx = dict(self.base_tx)  # no merchant_category key
+        score, fired = self.engine.evaluate(tx)
+        assert isinstance(score, float)
+        assert "unusual_merchant" not in fired
+
+    def test_empty_string_category_does_not_fire(self):
+        """Empty-string category does not fire unusual_merchant."""
+        tx = {**self.base_tx, "merchant_category": ""}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" not in fired
+        assert score == 0
+
+    def test_category_matching_case_insensitive(self):
+        """Category 'BTC' (uppercase) fires — matching is case-insensitive."""
+        tx = {**self.base_tx, "merchant_category": "BTC"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" in fired
+        assert score == 20
+
+    def test_category_fire_scores_exactly_20(self):
+        """Category fire yields only unusual_merchant with score 20.0 (RULE-MERCH-004)."""
+        tx = {**self.base_tx, "merchant_category": "btc"}
+        score, fired = self.engine.evaluate(tx)
+        assert fired == ["unusual_merchant"]
+        assert score == 20.0
+
+
 class TestRuleEngineMultipleRules:
     """Multiple rules can fire cumulatively."""
 

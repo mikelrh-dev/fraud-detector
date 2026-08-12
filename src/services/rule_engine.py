@@ -24,6 +24,11 @@ class RuleEngine:
         "country_mismatch": 15,
     }
 
+    # Merchant categories considered inherently risky regardless of the name
+    RISKY_CATEGORIES: frozenset[str] = frozenset(
+        {"btc", "crypto", "gambling", "casino", "money_transfer"}
+    )
+
     def evaluate(
         self,
         transaction: dict[str, Any],
@@ -53,10 +58,11 @@ class RuleEngine:
         if recent_txns > 3:
             fired.append("high_velocity")
 
-        # 3. Unusual merchant: merchant in blacklist
+        # 3. Unusual merchant: merchant in blacklist or category in risk set
         merchant = (transaction.get("merchant_name") or "").lower()
         blacklist = [m.lower() for m in (ctx.get("merchant_blacklist") or [])]
-        if merchant in blacklist:
+        category = (transaction.get("merchant_category") or "").lower()
+        if merchant in blacklist or category in self.RISKY_CATEGORIES:
             fired.append("unusual_merchant")
 
         # 4. Card mismatch: card_last4 not in known cards
