@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     jwt_exp_minutes: int = 15
 
     # Ensemble Weights
-    ensemble_rule_weight: float = 0.80
-    ensemble_ml_weight: float = 0.10
-    ensemble_context_weight: float = 0.10
+    ensemble_rule_weight: float = 0.60
+    ensemble_ml_weight: float = 0.25
+    ensemble_context_weight: float = 0.15
 
     # Threshold Tiers
     threshold_tiers: list[dict] = [

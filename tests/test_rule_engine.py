@@ -130,8 +130,8 @@ class TestRuleEngineMerchantCategory:
         assert score == 20
 
     def test_money_transfer_category_fires(self):
-        """Category 'money transfer' fires unusual_merchant."""
-        tx = {**self.base_tx, "merchant_category": "money transfer"}
+        """Category 'money_transfer' fires unusual_merchant."""
+        tx = {**self.base_tx, "merchant_category": "money_transfer"}
         score, fired = self.engine.evaluate(tx)
         assert "unusual_merchant" in fired
         assert score == 20

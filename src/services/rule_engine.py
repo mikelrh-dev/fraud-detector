@@ -26,7 +26,7 @@ class RuleEngine:
 
     # Merchant categories considered inherently risky regardless of the name
     RISKY_CATEGORIES: frozenset[str] = frozenset(
-        {"btc", "crypto", "gambling", "casino", "money transfer"}
+        {"btc", "crypto", "gambling", "casino", "money_transfer"}
     )
 
     def evaluate(
