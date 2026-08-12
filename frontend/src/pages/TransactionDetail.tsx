@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getTransaction } from "../api/transactions";
+import type { ScoreResponse, Transaction } from "../api/transactions";
 import apiClient from "../api/client";
+import { ScoreResultCard } from "./ScoreResultCard";
 
 interface ReportResponse {
   transaction_id: string;
@@ -82,6 +84,25 @@ const CLASSIFICATION_LABELS: Record<string, string> = {
   fraud: "Fraude",
   pending: "Pendiente",
 };
+
+/**
+ * Map a fetched transaction into the ScoreResponse shape consumed by
+ * ScoreResultCard. fired_rules is a client-side adapter constant only —
+ * it is never part of any GET API response (not persisted in fraud_scores).
+ */
+function buildScoreResponse(tx: Transaction): ScoreResponse {
+  return {
+    transaction_id: tx.id,
+    rule_score: tx.scoring?.rule_score ?? 0,
+    ml_score: tx.scoring?.ml_score ?? 0,
+    ensemble_score: tx.scoring?.ensemble_score ?? tx.risk_score ?? 0,
+    threshold: tx.scoring?.threshold ?? 0,
+    classification:
+      tx.scoring?.classification ?? statusToClassification(tx.status),
+    fired_rules: [],
+    created_at: tx.created_at,
+  };
+}
 
 export default function TransactionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -226,76 +247,18 @@ export default function TransactionDetail() {
         </section>
 
         {/* Scoring breakdown */}
-        <section className="bg-slate-900 rounded-lg border border-slate-800 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-4">
-            Score de Riesgo
-          </h2>
-          {tx.risk_score != null ? (
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-slate-400">
-                    Score General
-                  </span>
-                  <span className="text-sm font-bold text-slate-200">
-                    {tx.risk_score.toFixed(1)} / 100
-                  </span>
-                </div>
-                <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${tx.risk_score}%`,
-                      backgroundColor:
-                        tx.risk_score > 70
-                          ? "#ef4444"
-                          : tx.risk_score > 40
-                            ? "#f59e0b"
-                            : "#22c55e",
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Score bar representation */}
-              <div className="flex gap-1 h-2">
-                {[0, 1, 2, 3, 4].map((bucket) => {
-                const bucketMin = bucket * 20;
-                  const filled = tx.risk_score! > bucketMin;
-                  const color =
-                    bucket >= 4
-                      ? "#ef4444"
-                      : bucket >= 3
-                        ? "#f59e0b"
-                        : "#22c55e";
-                  return (
-                    <div
-                      key={bucket}
-                      className="flex-1 rounded"
-                      style={{
-                        backgroundColor: filled ? color : "#1e293b",
-                        opacity: filled ? 1 : 0.3,
-                      }}
-                    />
-                  );
-                })}
-              </div>
-
-              <div className="flex justify-between text-[10px] text-slate-500">
-                <span>0</span>
-                <span>20</span>
-                <span>40</span>
-                <span>60</span>
-                <span>80</span>
-                <span>100</span>
-              </div>
-            </div>
-          ) : (
+        {tx.scoring ? (
+          <ScoreResultCard result={buildScoreResponse(tx)} />
+        ) : (
+          <section className="bg-slate-900 rounded-lg border border-slate-800 p-5">
+            <h2 className="text-sm font-semibold text-slate-300 mb-4">
+              Score de Riesgo
+            </h2>
             <p className="text-sm text-slate-500">
               Score no disponible para esta transacción.
             </p>
-          )}
-        </section>
+          </section>
+        )}
 
         {/* LLM Report */}
         <section className="bg-slate-900 rounded-lg border border-slate-800 p-5">

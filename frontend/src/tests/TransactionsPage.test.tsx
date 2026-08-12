@@ -89,4 +89,19 @@ describe("TransactionsPage", () => {
       expect(screen.getByText(/50 transacciones/)).toBeInTheDocument();
     });
   });
+
+  it("shows a classification column with live scores from deterministic fixtures", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Clasificación")).toBeInTheDocument();
+    });
+
+    // Merchant 0 is a review row (risk_score 62) — score rendered live
+    const row0 = screen.getByRole("row", { name: /Merchant 0/ });
+    expect(row0).toHaveTextContent("62.0");
+    // Merchant 1 is legitimate (risk_score 15)
+    const row1 = screen.getByRole("row", { name: /Merchant 1/ });
+    expect(row1).toHaveTextContent("15.0");
+  });
 });

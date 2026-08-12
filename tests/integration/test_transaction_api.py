@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
+from src.models.fraud_score import FraudClassification, FraudScore
 from src.models.transaction import Transaction, TransactionStatus
 
 pytestmark = pytest.mark.asyncio
@@ -29,6 +30,18 @@ def _make_mock_transaction(**overrides) -> MagicMock:
     txn.created_at = overrides.get("created_at", "2024-01-15T12:00:00+00:00")
     txn.updated_at = overrides.get("updated_at", "2024-01-15T12:00:00+00:00")
     return txn
+
+
+def _make_mock_score(**overrides) -> MagicMock:
+    """Helper to create a mock FraudScore with sensible defaults."""
+    score = MagicMock(spec=FraudScore)
+    score.transaction_id = overrides.get("transaction_id", uuid4())
+    score.rule_score = overrides.get("rule_score", 45.0)
+    score.ml_score = overrides.get("ml_score", 60.0)
+    score.ensemble_score = overrides.get("ensemble_score", 52.0)
+    score.threshold = overrides.get("threshold", 70.0)
+    score.classification = overrides.get("classification", FraudClassification.REVIEW)
+    return score
 
 
 class TestCreateTransaction:
@@ -116,12 +129,20 @@ class TestGetTransaction:
     async def test_get_existing_transaction_returns_200(
         self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
     ):
-        """Existing transaction should return 200 with details."""
+        """Existing transaction should return 200 with details and scoring breakdown."""
         txn = _make_mock_transaction()
+        score = _make_mock_score(transaction_id=txn.id)
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = txn
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        txn_result = MagicMock()
+        txn_result.scalar_one_or_none.return_value = txn
+
+        score_scalar = MagicMock()
+        score_scalar.all.return_value = [score]
+        score_result = MagicMock()
+        score_result.scalars.return_value = score_scalar
+
+        # Order matters: transaction lookup first, then batched score query
+        mock_db.execute = AsyncMock(side_effect=[txn_result, score_result])
 
         response = await test_client.get(
             f"/api/v1/transactions/{txn.id}",
@@ -131,6 +152,40 @@ class TestGetTransaction:
         data = response.json()
         assert data["merchant_name"] == "Test Store"
         assert data["currency"] == "USD"
+        # Score-aware fields (FRD-DASH-SCORE-001 / FRD-DASH-SCORE-003)
+        assert data["risk_score"] == 52.0
+        assert data["classification"] == "review"
+        assert data["scoring"]["rule_score"] == 45.0
+        assert data["scoring"]["ml_score"] == 60.0
+        assert data["scoring"]["ensemble_score"] == 52.0
+        assert data["scoring"]["threshold"] == 70.0
+        assert data["scoring"]["classification"] == "review"
+
+    async def test_get_transaction_without_score_returns_nulls(
+        self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
+    ):
+        """Transaction without a fraud_scores row returns nulls and HTTP 200."""
+        txn = _make_mock_transaction()
+
+        txn_result = MagicMock()
+        txn_result.scalar_one_or_none.return_value = txn
+
+        empty_scalar = MagicMock()
+        empty_scalar.all.return_value = []
+        empty_score_result = MagicMock()
+        empty_score_result.scalars.return_value = empty_scalar
+
+        mock_db.execute = AsyncMock(side_effect=[txn_result, empty_score_result])
+
+        response = await test_client.get(
+            f"/api/v1/transactions/{txn.id}",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["risk_score"] is None
+        assert data["scoring"] is None
+        assert data["classification"] is None
 
     async def test_get_nonexistent_transaction_returns_404(
         self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
@@ -153,8 +208,9 @@ class TestListTransactions:
     async def test_list_transactions_returns_paginated(
         self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
     ):
-        """List should return paginated results."""
+        """List should return paginated results with score-aware rows."""
         txn = _make_mock_transaction()
+        score = _make_mock_score(transaction_id=txn.id)
 
         # Mock the result for list query (scalars().all())
         mock_scalar_result = MagicMock()
@@ -167,9 +223,19 @@ class TestListTransactions:
         mock_count_result = MagicMock()
         mock_count_result.all.return_value = [(txn.id,)]
 
+        # Mock the batched score query
+        score_scalar = MagicMock()
+        score_scalar.all.return_value = [score]
+        score_result = MagicMock()
+        score_result.scalars.return_value = score_scalar
+
         mock_db.execute = AsyncMock()
-        # First call returns count, second returns list
-        mock_db.execute.side_effect = [mock_count_result, mock_select_result]
+        # Order matters: count → page → batched scores (third position)
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            mock_select_result,
+            score_result,
+        ]
 
         response = await test_client.get(
             "/api/v1/transactions?page=1&page_size=20",
@@ -181,6 +247,52 @@ class TestListTransactions:
         assert "total" in data
         assert data["page"] == 1
         assert data["page_size"] == 20
+        # Score-aware fields (FRD-DASH-SCORE-002 / FRD-DASH-SCORE-003)
+        assert data["items"][0]["risk_score"] == 52.0
+        assert data["items"][0]["classification"] == "review"
+
+    async def test_list_batches_score_queries_no_n_plus_1(
+        self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
+    ):
+        """Scores for a 2-row page must come from exactly one batched query."""
+        txns = [_make_mock_transaction(), _make_mock_transaction()]
+        scores = [
+            _make_mock_score(transaction_id=txns[0].id),
+            _make_mock_score(transaction_id=txns[1].id),
+        ]
+
+        # Count query
+        mock_count_result = MagicMock()
+        mock_count_result.all.return_value = [(t.id,) for t in txns]
+
+        # Page query
+        page_scalar = MagicMock()
+        page_scalar.all.return_value = txns
+        page_result = MagicMock()
+        page_result.scalars.return_value = page_scalar
+
+        # Batched score query (one for both rows)
+        score_scalar = MagicMock()
+        score_scalar.all.return_value = scores
+        score_result = MagicMock()
+        score_result.scalars.return_value = score_scalar
+
+        mock_db.execute = AsyncMock()
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            page_result,
+            score_result,
+        ]
+
+        response = await test_client.get(
+            "/api/v1/transactions?page=1&page_size=20",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 2
+        # count + page + exactly ONE batched score query — no per-row queries
+        assert mock_db.execute.call_count == 3
 
 
 class TestDeleteTransaction:
