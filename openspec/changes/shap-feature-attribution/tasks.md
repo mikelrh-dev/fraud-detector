@@ -29,10 +29,10 @@ No PR chain — direct main merge per user preference; review batches sequential
 
 ## Batch 2: API + Schemas + Integration Tests
 
-- [ ] **2.1 RED — `tests/integration/test_transaction_api.py`**: detail ⇒ 5 ordered contributions (4th execute); none ⇒ null; unscored ⇒ scoring null (2 executes); list `call_count==3`; POST enqueues ONLY fraud/review, snapshot==scored vector; redis down ⇒ 201 (patch `enqueue`). (FD-SHP-001, FRD-SHP-001, SHP-005, SHP-007)
-- [ ] **2.2 GREEN — `src/schemas/transaction.py`**: `ShapContribution{feature, contribution}`; `ScoreBreakdown.shap_contributions: list | None = None`. (FRD-SHP-001)
-- [ ] **2.3 GREEN — `src/api/v1/transactions.py`**: POST — fraud/review ⇒ best-effort `enqueue("fraud:shap", {transaction_id, classification, features, feature_names, model_fingerprint})`; detail — if score, one `select(ShapAttribution).order_by(rank)` → `shap_contributions`; list + report untouched. (FD-SHP-001, FRD-SHP-001, SHP-007)
-- [ ] **2.4 REFACTOR — Gate**: `pytest tests/ -v --cov=src`, `ruff`, `mypy` green; SHP-007 unchanged. (FD-SHP-001, FRD-SHP-001, SHP-005, SHP-007)
+- [x] **2.1 RED — `tests/integration/test_transaction_api.py`**: detail ⇒ 5 ordered contributions (4th execute); none ⇒ null; unscored ⇒ scoring null (2 executes); list `call_count==3`; POST enqueues ONLY fraud/review, snapshot==scored vector; redis down ⇒ 201 (patch `enqueue`). (FD-SHP-001, FRD-SHP-001, SHP-005, SHP-007)
+- [x] **2.2 GREEN — `src/schemas/transaction.py`**: `ShapContribution{feature, contribution}`; `ScoreBreakdown.shap_contributions: list | None = None`. (FRD-SHP-001)
+- [x] **2.3 GREEN — `src/api/v1/transactions.py`**: POST — fraud/review ⇒ best-effort `enqueue("fraud:shap", {transaction_id, classification, features, feature_names, model_fingerprint})`; detail — if score, one `select(ShapAttribution).order_by(rank)` → `shap_contributions`; list + report untouched. (FD-SHP-001, FRD-SHP-001, SHP-007)
+- [x] **2.4 REFACTOR — Gate**: `pytest tests/ -v --cov=src`, `ruff`, `mypy` green; SHP-007 unchanged. (FD-SHP-001, FRD-SHP-001, SHP-005, SHP-007)
 
 ## Batch 3: Frontend + MSW + Tests
 

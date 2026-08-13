@@ -1,14 +1,15 @@
 # Apply Progress: SHAP Feature Attribution
 
 **Change**: shap-feature-attribution
-**Phase**: apply — Batch 1 (backend core)
+**Phase**: apply — Batch 1 (backend core) + Batch 2 (API + schemas + integration tests)
 **Mode**: Strict TDD (RED → GREEN → REFACTOR)
 **Branch**: `feat/shap-attribution`
-**Date**: 2026-08-13
+**Dates**: 2026-08-13 (Batch 1), 2026-08-13 (Batch 2)
 
 ## Status
 
-Batch 1 complete: **8/8 tasks** (1.1–1.8). 25 new tests, all passing. `ruff check src/` and `mypy src/` clean. Full suite: **319 passed** (baseline 294 + 25 new).
+- **Batch 1 complete**: 8/8 tasks (1.1–1.8). 25 new tests, all passing. `ruff check src/` and `mypy src/` clean. Full suite: **319 passed** (baseline 294 + 25 new).
+- **Batch 2 complete**: 4/4 tasks (2.1–2.4). 10 new tests, all passing. Full suite: **329 passed** (319 + 10 new). `ruff check src/` and `mypy src/` clean. SHP-007 invariant preserved — classification/scores/alerts untouched; SHAP strictly additive (new queue message, new detail field, one optional query).
 
 ## Decision: create_all vs Alembic (confirmed)
 
@@ -32,12 +33,16 @@ Note: `scripts/init_db.py` triggers pre-existing intentional `F401` warnings in 
 | 1.5 | `src/workers/shap_worker.py` | Unit | via 1.4 | — (implemented to pass 1.4 tests) | ✅ Passed | covered by 1.4 cases | ✅ Clean, no refactor needed |
 | 1.7 | `requirements.txt` + `docker-compose.yml` | — | N/A | — (declarative change) | ✅ `shap==0.46.*` + `shap-worker` service | ➖ Single (Triangulation skipped: declarative file change, no branching logic) | ➖ None needed |
 | 1.8 | gate: `pytest tests/ -q`, `ruff check src/`, `mypy src/` | — | ✅ 294/294 | — | ✅ 319 passed; ruff + mypy clean | — | ✅ Full gate green |
+| 2.1 | `tests/integration/test_transaction_api.py` + `tests/unit/test_schemas.py` | Integration + Unit | ✅ 319/319 | ✅ Written (schema ImportError `ShapContribution`; integration 5 failed: 3rd-execute StopIteration, missing `shap_contributions`, no `fraud:shap` enqueue, no SHAP log) | ✅ Passed | ✅ 8 cases: 5 ordered contributions, absent→null, unscored→2 executes, list call_count==3, fraud/review enqueue (2), legitimate no-enqueue, redis-down 201 | ✅ mypy narrowing restructure in detail endpoint |
+| 2.2 | `src/schemas/transaction.py` | Unit | via 2.1 | — (implemented to pass 2.1 schema tests) | ✅ Passed 17/17 | covered by 2.1 cases | ➖ None needed |
+| 2.3 | `src/api/v1/transactions.py` | Integration | via 2.1 | — (implemented to pass 2.1 API tests) | ✅ Passed 19/19 | covered by 2.1 cases | ➖ None needed |
+| 2.4 | gate: `pytest tests/ -q`, `ruff check src/`, `mypy src/` | — | ✅ 319/319 | — | ✅ 329 passed; ruff + mypy clean | — | ✅ Full gate green |
 
 ## Test Summary
 
-- **Total tests written**: 25 (3 model + 10 service + 10 worker + 2 redis)
-- **Total tests passing**: 319 (294 pre-existing + 25 new)
-- **Layers used**: Unit (25)
+- **Total tests written**: 35 (25 Batch 1 + 10 Batch 2)
+- **Total tests passing**: 329 (294 pre-existing + 35 new)
+- **Layers used**: Unit (30), Integration (5)
 - **Approval tests** (refactoring): None — no existing behavior refactored (`llm_worker.py` untouched; `src/core/redis.py` only appended `enqueue_for_retry`)
 - **Pure functions created**: `ShapService._normalize_shap_values`, `ShapService._top_k`, `ShapService.model_fingerprint` (pure, deterministic)
 
@@ -60,17 +65,31 @@ Note: `scripts/init_db.py` triggers pre-existing intentional `F401` warnings in 
 | `openspec/changes/shap-feature-attribution/tasks.md` | Modified | Batch 1 tasks marked `[x]` |
 | `openspec/changes/shap-feature-attribution/apply-progress.md` | Created | This artifact |
 
+## Files Changed (Batch 2)
+
+| File | Action | What Was Done |
+|------|--------|---------------|
+| `src/schemas/transaction.py` | Modified | `ShapContribution{feature, contribution}` schema; `ScoreBreakdown.shap_contributions: list[ShapContribution] \| None = None` (FRD-SHP-001) |
+| `src/api/v1/transactions.py` | Modified | POST step 11: best-effort `enqueue("fraud:shap", {transaction_id, classification, features: features.tolist(), feature_names, model_fingerprint})` when classification ∈ {fraud, review} (FD-SHP-001); module-level `_shap_service = ShapService()`; GET detail: one `select(ShapAttribution).order_by(rank)` only when score exists → `scoring.shap_contributions`; list + report untouched |
+| `tests/unit/test_schemas.py` | Modified | `TestShapContribution` (3) + `TestScoreBreakdown` shap cases (2); existing `model_validate` test updated with `score.shap_contributions = None` |
+| `tests/integration/test_transaction_api.py` | Modified | 200-detail gains 3rd SHAP mock + null assertion; new ordered-contributions test (single query, ORDER BY rank); unscored test asserts `call_count == 2`; new `TestCreateTransactionShapEnqueue` (fraud/review parametrized snapshot, legitimate no-enqueue, redis-down 201) |
+| `openspec/changes/shap-feature-attribution/tasks.md` | Modified | Batch 2 tasks 2.1–2.4 marked `[x]` |
+| `openspec/changes/shap-feature-attribution/apply-progress.md` | Modified | Batch 2 section merged (this artifact) |
+
 ## Deviations from Design
 
 1. **`explain()` accepts `feature_names`**: design interface showed `explain(features)`, but the queue message carries `feature_names` and the design's own testing strategy requires the name-mismatch fallback — added `feature_names: list[str] | None = None`.
 2. **`persist()` not a service method**: design listed `persist()` under `ShapService` in task 1.3, but the worker owns persistence (delete-then-insert + audit + commit in one session). Keeping persistence in the worker mirrors the LLM worker's report-persistence pattern; `ShapService` stays a pure explainer. Behavioral contract unchanged (SHP-002 met via worker tests).
 3. **`scripts/init_db.py` F401s**: pre-existing intentional side-effect imports; left as-is (documented above).
+4. **Batch 2 — no deviations**: schema, POST enqueue (message exactly per design Interfaces contract minus `retry_count`, which the worker defaults to 0), and detail single-query match design. Detail returns `null` when no rows (empty list is never assigned) per FRD-SHP-001 "null when none exist". `model_fingerprint` sourced from `_shap_service.model_fingerprint()` (module-level singleton, mirrors other services).
 
 ## Issues Found
 
 - Float precision in the service test (`0.1 * 7 == 0.7000000000000001`) — fixed with `pytest.approx`; production logic was correct.
 - `alembic.ini` exists but its only revision is an empty scaffold — new table relies on `create_all`; if Alembic is adopted later, a migration for `shap_attributions` must be generated.
+- Batch 2: mypy `union-attr` on `scoring` in the detail endpoint (no narrowing correlation between `score is not None` and `scoring is not None`) — restructured to compute `scoring` inside the `if score is not None:` block; mypy clean.
+- Batch 2: `test_legitimate_does_not_enqueue_shap` passes vacuously in RED (no enqueue exists yet); it becomes a real guard after implementation (would fail on over-enqueueing) and is part of the triangulation set with the positive fraud/review cases.
 
 ## Next
 
-**Batch 2** (API + schemas + integration tests): tasks 2.1–2.4 — `src/schemas/transaction.py` `ShapContribution` + `ScoreBreakdown.shap_contributions`; POST enqueue to `fraud:shap` (fraud/review only, snapshot vector, best-effort); detail GET one ordered query; integration tests in `tests/integration/test_transaction_api.py`.
+**Batch 3** (frontend + MSW + tests): tasks 3.1–3.5 — `frontend/src/tests/mocks/handlers.ts` detail fixture gains 5 `shap_contributions`; `TransactionDetail.test.tsx` render/hide; `frontend/src/api/transactions.ts` `ShapContribution` type; `frontend/src/lib/shap.ts` ES labels; `ShapAttributionCard.tsx`; `TransactionDetail.tsx` render; gate `npm test` + `npx tsc --noEmit`.
