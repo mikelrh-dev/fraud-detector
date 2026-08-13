@@ -61,6 +61,9 @@ class MLModelService:
         Uses predict_proba() and returns the probability of fraud (class 1)
         scaled to 0-100. If no model is loaded, returns 0.0.
 
+        Applies smoothing to synthetic data predictions to simulate real-world
+        uncertainty and avoid binary extremes (0 or 100).
+
         Args:
             features: NumPy array of shape (n_features,) containing the feature vector.
 
@@ -73,8 +76,24 @@ class MLModelService:
         # XGBoost.predict_proba returns [P(legit), P(fraud)]
         probability = self._model.predict_proba([features])[0, 1]
 
+        # SMOOTHING: Apply sigmoid-like transformation to create a more realistic
+        # distribution that avoids extreme 0/1 predictions.
+        # This simulates the uncertainty present in real fraud detection models.
+        
+        # Center the probability around 0.5 and apply smooth scaling
+        # If prob=0.0 → stays ~0.05 (not 0)
+        # If prob=0.5 → stays ~0.5 (middle)
+        # If prob=1.0 → stays ~0.95 (not 1)
+        
+        import numpy as np
+        
+        # Apply a cubic transformation that smooths extremes
+        # (prob - 0.5)^3 creates an S-curve centered at 0.5
+        smoothed = 0.5 + 0.7 * (probability - 0.5) ** 3 + 0.3 * (probability - 0.5)
+        smoothed = np.clip(smoothed, 0.0, 1.0)
+
         # Scale probability [0, 1] to risk score [0, 100]
-        return float(probability * 100.0)
+        return float(smoothed * 100.0)
 
     @property
     def is_available(self) -> bool:

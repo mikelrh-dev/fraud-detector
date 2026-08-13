@@ -16,7 +16,7 @@ class RuleEngine:
     """
 
     WEIGHTS: dict[str, float] = {
-        "high_amount": 25,
+        "high_amount": 35,  # Increased from 25 to catch mid-range fraud better
         "high_velocity": 25,
         "velocity_burst": 30,
         "unusual_merchant": 20,

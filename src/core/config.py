@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     # Threshold Tiers
     threshold_tiers: list[dict] = [
         {"min_amount": 0, "max_amount": 1000, "threshold": 70, "label": "low"},
-        {"min_amount": 1001, "max_amount": 10000, "threshold": 60, "label": "medium"},
-        {"min_amount": 10001, "max_amount": 50000, "threshold": 50, "label": "high"},
+        {"min_amount": 1001, "max_amount": 10000, "threshold": 50, "label": "medium"},  # Lowered from 60
+        {"min_amount": 10001, "max_amount": 50000, "threshold": 45, "label": "high"},  # Lowered from 50 for consistency
         {"min_amount": 50001, "max_amount": float("inf"), "threshold": 40, "label": "critical"},
     ]
 

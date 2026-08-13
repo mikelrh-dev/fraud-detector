@@ -15,6 +15,7 @@ Usage:
 
 import csv
 import logging
+import random
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -22,6 +23,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 from imblearn.over_sampling import SMOTE
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (auc, confusion_matrix,
                              precision_recall_curve, precision_score, recall_score,
                              roc_auc_score)
@@ -240,6 +242,80 @@ def load_paysim_data(path: str) -> tuple[list[dict], np.ndarray]:
     return transactions, np.array(labels)
 
 
+def add_realistic_noise(
+    transactions: list[dict],
+    labels: np.ndarray,
+    fraud_noise_intensity: float = 0.15,
+) -> tuple[list[dict], np.ndarray]:
+    """
+    Add realistic noise to synthetic transactions to prevent overfitting.
+    
+    For FRAUD transactions, add:
+    - Amount variance ±5-15% (card testing often uses slightly different amounts)
+    - Merchant name typos 3% (fraudsters obfuscate merchant names)
+    - Timestamp jitter ±10-30 minutes (avoid exact patterns)
+    
+    For LEGITIMATE transactions, add minimal noise:
+    - Small amount variance ±2-5% (natural rounding)
+    - Rare typos 0.5%
+    
+    Args:
+        transactions: List of transaction dicts
+        labels: np.array of fraud labels (0/1)
+        fraud_noise_intensity: How much noise to add to fraud txs (0.15 = 15%)
+        
+    Returns:
+        (noisy_transactions, labels) tuple
+    """
+    rng = np.random.RandomState(42)
+    noisy_txs = []
+    
+    for tx, label in zip(transactions, labels):
+        tx_copy = tx.copy()
+        
+        if label == 1:  # FRAUD
+            # Amount variance: ±5-15%
+            amount_factor = rng.uniform(1 - fraud_noise_intensity, 1 + fraud_noise_intensity)
+            tx_copy["amount"] = max(0.01, tx_copy["amount"] * amount_factor)
+            
+            # Merchant name typo: 3% chance
+            if rng.random() < 0.03 and len(tx_copy["merchant_name"]) > 2:
+                merchant = tx_copy["merchant_name"]
+                idx = rng.randint(0, len(merchant))
+                # Replace character with random letter/digit
+                new_char = rng.choice(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+                merchant = merchant[:idx] + new_char + merchant[idx+1:]
+                tx_copy["merchant_name"] = merchant
+            
+            # Timestamp jitter: ±10-30 minutes
+            try:
+                ts = datetime.fromisoformat(tx_copy["timestamp"])
+                jitter_minutes = rng.randint(-30, 30)
+                ts = ts + timedelta(minutes=jitter_minutes)
+                tx_copy["timestamp"] = ts.isoformat()
+            except (ValueError, KeyError):
+                pass  # Skip if timestamp can't be parsed
+                
+        else:  # LEGITIMATE
+            # Smaller variance: ±2-5%
+            amount_factor = rng.uniform(0.98, 1.05)
+            tx_copy["amount"] = max(0.01, tx_copy["amount"] * amount_factor)
+            
+            # Rare typo: 0.5%
+            if rng.random() < 0.005 and len(tx_copy["merchant_name"]) > 2:
+                merchant = tx_copy["merchant_name"]
+                idx = rng.randint(0, len(merchant))
+                new_char = rng.choice(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+                merchant = merchant[:idx] + new_char + merchant[idx+1:]
+                tx_copy["merchant_name"] = merchant
+        
+        noisy_txs.append(tx_copy)
+    
+    logger.info("Added realistic noise to %d transactions (fraud: %.1f%% noise intensity)",
+                len(transactions), fraud_noise_intensity * 100)
+    return noisy_txs, labels
+
+
 def build_feature_vectors(
     transactions: list[dict],
     histories: list[dict] | None = None,
@@ -286,6 +362,10 @@ def main() -> None:
     logger.info("Total training samples: %d (fraud: %d, legit: %d)",
                 len(all_labels), int(np.sum(all_labels)), int(np.sum(all_labels == 0)))
 
+    # 3.5. ADD REALISTIC NOISE to prevent overfitting
+    logger.info("Adding realistic noise to synthetic data...")
+    all_transactions, all_labels = add_realistic_noise(all_transactions, all_labels, fraud_noise_intensity=0.40)
+
     # 4. Extract features using production FeatureEngine
     logger.info("Extracting features with production FeatureEngine...")
     X = build_feature_vectors(
@@ -305,6 +385,11 @@ def main() -> None:
                 len(X_train), int(np.sum(y_train)), int(np.sum(y_train == 0)))
     logger.info("Test:  %d (fraud: %d, legit: %d)",
                 len(X_test), int(np.sum(y_test)), int(np.sum(y_test == 0)))
+    
+    # ADD FEATURE-LEVEL NOISE to prevent overfit
+    rng = np.random.RandomState(42)
+    X_train = X_train + rng.normal(0, 0.1, X_train.shape)  # Gaussian noise in feature space
+    logger.info("Added Gaussian noise (std=0.1) to train features")
 
     # 6. SMOTE only on TRAIN (no leakage)
     contamination = float(np.sum(y_train)) / len(y_train)
@@ -322,16 +407,18 @@ def main() -> None:
 
     logger.info("Training XGBoost (scale_pos_weight=%.1f)...", scale_pos)
     model = xgb.XGBClassifier(
-        n_estimators=500,
-        max_depth=6,
+        n_estimators=200,  # Reduced from 500 to prevent overfitting
+        max_depth=4,  # Reduced from 6 to prevent overfitting
         learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        subsample=0.7,  # Reduced from 0.8
+        colsample_bytree=0.7,  # Reduced from 0.8
         scale_pos_weight=scale_pos,
         eval_metric="aucpr",
         use_label_encoder=False,
         random_state=42,
         n_jobs=-1,
+        reg_alpha=1.0,  # L1 regularization to reduce complexity
+        reg_lambda=2.0,  # L2 regularization to reduce complexity
     )
 
     model.fit(
@@ -339,6 +426,12 @@ def main() -> None:
         eval_set=[(X_test, y_test)],
         verbose=True,
     )
+
+    # 7.5. CALIBRATE the model to get smooth probabilities (sigmoid method)
+    logger.info("Calibrating model with sigmoid method for smooth probabilities...")
+    calibrated_model = CalibratedClassifierCV(model, method='sigmoid', cv=5)
+    calibrated_model.fit(X_train_res, y_train_res)
+    model = calibrated_model  # Use calibrated model for predictions
 
     # 8. Evaluate on test set
     logger.info("=== Evaluation on Test Set ===")
