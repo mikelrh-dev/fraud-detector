@@ -13,7 +13,11 @@ from src.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from src.schemas.transaction import ScoreBreakdown, TransactionResponse
+from src.schemas.transaction import (
+    ScoreBreakdown,
+    ShapContribution,
+    TransactionResponse,
+)
 
 
 class TestAuthSchemas:
@@ -99,6 +103,29 @@ class TestAuthSchemas:
         assert data.is_active is True
 
 
+class TestShapContribution:
+    """ShapContribution schema validation tests (FRD-SHP-001)."""
+
+    def test_valid_contribution(self):
+        """ShapContribution should accept feature and signed contribution."""
+        contribution = ShapContribution(feature="amount", contribution=0.75)
+        assert contribution.feature == "amount"
+        assert contribution.contribution == 0.75
+
+    def test_negative_contribution_preserved(self):
+        """Negative contributions (pushing toward legitimate) must be kept signed."""
+        contribution = ShapContribution(feature="amount_vs_user_avg", contribution=-0.25)
+        assert contribution.model_dump() == {
+            "feature": "amount_vs_user_avg",
+            "contribution": -0.25,
+        }
+
+    def test_invalid_contribution_type_raises(self):
+        """Non-numeric contribution should fail validation."""
+        with pytest.raises(ValidationError):
+            ShapContribution(feature="amount", contribution="high")
+
+
 class TestScoreBreakdown:
     """ScoreBreakdown nested schema validation tests."""
 
@@ -110,6 +137,8 @@ class TestScoreBreakdown:
         score.ensemble_score = 52.0
         score.threshold = 70.0
         score.classification = FraudClassification.REVIEW
+        # FraudScore has no shap_contributions attribute — must default to null
+        score.shap_contributions = None
 
         breakdown = ScoreBreakdown.model_validate(score)
 
@@ -118,6 +147,37 @@ class TestScoreBreakdown:
         assert breakdown.ensemble_score == 52.0
         assert breakdown.threshold == 70.0
         assert breakdown.classification == "review"
+        assert breakdown.shap_contributions is None
+
+    def test_shap_contributions_defaults_to_none(self):
+        """shap_contributions should default to None when not provided."""
+        breakdown = ScoreBreakdown(
+            rule_score=45.0,
+            ml_score=60.0,
+            ensemble_score=52.0,
+            threshold=70.0,
+            classification="review",
+        )
+        assert breakdown.shap_contributions is None
+
+    def test_shap_contributions_accepts_ordered_list(self):
+        """shap_contributions should accept an ordered list of contributions."""
+        breakdown = ScoreBreakdown(
+            rule_score=45.0,
+            ml_score=60.0,
+            ensemble_score=52.0,
+            threshold=70.0,
+            classification="fraud",
+            shap_contributions=[
+                ShapContribution(feature="amount", contribution=0.80),
+                ShapContribution(feature="merchant_risk_level", contribution=-0.30),
+            ],
+        )
+        assert breakdown.shap_contributions is not None
+        assert breakdown.shap_contributions[0].feature == "amount"
+        assert breakdown.shap_contributions[0].contribution == 0.80
+        assert breakdown.shap_contributions[1].feature == "merchant_risk_level"
+        assert breakdown.shap_contributions[1].contribution == -0.30
 
     def test_transaction_response_optional_fields_default_to_none(self):
         """risk_score/classification/scoring should default to None."""
