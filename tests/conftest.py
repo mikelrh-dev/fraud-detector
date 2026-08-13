@@ -8,9 +8,10 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.main import app
-from src.core.dependencies import get_db, get_redis
+from src.core.dependencies import get_db, get_redis, get_velocity_store
 from src.core.security import create_access_token, hash_password
 from src.models.user import User, UserRole
+from src.services.velocity_store import VelocityStore
 
 
 @pytest.fixture
@@ -28,10 +29,28 @@ def mock_db() -> AsyncMock:
 
 @pytest.fixture
 def mock_redis() -> AsyncMock:
-    """Provide a mock Redis client."""
+    """Provide a mock Redis client with velocity ZSET methods.
+
+    ``pipeline()`` returns a mock pipeline whose ``execute`` defaults to
+    ``[0, 0, 0]`` (trim ok, zero 5min counts, zero 1h counts) so the
+    velocity path is inert unless a test seeds it.
+    """
     redis = AsyncMock()
     redis.exists = AsyncMock(return_value=0)
     redis.setex = AsyncMock()
+    redis.zadd = AsyncMock(return_value=1)
+    redis.expire = AsyncMock(return_value=True)
+    redis.zremrangebyscore = AsyncMock(return_value=0)
+    redis.zcount = AsyncMock(return_value=0)
+
+    pipe = MagicMock()
+    pipe.zadd = MagicMock(return_value=1)
+    pipe.expire = MagicMock(return_value=True)
+    pipe.zremrangebyscore = MagicMock(return_value=0)
+    pipe.zcount = MagicMock(return_value=0)
+    pipe.execute = AsyncMock(return_value=[0, 0, 0])
+    redis.pipeline = MagicMock(return_value=pipe)
+
     return redis
 
 
@@ -80,8 +99,12 @@ async def test_client(mock_db, mock_redis) -> AsyncClient:
     async def _override_get_redis():
         yield mock_redis
 
+    def _override_get_velocity_store():
+        return VelocityStore(redis=mock_redis)
+
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_redis] = _override_get_redis
+    app.dependency_overrides[get_velocity_store] = _override_get_velocity_store
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

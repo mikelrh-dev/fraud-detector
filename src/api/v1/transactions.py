@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
 from src.core.config import settings
-from src.core.dependencies import get_current_user, get_db, require_role
+from src.core.dependencies import get_current_user, get_db, get_velocity_store, require_role
 from src.core.redis import enqueue
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
@@ -36,6 +36,7 @@ from src.services.transaction import (
     get_scores_for_transactions,
     get_transaction,
 )
+from src.services.velocity_store import VelocityStore
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ async def create_and_score_transaction(
     payload: TransactionCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    velocity_store: VelocityStore = Depends(get_velocity_store),
 ) -> ScoreResponse:
     """Create a transaction and run the full scoring pipeline.
 
@@ -91,15 +93,11 @@ async def create_and_score_transaction(
     )
 
     # 2. Build context for rule engine
-    # Fetch recent transactions for velocity + known cards
-    five_min_ago = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
-    recent_query = select(Transaction).where(
-        Transaction.user_id == payload.user_id,
-        Transaction.deleted_at.is_(None),
-        Transaction.created_at >= five_min_ago,
-    )
-    recent_result = await db.execute(recent_query)
-    recent_txns = list(recent_result.scalars().all())
+    # Record the txn in the velocity store (Redis ZSET), then read real
+    # 5min/1h counts. This replaces the per-request 5-minute Postgres scan
+    # (Query A); counters fall back to Postgres when Redis is unavailable.
+    await velocity_store.record_transaction(payload.user_id, txn.id, txn.created_at)
+    velocity_counts = await velocity_store.get_counts(payload.user_id, db)
 
     # All user's non-deleted transactions for known cards
     all_user_query = select(Transaction).where(
@@ -122,7 +120,7 @@ async def create_and_score_transaction(
         "country": "AR",  # simulate home country for demo purposes
     }
     context: dict[str, Any] = {
-        "recent_transactions": len(recent_txns),
+        "recent_transactions": velocity_counts["5min"],
         "known_cards": known_cards,
         "merchant_blacklist": ["crypto exchange pro", "online gambling", "money transfer now"],
         "home_country": "AR",
@@ -133,8 +131,8 @@ async def create_and_score_transaction(
     user_history = {
         "avg_amount": float(np.mean([float(t.amount) for t in all_user_txns])) if all_user_txns else 0.0,
         "std_amount": float(np.std([float(t.amount) for t in all_user_txns])) if len(all_user_txns) > 1 else 0.0,
-        "tx_count_last_5min": len(recent_txns),
-        "tx_count_last_1h": len(recent_txns),
+        "tx_count_last_5min": velocity_counts["5min"],
+        "tx_count_last_1h": velocity_counts["1h"],
     }
     features = _feature_engine.transform(tx_data, user_history=user_history)
     ml_score = _ml_service.predict(features)

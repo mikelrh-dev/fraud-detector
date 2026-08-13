@@ -3,11 +3,13 @@
 Uses the test client with mocked DB and Redis dependencies.
 """
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
+from redis.exceptions import ConnectionError
 
 from src.models.fraud_score import FraudClassification, FraudScore
 from src.models.transaction import Transaction, TransactionStatus
@@ -42,6 +44,26 @@ def _make_mock_score(**overrides) -> MagicMock:
     score.threshold = overrides.get("threshold", 70.0)
     score.classification = overrides.get("classification", FraudClassification.REVIEW)
     return score
+
+
+def _velocity_pipe(*execute_results: object) -> MagicMock:
+    """Build a mock Redis pipeline whose execute resolves to the given results."""
+    pipe = MagicMock()
+    pipe.zadd = MagicMock(return_value=1)
+    pipe.expire = MagicMock(return_value=True)
+    pipe.zremrangebyscore = MagicMock(return_value=0)
+    pipe.zcount = MagicMock(return_value=0)
+    pipe.execute = AsyncMock(return_value=list(execute_results))
+    return pipe
+
+
+def _empty_scalars_result() -> MagicMock:
+    """Mock execute result whose scalars().all() yields no rows."""
+    scalar = MagicMock()
+    scalar.all.return_value = []
+    result = MagicMock()
+    result.scalars.return_value = scalar
+    return result
 
 
 class TestCreateTransaction:
@@ -323,3 +345,80 @@ class TestDeleteTransaction:
             headers=auth_headers,
         )
         assert response.status_code == 403
+
+
+class TestCreateTransactionVelocity:
+    """POST /api/v1/transactions — Redis velocity counts drive scoring (FD-VEL-001..003)."""
+
+    _PAYLOAD = {
+        "amount": 500.00,
+        "currency": "USD",
+        "merchant_name": "Grocery Store",
+        "merchant_category": "groceries",
+        "card_last4": "1234",
+        "user_id": "00000000-0000-0000-0000-000000000001",
+    }
+
+    async def test_velocity_count_fires_high_velocity_rule(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_redis: AsyncMock, auth_headers: dict
+    ):
+        """Seeded 5min count of 4 must fire high_velocity (>3, self-inclusive)."""
+        mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
+        # record pipeline (ignored) then read pipeline with 4 txns in 5min / 1h
+        mock_redis.pipeline.side_effect = [
+            _velocity_pipe(1, True, 0),
+            _velocity_pipe(0, 4, 4),
+        ]
+
+        response = await test_client.post("/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers)
+
+        assert response.status_code == 201
+        assert "high_velocity" in response.json()["fired_rules"]
+
+    async def test_1h_count_is_distinct_from_5min_and_no_query_a(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_redis: AsyncMock, auth_headers: dict
+    ):
+        """2 txns in 5min / 7 in 1h: the pipeline must be asked both windows
+        (FD-VEL-002) and Query A is gone — only Query B touches Postgres."""
+        mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
+        pipe_read = _velocity_pipe(0, 2, 7)
+        mock_redis.pipeline.side_effect = [
+            _velocity_pipe(1, True, 0),
+            pipe_read,
+        ]
+
+        response = await test_client.post("/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers)
+
+        assert response.status_code == 201
+        assert "high_velocity" not in response.json()["fired_rules"]
+        # Both velocity windows were counted in the read pipeline (real 1h, not the 5min dup)
+        assert pipe_read.zcount.call_count == 2
+        mins = [call.args[1] for call in pipe_read.zcount.call_args_list]
+        assert mins[0] != mins[1]
+        assert all(call.args[2] == "+inf" for call in pipe_read.zcount.call_args_list)
+        # Exactly one Postgres query (Query B — known cards / amount stats); no 5-min scan
+        assert mock_db.execute.call_count == 1
+
+    async def test_redis_down_falls_back_to_postgres(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_redis: AsyncMock,
+        auth_headers: dict, caplog: pytest.LogCaptureFixture,
+    ):
+        """Redis unreachable: scoring completes via PG velocity values, HTTP 201 (FD-VEL-003)."""
+        mock_redis.pipeline = MagicMock(side_effect=ConnectionError("redis down"))
+
+        now = datetime.now(tz=timezone.utc)
+        pg_scalar = MagicMock()
+        pg_scalar.all.return_value = [
+            now - timedelta(minutes=1),  # in 5min
+            now - timedelta(minutes=20),  # in 1h but not 5min
+        ]
+        pg_result = MagicMock()
+        pg_result.scalars.return_value = pg_scalar
+        # fallback query first, then Query B
+        mock_db.execute = AsyncMock(side_effect=[pg_result, _empty_scalars_result()])
+
+        response = await test_client.post("/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers)
+
+        assert response.status_code == 201
+        assert mock_db.execute.call_count == 2  # _pg_counts + Query B
+        assert any("redis" in r.message.lower() for r in caplog.records)

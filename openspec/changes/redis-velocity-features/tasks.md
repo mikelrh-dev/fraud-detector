@@ -40,19 +40,19 @@ Chain strategy: feature-branch-chain
 
 ### Phase 3: RED — Integration tests
 
-- [ ] 3.1 Extend `tests/conftest.py`: mock_redis ZSET AsyncMocks + `pipeline` (default execute `[0,0,0]`) + `get_velocity_store` override [FD-VEL-001]
-- [ ] 3.2 Add failing POST tests: seeded zcount `[4,4]`→201 + `"high_velocity"` in fired_rules; `[2,7]`→both window mins, 1h≠5min [FD-VEL-001, FD-VEL-002]
-- [ ] 3.3 Add failing test: pipeline raises→201 via PG fallback + caplog warning; exactly one `db.execute` (Query B only) [FD-VEL-003, FD-VEL-001]
-- [ ] 3.4 Verify existing POST tests stay green with default zcount=0 (regression) [FD-VEL-002]
+- [x] 3.1 Extend `tests/conftest.py`: mock_redis ZSET AsyncMocks + `pipeline` (default execute `[0,0,0]`) + `get_velocity_store` override [FD-VEL-001]
+- [x] 3.2 Add failing POST tests: seeded zcount `[4,4]`→201 + `"high_velocity"` in fired_rules; `[2,7]`→both window mins, 1h≠5min [FD-VEL-001, FD-VEL-002]
+- [x] 3.3 Add failing test: pipeline raises→201 via PG fallback + caplog warning; exactly one `db.execute` (Query B only) [FD-VEL-003, FD-VEL-001]
+- [x] 3.4 Verify existing POST tests stay green with default zcount=0 (regression) [FD-VEL-002]
 
 ### Phase 4: GREEN — Hot path wiring
 
-- [ ] 4.1 Modify `src/api/v1/transactions.py`: `Depends(get_velocity_store)`; record txn; `get_counts`; delete Query A (L95-102); `context.recent_transactions`=5min; `user_history` 5min/1h from counts [FD-VEL-001, FD-VEL-002]
-- [ ] 4.2 Run `pytest tests/ -v --cov=src` (≥80%), `ruff check src/`, `mypy src/` — all green [Success criteria]
+- [x] 4.1 Modify `src/api/v1/transactions.py`: `Depends(get_velocity_store)`; record txn; `get_counts`; delete Query A (L95-102); `context.recent_transactions`=5min; `user_history` 5min/1h from counts [FD-VEL-001, FD-VEL-002]
+- [x] 4.2 Run `pytest tests/ -v --cov=src` (≥80%), `ruff check src/`, `mypy src/` — all green [Success criteria]
 
 ### Phase 5: Documentation
 
-- [ ] 5.1 Document VEL-STORE-006 accepted divergence (Redis includes soft-deleted ≤24h vs PG fallback excludes) in `velocity_store.py` docstring [VEL-STORE-006]
+- [x] 5.1 Document VEL-STORE-006 accepted divergence (Redis includes soft-deleted ≤24h vs PG fallback excludes) in `velocity_store.py` docstring [VEL-STORE-006]
 
 ## PR 2 — Retraining Alignment (base: PR 1 branch)
 
