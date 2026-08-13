@@ -17,10 +17,12 @@ from src.core.dependencies import get_current_user, get_db, get_velocity_store, 
 from src.core.redis import enqueue
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
+from src.models.shap_attribution import ShapAttribution
 from src.models.transaction import Transaction, TransactionStatus
 from src.schemas.scoring import ScoreResponse
 from src.schemas.transaction import (
     ScoreBreakdown,
+    ShapContribution,
     TransactionCreate,
     TransactionListResponse,
     TransactionResponse,
@@ -30,6 +32,7 @@ from src.services.ensemble import EnsembleScorer
 from src.services.feature_engine import FeatureEngine
 from src.services.ml_model import MLModelService
 from src.services.rule_engine import RuleEngine
+from src.services.shap_service import ShapService
 from src.services.transaction import (
     create_transaction,
     delete_transaction,
@@ -56,6 +59,7 @@ _ensemble_scorer = EnsembleScorer()
 _audit_service = AuditService()
 _ml_service = MLModelService()
 _feature_engine = FeatureEngine()
+_shap_service = ShapService()
 
 # Load ML model at startup (synchronous, runs once)
 _ml_service.load_model()
@@ -216,6 +220,22 @@ async def create_and_score_transaction(
     except Exception:
         logger.exception("Failed to enqueue LLM report request")
 
+    # 11. Enqueue SHAP attribution request (FD-SHP-001) — best-effort, only for
+    # fraud/review. The message snapshots the EXACT feature vector used for
+    # scoring (features.tolist()) so the worker explains the scored vector,
+    # never a recalculation. A Redis failure must not fail the request.
+    if classification in ("fraud", "review"):
+        try:
+            await enqueue("fraud:shap", {
+                "transaction_id": str(txn.id),
+                "classification": classification,
+                "features": features.tolist(),
+                "feature_names": _feature_engine.get_feature_names(),
+                "model_fingerprint": _shap_service.model_fingerprint(),
+            })
+        except Exception:
+            logger.exception("Failed to enqueue SHAP attribution request")
+
     return ScoreResponse(
         transaction_id=txn.id,
         rule_score=rule_score,
@@ -315,6 +335,24 @@ async def get_transaction_endpoint(
         )
     scores = await get_scores_for_transactions(db, [transaction_id])
     score = scores.get(transaction_id)
+    scoring: ScoreBreakdown | None = None
+
+    # FRD-SHP-001: one ordered query for attribution rows — only when a score
+    # exists (unscored transactions skip it). Null when no rows exist.
+    if score is not None:
+        scoring = ScoreBreakdown.model_validate(score)
+        shap_result = await db.execute(
+            select(ShapAttribution)
+            .where(ShapAttribution.transaction_id == transaction_id)
+            .order_by(ShapAttribution.rank)
+        )
+        rows = list(shap_result.scalars().all())
+        if rows:
+            scoring.shap_contributions = [
+                ShapContribution(feature=row.feature, contribution=row.contribution)
+                for row in rows
+            ]
+
     return TransactionResponse(
         id=txn.id,
         amount=float(txn.amount),
@@ -326,7 +364,7 @@ async def get_transaction_endpoint(
         user_id=txn.user_id,
         risk_score=score.ensemble_score if score else None,
         classification=_classification_str(score.classification) if score else None,
-        scoring=ScoreBreakdown.model_validate(score) if score else None,
+        scoring=scoring,
         created_at=txn.created_at,
         updated_at=txn.updated_at,
     )

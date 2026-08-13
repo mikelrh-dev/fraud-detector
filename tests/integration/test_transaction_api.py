@@ -7,12 +7,16 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import numpy as np
 import pytest
 from httpx import AsyncClient
 from redis.exceptions import ConnectionError
 
+import src.api.v1.transactions as transactions_api
 from src.models.fraud_score import FraudClassification, FraudScore
+from src.models.shap_attribution import ShapAttribution
 from src.models.transaction import Transaction, TransactionStatus
+from src.services.feature_engine import FEATURE_NAMES
 
 pytestmark = pytest.mark.asyncio
 
@@ -163,8 +167,14 @@ class TestGetTransaction:
         score_result = MagicMock()
         score_result.scalars.return_value = score_scalar
 
-        # Order matters: transaction lookup first, then batched score query
-        mock_db.execute = AsyncMock(side_effect=[txn_result, score_result])
+        # SHAP query: no attribution rows for this transaction → null
+        shap_scalar = MagicMock()
+        shap_scalar.all.return_value = []
+        shap_result = MagicMock()
+        shap_result.scalars.return_value = shap_scalar
+
+        # Order matters: transaction lookup, batched score query, SHAP query
+        mock_db.execute = AsyncMock(side_effect=[txn_result, score_result, shap_result])
 
         response = await test_client.get(
             f"/api/v1/transactions/{txn.id}",
@@ -182,6 +192,60 @@ class TestGetTransaction:
         assert data["scoring"]["ensemble_score"] == 52.0
         assert data["scoring"]["threshold"] == 70.0
         assert data["scoring"]["classification"] == "review"
+        # No attribution rows → null (FRD-SHP-001)
+        assert data["scoring"]["shap_contributions"] is None
+
+    async def test_get_transaction_returns_shap_contributions_ordered(
+        self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
+    ):
+        """Detail should return shap_contributions ordered by rank via ONE query (FRD-SHP-001)."""
+        txn = _make_mock_transaction()
+        score = _make_mock_score(transaction_id=txn.id)
+
+        txn_result = MagicMock()
+        txn_result.scalar_one_or_none.return_value = txn
+
+        score_scalar = MagicMock()
+        score_scalar.all.return_value = [score]
+        score_result = MagicMock()
+        score_result.scalars.return_value = score_scalar
+
+        shap_scalar = MagicMock()
+        shap_scalar.all.return_value = [
+            ShapAttribution(transaction_id=txn.id, feature="amount", contribution=0.80, rank=1),
+            ShapAttribution(transaction_id=txn.id, feature="tx_count_last_5min", contribution=0.45, rank=2),
+            ShapAttribution(transaction_id=txn.id, feature="amount_vs_user_avg", contribution=0.30, rank=3),
+            ShapAttribution(transaction_id=txn.id, feature="merchant_risk_level", contribution=-0.20, rank=4),
+            ShapAttribution(transaction_id=txn.id, feature="amount_round_number", contribution=0.10, rank=5),
+        ]
+        shap_result = MagicMock()
+        shap_result.scalars.return_value = shap_scalar
+
+        # Order matters: transaction lookup, batched score query, SHAP query
+        mock_db.execute = AsyncMock(side_effect=[txn_result, score_result, shap_result])
+
+        response = await test_client.get(
+            f"/api/v1/transactions/{txn.id}",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        contributions = data["scoring"]["shap_contributions"]
+        assert contributions == [
+            {"feature": "amount", "contribution": 0.80},
+            {"feature": "tx_count_last_5min", "contribution": 0.45},
+            {"feature": "amount_vs_user_avg", "contribution": 0.30},
+            {"feature": "merchant_risk_level", "contribution": -0.20},
+            {"feature": "amount_round_number", "contribution": 0.10},
+        ]
+        # Exactly three executes: txn + scores + ONE shap query (single query contract)
+        assert mock_db.execute.call_count == 3
+        # The SHAP query must be ordered by rank
+        shap_statement = mock_db.execute.call_args_list[2].args[0]
+        shap_sql = str(shap_statement)
+        assert "shap_attributions" in shap_sql
+        assert "ORDER BY" in shap_sql
+        assert "rank" in shap_sql
 
     async def test_get_transaction_without_score_returns_nulls(
         self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
@@ -208,6 +272,8 @@ class TestGetTransaction:
         assert data["risk_score"] is None
         assert data["scoring"] is None
         assert data["classification"] is None
+        # No score → the SHAP query is skipped (txn + scores only, no 3rd execute)
+        assert mock_db.execute.call_count == 2
 
     async def test_get_nonexistent_transaction_returns_404(
         self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
@@ -422,3 +488,135 @@ class TestCreateTransactionVelocity:
         assert response.status_code == 201
         assert mock_db.execute.call_count == 2  # _pg_counts + Query B
         assert any("redis" in r.message.lower() for r in caplog.records)
+
+
+class TestCreateTransactionShapEnqueue:
+    """POST /api/v1/transactions — fraud:shap enqueue behavior (FD-SHP-001)."""
+
+    _PAYLOAD = {
+        "amount": 500.00,
+        "currency": "USD",
+        "merchant_name": "Grocery Store",
+        "merchant_category": "groceries",
+        "card_last4": "1234",
+        "user_id": "00000000-0000-0000-0000-000000000001",
+    }
+
+    # The exact vector the (mocked) feature engine returns — the snapshot must
+    # equal the vector actually fed into predict (FD-SHP-001: snapshot==scored vector)
+    _KNOWN_VECTOR = np.array([500.0, 0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 1.0])
+
+    def _patch_scoring(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        classification: str,
+    ) -> AsyncMock:
+        """Force deterministic scoring: known features, known ml_score, forced class."""
+        monkeypatch.setattr(
+            transactions_api._feature_engine,
+            "transform",
+            lambda transaction, user_history=None: self._KNOWN_VECTOR,
+        )
+        monkeypatch.setattr(
+            transactions_api._ml_service,
+            "predict",
+            lambda features: 80.0,
+        )
+        monkeypatch.setattr(
+            transactions_api._ensemble_scorer,
+            "classify",
+            lambda score, threshold: classification,
+        )
+        enqueue_mock = AsyncMock()
+        monkeypatch.setattr(transactions_api, "enqueue", enqueue_mock)
+        return enqueue_mock
+
+    async def _post(self, test_client: AsyncClient, auth_headers: dict):
+        return await test_client.post(
+            "/api/v1/transactions",
+            json=self._PAYLOAD,
+            headers=auth_headers,
+        )
+
+    @pytest.mark.parametrize("classification", ["fraud", "review"])
+    async def test_fraud_or_review_enqueues_shap_with_snapshot(
+        self,
+        classification: str,
+        test_client: AsyncClient,
+        mock_db: AsyncMock,
+        auth_headers: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Fraud/review must enqueue a fraud:shap message with the scored vector snapshot."""
+        mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
+        enqueue_mock = self._patch_scoring(monkeypatch, classification)
+
+        response = await self._post(test_client, auth_headers)
+
+        assert response.status_code == 201
+        shap_calls = [
+            call for call in enqueue_mock.call_args_list
+            if call.args[0] == "fraud:shap"
+        ]
+        assert len(shap_calls) == 1
+        message = shap_calls[0].args[1]
+        assert message["transaction_id"] == response.json()["transaction_id"]
+        assert message["classification"] == classification
+        # Snapshot equals the exact vector used at scoring time (FD-SHP-001)
+        assert message["features"] == self._KNOWN_VECTOR.tolist()
+        assert message["feature_names"] == FEATURE_NAMES
+        assert isinstance(message["model_fingerprint"], str)
+
+    async def test_legitimate_does_not_enqueue_shap(
+        self,
+        test_client: AsyncClient,
+        mock_db: AsyncMock,
+        auth_headers: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Legitimate classification must NOT enqueue a fraud:shap message (FD-SHP-001)."""
+        mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
+        enqueue_mock = self._patch_scoring(monkeypatch, "legitimate")
+
+        response = await self._post(test_client, auth_headers)
+
+        assert response.status_code == 201
+        assert not any(
+            call.args[0] == "fraud:shap" for call in enqueue_mock.call_args_list
+        )
+
+    async def test_enqueue_failure_keeps_201(
+        self,
+        test_client: AsyncClient,
+        mock_db: AsyncMock,
+        auth_headers: dict,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Redis unreachable during enqueue must not fail the request — HTTP 201 (FD-SHP-001)."""
+        mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
+        monkeypatch.setattr(
+            transactions_api._feature_engine,
+            "transform",
+            lambda transaction, user_history=None: self._KNOWN_VECTOR,
+        )
+        monkeypatch.setattr(
+            transactions_api._ml_service,
+            "predict",
+            lambda features: 80.0,
+        )
+        monkeypatch.setattr(
+            transactions_api._ensemble_scorer,
+            "classify",
+            lambda score, threshold: "fraud",
+        )
+        monkeypatch.setattr(
+            transactions_api,
+            "enqueue",
+            AsyncMock(side_effect=ConnectionError("redis down")),
+        )
+
+        response = await self._post(test_client, auth_headers)
+
+        assert response.status_code == 201
+        assert any("shap" in r.message.lower() for r in caplog.records)
