@@ -210,3 +210,29 @@ Training data MUST propagate the generated `velocity_5min`/`velocity_1h` values 
 - GIVEN a retrained model
 - WHEN alignment is checked against the production FeatureEngine
 - THEN the ML-ALIGN check passes AND thresholds are revalidated on the updated distribution
+
+---
+
+## Delta: shap-feature-attribution
+
+### Requirement: SHAP Attribution Enqueue (FD-SHP-001)
+
+After scoring, when classification is "fraud" or "review", the system MUST enqueue a `fraud:shap` message containing `transaction_id` and a snapshot of the exact feature vector used for scoring (the worker MUST NOT recalculate features). Enqueue MUST be best-effort: a Redis failure MUST NOT fail the request. When classification is "legitimate", the system MUST NOT enqueue.
+
+#### Scenario: Fraud transaction enqueued with snapshot
+
+- GIVEN a transaction classified "fraud"
+- WHEN `POST /api/v1/transactions` completes
+- THEN a `fraud:shap` message exists with transaction_id and the scored feature vector
+
+#### Scenario: Legitimate transaction not enqueued
+
+- GIVEN a transaction classified "legitimate"
+- WHEN `POST /api/v1/transactions` completes
+- THEN no `fraud:shap` message exists for the transaction
+
+#### Scenario: Redis down during enqueue
+
+- GIVEN Redis is unreachable
+- WHEN `POST /api/v1/transactions` is scored as fraud
+- THEN the response is HTTP 201 and the enqueue failure is logged (best-effort)
