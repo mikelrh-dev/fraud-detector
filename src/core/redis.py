@@ -1,11 +1,14 @@
 """Redis async connection pool and queue helpers."""
 
 import json
+import logging
 from typing import Any
 
 from redis.asyncio import ConnectionPool, Redis
 
 from src.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 redis_pool = ConnectionPool.from_url(
     settings.redis_url,
@@ -41,3 +44,34 @@ async def dequeue(queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
         return None
     _, data = result
     return json.loads(data)
+
+
+async def enqueue_for_retry(
+    redis_client: Redis,
+    message: dict[str, Any],
+    queue_name: str,
+    backoff_base: int = 3,
+) -> None:
+    """Re-enqueue a message with incremented retry count and backoff delay.
+
+    The backoff delay is computed as ``backoff_base ** retry_count``
+    (3s, 9s, 27s for retries 1, 2, 3). For v1 the message is re-enqueued
+    immediately — the computed delay is informational only.
+
+    Shared by the LLM and SHAP workers; mirrors the logic the LLM worker
+    historically kept inline.
+    """
+    retry_count = message.get("retry_count", 0) + 1
+    message["retry_count"] = retry_count
+
+    delay = backoff_base**retry_count
+    message_json = json.dumps(message)
+
+    await redis_client.lpush(queue_name, message_json)  # type: ignore[misc]
+
+    logger.info(
+        "Re-enqueued %s message (retry=%d, delay=%ds)",
+        queue_name,
+        retry_count,
+        delay,
+    )
