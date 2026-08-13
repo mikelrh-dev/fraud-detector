@@ -16,12 +16,13 @@ Usage:
 import csv
 import logging
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import joblib
 import numpy as np
 from imblearn.over_sampling import SMOTE
-from sklearn.metrics import (auc, classification_report, confusion_matrix,
+from sklearn.metrics import (auc, confusion_matrix,
                              precision_recall_curve, precision_score, recall_score,
                              roc_auc_score)
 from sklearn.model_selection import train_test_split
@@ -42,12 +43,16 @@ MODEL_PATH = "models/xgboost_paysim_v1.joblib"
 DATA_SYNTHETIC = "data/synthetic_transactions.csv"
 DATA_PAYSIM = "../transaccion/PS_20174392719_1491204439457_log.csv"
 
+# Velocity windows per class — mirrors scripts/generate_synthetic_data.py so
+# either generator persists the same distribution (FD-VEL-004 parity).
+VELOCITY_5MIN_FRAUD = (3, 15)
+VELOCITY_5MIN_LEGIT = (0, 2)
+VELOCITY_1H_FRAUD = (10, 60)
+VELOCITY_1H_LEGIT = (0, 5)
+
 
 def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) -> tuple[list[dict], np.ndarray]:
     """Generate synthetic transaction data compatible with FeatureEngine."""
-    import random
-    from datetime import datetime, timedelta
-
     rng = np.random.RandomState(42)
     transactions = []
     labels = []
@@ -59,8 +64,6 @@ def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) ->
     merchants_normal = [f"Store_{i}" for i in range(50)]
     merchants_risk = [f"CryptoEx_{i}" for i in range(10)] + [f"Casino_{i}" for i in range(5)]
 
-    base_date = datetime(2024, 1, 1)
-
     for i in range(n_samples):
         is_fraud = rng.random() < fraud_rate
 
@@ -70,16 +73,16 @@ def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) ->
             category = rng.choice(risk_categories, p=[0.4, 0.3, 0.15, 0.1, 0.05])
             merchant = rng.choice(merchants_risk)
             hour = rng.choice(list(range(0, 6)) + list(range(22, 24)))  # Night hours
-            velocity_5min = rng.randint(3, 15)
-            velocity_1h = rng.randint(10, 60)
+            velocity_5min = rng.randint(*VELOCITY_5MIN_FRAUD)
+            velocity_1h = rng.randint(*VELOCITY_1H_FRAUD)
         else:
             # Legitimate transactions: normal amounts, normal categories, normal hours
             amount = float(rng.lognormal(mean=4.5, sigma=1.2))  # ~90 median
             category = rng.choice(normal_categories)
             merchant = rng.choice(merchants_normal)
             hour = rng.randint(7, 22)
-            velocity_5min = rng.randint(0, 2)
-            velocity_1h = rng.randint(0, 5)
+            velocity_5min = rng.randint(*VELOCITY_5MIN_LEGIT)
+            velocity_1h = rng.randint(*VELOCITY_1H_LEGIT)
 
         # Timestamp
         day_offset = rng.randint(0, 365)
@@ -93,6 +96,8 @@ def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) ->
             "merchant_name": merchant,
             "merchant_category": category,
             "timestamp": timestamp,
+            "velocity_5min": velocity_5min,
+            "velocity_1h": velocity_1h,
         }
         transactions.append(tx)
         labels.append(1 if is_fraud else 0)
@@ -123,6 +128,12 @@ def _load_synthetic_csv(path: str) -> tuple[list[dict], np.ndarray]:
                 "merchant_name": row["merchant_name"],
                 "merchant_category": row["merchant_category"],
                 "timestamp": row["timestamp"],
+                # Velocity / per-user stat columns, with "0" fallback so
+                # legacy column-less CSVs still parse (FD-VEL-004).
+                "user_avg_amount": float(row.get("user_avg_amount", "0") or 0),
+                "user_std_amount": float(row.get("user_std_amount", "0") or 0),
+                "velocity_5min": int(row.get("velocity_5min", "0") or 0),
+                "velocity_1h": int(row.get("velocity_1h", "0") or 0),
             })
             labels.append(int(row["is_fraud"]))
     logger.info("Loaded %d synthetic transactions from %s", len(transactions), path)
@@ -132,7 +143,7 @@ def _load_synthetic_csv(path: str) -> tuple[list[dict], np.ndarray]:
 def _save_synthetic_csv(transactions: list[dict], labels: np.ndarray, path: str) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["amount", "merchant_name", "merchant_category", "timestamp", "is_fraud"])
+        writer = csv.DictWriter(f, fieldnames=["amount", "merchant_name", "merchant_category", "timestamp", "is_fraud", "velocity_5min", "velocity_1h"])
         writer.writeheader()
         for tx, label in zip(transactions, labels):
             writer.writerow({
@@ -141,8 +152,25 @@ def _save_synthetic_csv(transactions: list[dict], labels: np.ndarray, path: str)
                 "merchant_category": tx["merchant_category"],
                 "timestamp": tx["timestamp"],
                 "is_fraud": int(label),
+                "velocity_5min": tx.get("velocity_5min", 0),
+                "velocity_1h": tx.get("velocity_1h", 0),
             })
     logger.info("Generated and saved %d synthetic transactions to %s", len(transactions), path)
+
+
+def build_synthetic_history(tx: dict) -> dict:
+    """Build a FeatureEngine user_history from a synthetic transaction dict.
+
+    Reads the velocity and per-user stat keys emitted by the synthetic
+    generators; missing keys fall back to zero so legacy column-less CSVs
+    still produce valid (zero) history features.
+    """
+    return {
+        "avg_amount": float(tx.get("user_avg_amount", 0) or 0),
+        "std_amount": float(tx.get("user_std_amount", 0) or 0),
+        "tx_count_last_5min": int(tx.get("velocity_5min", 0) or 0),
+        "tx_count_last_1h": int(tx.get("velocity_1h", 0) or 0),
+    }
 
 
 def load_paysim_data(path: str) -> tuple[list[dict], np.ndarray]:
@@ -248,7 +276,9 @@ def main() -> None:
     # 3. Combine datasets
     all_transactions = synth_tx + [item["tx"] if isinstance(item, dict) and "tx" in item else item
                                    for item in paysim_items]
-    all_histories = [{"avg_amount": 0.0, "std_amount": 0.0}] * len(synth_tx)  # synthetic has no history in CSV
+    # Synthetic histories now carry the velocity / user-stat values read from
+    # the CSV, so FeatureEngine sees real counts instead of zeros (FD-VEL-004).
+    all_histories = [build_synthetic_history(tx) for tx in synth_tx]
     all_histories += [item["history"] if isinstance(item, dict) and "history" in item else {}
                       for item in paysim_items]
     all_labels = np.concatenate([synth_y, paysim_y]) if len(paysim_y) > 0 else synth_y

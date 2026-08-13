@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     # Feature Flags
     fraud_detection_enabled: bool = True
+    velocity_store_enabled: bool = True
 
     # Frontend
     frontend_url: str = "http://localhost:3000"

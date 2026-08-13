@@ -11,6 +11,11 @@ redis_pool = ConnectionPool.from_url(
     settings.redis_url,
     max_connections=20,
     decode_responses=True,
+    # Bound socket calls: a wedged Redis must not hang the hot path indefinitely.
+    # redis-py temporarily disables the timeout for blocking BRPOP/BLPOP, so
+    # dequeue() is unaffected.
+    socket_connect_timeout=2.0,
+    socket_timeout=2.0,
 )
 
 
