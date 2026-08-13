@@ -105,6 +105,29 @@ services:
     networks:
       - fraud-network
 
+  shap-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    entrypoint: []
+    command: ["python", "-m", "src.workers.shap_worker"]
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./models:/app/models
+    restart: unless-stopped
+    networks:
+      - fraud-network
+
   frontend:
     build:
       context: .
