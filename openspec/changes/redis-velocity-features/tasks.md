@@ -58,13 +58,13 @@ Chain strategy: feature-branch-chain
 
 ### Phase 1: Propagate velocity through training pipeline
 
-- [ ] 1.1 Modify `scripts/generate_synthetic_data.py`: add `velocity_5min`/`velocity_1h` to `generate_transaction` dict + fieldnames [FD-VEL-004]
-- [ ] 1.2 Modify `scripts/train_xgboost_aligned.py`: keep velocity in tx dict (L73-82); `_save_synthetic_csv` fieldnames += both; `_load_synthetic_csv` `row.get(..., "0")` fallback [FD-VEL-004]
-- [ ] 1.3 Replace `[{}]*len` synthetic histories (L251) with per-sample `{"avg_amount", "std_amount", "tx_count_last_5min", "tx_count_last_1h"}` from CSV values [FD-VEL-004]
+- [x] 1.1 Modify `scripts/generate_synthetic_data.py`: add `velocity_5min`/`velocity_1h` to `generate_transaction` dict + fieldnames [FD-VEL-004]
+- [x] 1.2 Modify `scripts/train_xgboost_aligned.py`: keep velocity in tx dict (L73-82); `_save_synthetic_csv` fieldnames += both; `_load_synthetic_csv` `row.get(..., "0")` fallback [FD-VEL-004]
+- [x] 1.3 Replace `[{}]*len` synthetic histories (L251) with per-sample `{"avg_amount", "std_amount", "tx_count_last_5min", "tx_count_last_1h"}` from CSV values [FD-VEL-004]
 
 ### Phase 2: Regenerate, retrain, revalidate
 
-- [ ] 2.1 Regenerate CSV: `python scripts/generate_synthetic_data.py` (persists both velocity columns) [FD-VEL-004]
-- [ ] 2.2 Retrain: `python scripts/train_xgboost_aligned.py` (velocity-aware features) [FD-VEL-004]
-- [ ] 2.3 Revalidate ML-ALIGN: `pytest tests/test_ml_model.py -q` — crypto+high-vel >20, grocery+low-vel <10, 10-feature shape; update thresholds in `tests/test_ml_model.py` with documented old→new values if shifted [FD-VEL-004]
-- [ ] 2.4 Commit new `models/xgboost_paysim_v1.joblib` + CSV only after 2.3 passes (git-tracked rollback) [FD-VEL-004]
+- [x] 2.1 Regenerate CSV: `python scripts/generate_synthetic_data.py` (persists both velocity columns) [FD-VEL-004]
+- [x] 2.2 Retrain: `python scripts/train_xgboost_aligned.py` (velocity-aware features) [FD-VEL-004]
+- [x] 2.3 Revalidate ML-ALIGN: `pytest tests/test_ml_model.py -q` — crypto+high-vel >20, grocery+low-vel <10, 10-feature shape; update thresholds in `tests/test_ml_model.py` with documented old→new values if shifted [FD-VEL-004]
+- [x] 2.4 Commit new `models/xgboost_paysim_v1.joblib` + CSV only after 2.3 passes (git-tracked rollback) [FD-VEL-004]
