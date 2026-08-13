@@ -12,6 +12,7 @@ from src.models.rule import RuleMetadata
 from src.models.llm_report import LLMReport
 from src.models.ml_model_run import MLModelRun
 from src.models.audit_entry import AuditEntry
+from src.models.shap_attribution import ShapAttribution
 
 
 # ── Base Model ───────────────────────────────────────────────────────────────
@@ -138,6 +139,30 @@ def test_audit_entry_has_no_updated_at():
     assert "updated_at" not in AuditEntry.__annotations__
 
 
+# ── ShapAttribution Model ────────────────────────────────────────────────────
+
+def test_shap_attribution_model():
+    """ShapAttribution model should have expected columns."""
+    assert issubclass(ShapAttribution, BaseModel)
+    assert ShapAttribution.__tablename__ == "shap_attributions"
+    for col in ("transaction_id", "feature", "contribution", "rank"):
+        assert col in ShapAttribution.__annotations__
+
+
+def test_shap_attribution_transaction_fk_cascades():
+    """transaction_id FK should target transactions.id and cascade on delete."""
+    fk = list(ShapAttribution.__table__.columns["transaction_id"].foreign_keys)
+    assert len(fk) == 1
+    assert fk[0].column.table.name == "transactions"
+    assert fk[0].ondelete == "CASCADE"
+
+
+def test_shap_attribution_composite_index():
+    """A composite index on (transaction_id, rank) must exist."""
+    index_cols = [tuple(ix.columns.keys()) for ix in ShapAttribution.__table__.indexes]
+    assert ("transaction_id", "rank") in index_cols
+
+
 # ── Module Exports ───────────────────────────────────────────────────────────
 
 def test_models_init_exports_all():
@@ -152,4 +177,5 @@ def test_models_init_exports_all():
     assert hasattr(m, "LLMReport")
     assert hasattr(m, "MLModelRun")
     assert hasattr(m, "AuditEntry")
+    assert hasattr(m, "ShapAttribution")
     assert hasattr(m, "BaseModel")
