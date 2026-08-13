@@ -5,6 +5,7 @@ import { getTransaction } from "../api/transactions";
 import type { ScoreResponse, Transaction } from "../api/transactions";
 import apiClient from "../api/client";
 import { ScoreResultCard } from "./ScoreResultCard";
+import { ShapAttributionCard } from "../components/ShapAttributionCard";
 
 interface ReportResponse {
   transaction_id: string;
@@ -259,6 +260,11 @@ export default function TransactionDetail() {
             </p>
           </section>
         )}
+
+        {/* SHAP attribution (FRD-SHP-002) — renders null when absent */}
+        <ShapAttributionCard
+          contributions={tx.scoring?.shap_contributions}
+        />
 
         {/* LLM Report */}
         <section className="bg-slate-900 rounded-lg border border-slate-800 p-5">
