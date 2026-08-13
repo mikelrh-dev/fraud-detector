@@ -210,14 +210,15 @@ class TestRuleEngineMultipleRules:
         score, fired = engine.evaluate(tx, context=context)
         assert "high_amount" in fired
         assert "high_velocity" in fired
-        assert score == 55  # 30 + 25
+        assert score == 50  # 25 + 25
 
     def test_three_rules_fire(self):
-        """Three rules should sum their weights."""
+        """Three rules (+ unusual_hours + off_hours_crypto) sum their weights."""
         engine = RuleEngine()
         tx = {
             "amount": 10000,
             "merchant_name": "Bad Shop",
+            "merchant_category": "crypto",
             "card_last4": "9999",
             "timestamp": "2024-01-15T03:00:00+00:00",
         }
@@ -230,7 +231,10 @@ class TestRuleEngineMultipleRules:
         assert "unusual_merchant" in fired
         assert "card_mismatch" in fired
         assert "unusual_hours" in fired
-        assert score == 80  # 30 + 20 + 20 + 10
+        assert "off_hours_crypto" in fired
+        # 25 (high_amount) + 20 (unusual_merchant) + 20 (card_mismatch)
+        # + 10 (unusual_hours) + 25 (off_hours_crypto) = 100 (capped)
+        assert score == 100
 
     def test_all_six_rules_fire_capped(self):
         """All rules firing should be capped at 100."""
@@ -314,17 +318,17 @@ class TestRuleEngineEdgeCases:
         score, fired = engine.evaluate(tx)
         assert "high_amount" not in fired
 
-    def test_amount_exactly_5000(self):
-        """Amount exactly 5000 should not trigger high_amount (not > 5000)."""
+    def test_amount_exactly_1000(self):
+        """Amount exactly 1000 should not trigger high_amount (not > 1000)."""
         engine = RuleEngine()
-        tx = {"amount": 5000, "merchant_name": "Store", "card_last4": "1234"}
+        tx = {"amount": 1000, "merchant_name": "Store", "card_last4": "1234"}
         score, fired = engine.evaluate(tx)
         assert "high_amount" not in fired
 
-    def test_amount_5000_point_01(self):
-        """Amount 5000.01 should trigger high_amount."""
+    def test_amount_1000_point_01(self):
+        """Amount 1000.01 should trigger high_amount."""
         engine = RuleEngine()
-        tx = {"amount": 5000.01, "merchant_name": "Store", "card_last4": "1234"}
+        tx = {"amount": 1000.01, "merchant_name": "Store", "card_last4": "1234"}
         score, fired = engine.evaluate(tx)
         assert "high_amount" in fired
 

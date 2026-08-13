@@ -105,14 +105,20 @@ class TestEnsembleThreshold:
 class TestEnsembleClassification:
     """Classification logic based on score vs threshold."""
 
-    def test_score_below_threshold_legitimate(self):
-        """score (69) < threshold (70) → 'legitimate'."""
+    def test_score_below_review_band_legitimate(self):
+        """score (50) < threshold*0.75 (52.5) → 'legitimate'."""
         scorer = EnsembleScorer()
-        result = scorer.classify(69, 70)
+        result = scorer.classify(50, 70)
         assert result == "legitimate"
 
+    def test_score_in_review_band(self):
+        """score (53) >= threshold*0.75 (52.5) but <= threshold (70) → 'review'."""
+        scorer = EnsembleScorer()
+        result = scorer.classify(53, 70)
+        assert result == "review"
+
     def test_score_at_threshold_review(self):
-        """score (70) == threshold (70) → 'review'."""
+        """score (70) == threshold (70) → still 'review' (not fraud, not > threshold)."""
         scorer = EnsembleScorer()
         result = scorer.classify(70, 70)
         assert result == "review"
@@ -136,7 +142,11 @@ class TestEnsembleClassification:
         assert result == "fraud"
 
     def test_integration_combine_classify(self):
-        """End-to-end: combine scores then classify."""
+        """End-to-end: combine scores then classify.
+
+        rule=80*0.60=48, ml=60*0.25=15 → ensemble=63, threshold=70
+        review band = 70*0.75 = 52.5 → 63 >= 52.5 → review (grey zone)
+        """
         scorer = EnsembleScorer()
         amount = 500
         rule_score = 80
@@ -144,7 +154,6 @@ class TestEnsembleClassification:
         threshold = scorer.get_threshold(amount)
         ensemble_score = scorer.combine(rule_score=rule_score, ml_score=ml_score)
         classification = scorer.classify(ensemble_score, threshold)
-        # rule=80*0.60=48, ml=60*0.25=15 → 63, threshold=70 → legitimate
         assert threshold == 70
         assert ensemble_score == pytest.approx(63.0)
-        assert classification == "legitimate"
+        assert classification == "review"  # 63 >= 52.5 (70*0.75) → review grey zone

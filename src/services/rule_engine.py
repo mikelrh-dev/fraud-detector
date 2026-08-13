@@ -16,11 +16,13 @@ class RuleEngine:
     """
 
     WEIGHTS: dict[str, float] = {
-        "high_amount": 30,
+        "high_amount": 25,
         "high_velocity": 25,
+        "velocity_burst": 30,
         "unusual_merchant": 20,
         "card_mismatch": 20,
         "unusual_hours": 10,
+        "off_hours_crypto": 25,
         "country_mismatch": 15,
     }
 
@@ -28,6 +30,9 @@ class RuleEngine:
     RISKY_CATEGORIES: frozenset[str] = frozenset(
         {"btc", "crypto", "gambling", "casino", "money_transfer"}
     )
+
+    # Amount threshold above which the high_amount rule fires
+    HIGH_AMOUNT_THRESHOLD: float = 1000.0
 
     def evaluate(
         self,
@@ -48,9 +53,9 @@ class RuleEngine:
         ctx = context or {}
         fired: list[str] = []
 
-        # 1. High amount: amount > 5000
+        # 1. High amount: amount > 1000 (catches mid-range fraud, not just whale txns)
         amount = transaction.get("amount", 0) or 0
-        if amount > 5000:
+        if amount > self.HIGH_AMOUNT_THRESHOLD:
             fired.append("high_amount")
 
         # 2. High velocity: > 3 transactions in 5 minutes (same user)
@@ -58,14 +63,19 @@ class RuleEngine:
         if recent_txns > 3:
             fired.append("high_velocity")
 
-        # 3. Unusual merchant: merchant in blacklist or category in risk set
+        # 2b. Velocity burst: > 1 tx in 5 min on a risky category
+        #     Even 2 crypto/gambling txns in 5 min is anomalous (card testing pattern)
+        category = (transaction.get("merchant_category") or "").lower()
+        if recent_txns > 1 and category in self.RISKY_CATEGORIES:
+            fired.append("velocity_burst")
+
+        # 3. Unusual merchant: in blacklist or inherently risky category
         merchant = (transaction.get("merchant_name") or "").lower()
         blacklist = [m.lower() for m in (ctx.get("merchant_blacklist") or [])]
-        category = (transaction.get("merchant_category") or "").lower()
         if merchant in blacklist or category in self.RISKY_CATEGORIES:
             fired.append("unusual_merchant")
 
-        # 4. Card mismatch: card_last4 not in known cards
+        # 4. Card mismatch: card_last4 not in user's known cards
         card_last4 = transaction.get("card_last4", "")
         known_cards = ctx.get("known_cards") or []
         if known_cards and card_last4 and card_last4 not in known_cards:
@@ -73,6 +83,7 @@ class RuleEngine:
 
         # 5. Unusual hours: transaction between 00:00 and 06:00
         ts_str = transaction.get("timestamp")
+        hour: int | None = None
         if ts_str:
             try:
                 dt = datetime.fromisoformat(ts_str)
@@ -81,6 +92,11 @@ class RuleEngine:
                     fired.append("unusual_hours")
             except (ValueError, TypeError):
                 pass
+
+        # 5b. Off-hours + crypto: night transaction on a risky category
+        #     Revolut-grade: combine temporal + category signals
+        if hour is not None and 0 <= hour < 6 and category in self.RISKY_CATEGORIES:
+            fired.append("off_hours_crypto")
 
         # 6. Country mismatch: transaction country != home country
         tx_country = transaction.get("country")

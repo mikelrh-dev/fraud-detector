@@ -63,9 +63,14 @@ class EnsembleScorer:
         """Classify a transaction based on its score vs threshold.
 
         Returns one of: 'legitimate', 'review', 'fraud'.
+
+        Bands:
+            fraud  : score > threshold
+            review : score >= threshold * 0.75  (grey zone — needs analyst)
+            legitimate: score < threshold * 0.75
         """
         if score > threshold:
             return "fraud"
-        if score == threshold:
+        if score >= threshold * 0.75:
             return "review"
         return "legitimate"
