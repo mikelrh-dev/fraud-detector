@@ -1,6 +1,8 @@
 # 🛡️ Fraud Detector Hybrid
 
-Sistema híbrido de detección de fraude que combina **motor de reglas** (determinista), **machine learning** (Isolation Forest) y **LLM local** (Ollama) para generar informes técnicos explicativos.
+[![CI](https://github.com/mikelrh-dev/fraud-detector/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelrh-dev/fraud-detector/actions/workflows/ci.yml)
+
+Sistema híbrido de detección de fraude que combina **motor de reglas** (determinista), **machine learning** (XGBoost + FeatureEngine) y **LLM local** (Ollama qwen2.5:0.5b) para generar informes técnicos explicativos.
 
 ## Arquitectura de 3 Capas
 
@@ -12,15 +14,16 @@ Sistema híbrido de detección de fraude que combina **motor de reglas** (determ
 │  Layer 1: Rule Engine (Deterministic)                       │
 │  ├── 6 reglas: high_amount, high_velocity, unusual_merchant │
 │  ├── unusual_hours, country_mismatch, card_mismatch         │
+│  └── unusual_merchant dispara en btc/crypto/gambling/casino/money_transfer
 │  └── Score: 0-100 (cap)                                     │
 │                                                              │
-│  Layer 2: ML Model (Isolation Forest)                       │
-│  ├── 10 features: amount vs avg, velocity, geo, time        │
-│  ├── Anomaly detection (unsupervised)                       │
+│  Layer 2: ML Model (XGBoost + FeatureEngine)                │
+│  ├── 10 features: amount vs avg, velocity, geo, time, MCC   │
+│  ├── Supervised: trained on PaySim (50k, 1% fraud)          │
 │  └── Score: 0-100 (normalized)                              │
 │                                                              │
 │  Layer 3: Ensemble Scoring                                  │
-│  ├── Weighted: rules 45% + ML 45% + context 10%             │
+│  ├── Weighted: rules 60% + ML 25% + context 15%             │
 │  ├── Dynamic thresholds by amount tier                      │
 │  └── Classification: legitimate | review | fraud            │
 │                                                              │
@@ -33,14 +36,14 @@ Sistema híbrido de detección de fraude que combina **motor de reglas** (determ
 │  • Consumes from "fraud:reports" queue                      │
 │  • Generates technical report in Spanish                    │
 │  • Includes: risk justification, recommendation, context    │
-│  • Retry with exponential backoff (max 3)                   │
+│  • Retry with exponential backoff (3/9/27s, max 3)          │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              MONITORING + AUDIT TRAIL                        │
 ├─────────────────────────────────────────────────────────────┤
-│  • Evidently AI: drift detection, performance metrics       │
+│  • Custom PSI: drift detection on feature distributions     │
 │  • Retraining triggers: F1 < 0.7 OR drift_score > 30        │
 │  • SHA-256 checksums on every audit entry                   │
 │  • Immutable audit log: scoring, analyst actions, reports   │
