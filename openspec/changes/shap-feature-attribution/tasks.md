@@ -36,8 +36,8 @@ No PR chain — direct main merge per user preference; review batches sequential
 
 ## Batch 3: Frontend + MSW + Tests
 
-- [ ] **3.1 RED — `frontend/src/tests/mocks/handlers.ts`** (detail fixture gains 5 `shap_contributions`) **+ `TransactionDetail.test.tsx`**: section + ES labels + direction when present; hidden when null. (FRD-SHP-002)
-- [ ] **3.2 GREEN — `frontend/src/api/transactions.ts`**: `ShapContribution` type + `shap_contributions`; create `frontend/src/lib/shap.ts` ES label map. (FRD-SHP-002)
-- [ ] **3.3 GREEN — `frontend/src/components/ShapAttributionCard.tsx`**: up to 5 bars, direction (positive→fraud red, negative→legit green), ES labels, nothing when empty. (FRD-SHP-002)
-- [ ] **3.4 GREEN — `frontend/src/pages/TransactionDetail.tsx`**: render `<ShapAttributionCard contributions={tx.scoring?.shap_contributions} />`. (FRD-SHP-002)
-- [ ] **3.5 REFACTOR — Gate**: `npm test` + `npx tsc --noEmit` green. (FRD-SHP-002)
+- [x] **3.1 RED — `frontend/src/tests/mocks/handlers.ts`** (detail fixture gains 5 `shap_contributions`) **+ `TransactionDetail.test.tsx`**: section + ES labels + direction when present; hidden when null. (FRD-SHP-002)
+- [x] **3.2 GREEN — `frontend/src/api/transactions.ts`**: `ShapContribution` type + `shap_contributions`; create `frontend/src/lib/shap.ts` ES label map. (FRD-SHP-002)
+- [x] **3.3 GREEN — `frontend/src/components/ShapAttributionCard.tsx`**: up to 5 bars, direction (positive→fraud red, negative→legit green), ES labels, nothing when empty. (FRD-SHP-002)
+- [x] **3.4 GREEN — `frontend/src/pages/TransactionDetail.tsx`**: render `<ShapAttributionCard contributions={tx.scoring?.shap_contributions} />`. (FRD-SHP-002)
+- [x] **3.5 REFACTOR — Gate**: `npm test` + `npx tsc --noEmit` green. (FRD-SHP-002)
