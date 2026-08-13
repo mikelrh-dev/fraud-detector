@@ -54,6 +54,32 @@ def _classification_str(value: FraudClassification | str) -> str:
     """Normalize FraudClassification to its string value."""
     return value.value if hasattr(value, "value") else value
 
+
+def _determine_friction_level(score: float, classification: str) -> tuple[str, str | None]:
+    """Determine dynamic friction level and action based on risk score and classification.
+    
+    Returns:
+        (friction_level, action) tuple where:
+        - friction_level: "allow" | "challenge" | "block"
+        - action: specific action or None
+    """
+    if classification == "fraud":
+        # Fraud: automatic block
+        return "block", "block_transaction"
+    
+    if classification == "review":
+        # Grey zone: challenge user
+        # In production, this would be configurable (3D Secure, SMS, biometric)
+        if score >= 60:
+            # Higher risk in review zone: require stronger authentication
+            return "challenge", "request_3d_secure"
+        else:
+            # Lower risk in review zone: SMS is sufficient
+            return "challenge", "request_sms"
+    
+    # Legitimate: no friction
+    return "allow", None
+
 _rule_engine = RuleEngine()
 _ensemble_scorer = EnsembleScorer()
 _audit_service = AuditService()
@@ -236,6 +262,9 @@ async def create_and_score_transaction(
         except Exception:
             logger.exception("Failed to enqueue SHAP attribution request")
 
+    # 12. Determine dynamic friction level based on score and classification
+    friction_level, action = _determine_friction_level(ensemble_score, classification)
+
     return ScoreResponse(
         transaction_id=txn.id,
         rule_score=rule_score,
@@ -245,6 +274,8 @@ async def create_and_score_transaction(
         classification=classification,
         fired_rules=fired_rules,
         created_at=datetime.now(tz=timezone.utc),
+        friction_level=friction_level,
+        action=action,
     )
 
 
