@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import async_session_maker
 from src.core.redis import get_redis as _get_redis
 from src.core.security import decode_access_token
+from src.services.velocity_store import VelocityStore
 
 _security_scheme = HTTPBearer(auto_error=False)
 
@@ -28,6 +29,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def get_redis() -> AsyncGenerator[Redis, None]:
     """Provide a Redis client from the shared pool."""
     yield _get_redis()
+
+
+def get_velocity_store() -> VelocityStore:
+    """Provide a VelocityStore bound to the shared Redis connection pool."""
+    return VelocityStore()
 
 
 def get_current_user(
