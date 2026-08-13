@@ -9,12 +9,27 @@ import csv
 import random
 from datetime import datetime, timedelta, timezone
 
-import numpy as np
-
 # Configuration
 NUM_TRANSACTIONS = 50_000
 FRAUD_RATE = 0.05
 OUTPUT_PATH = "data/synthetic_transactions.csv"
+
+# Velocity windows per class — mirrors scripts/train_xgboost_aligned.py so
+# both generators emit the same distribution (FD-VEL-004 train/serve parity).
+VELOCITY_5MIN_FRAUD = (3, 15)
+VELOCITY_5MIN_LEGIT = (0, 2)
+VELOCITY_1H_FRAUD = (10, 60)
+VELOCITY_1H_LEGIT = (0, 5)
+
+# CSV schema — velocity columns must be persisted so training sees real counts.
+FIELDNAMES = [
+    "transaction_id", "user_id", "amount", "currency",
+    "merchant_name", "merchant_category", "timestamp",
+    "is_fraud", "hour_of_day", "is_weekend",
+    "is_crypto", "amount_round_number",
+    "user_avg_amount", "user_std_amount",
+    "velocity_5min", "velocity_1h",
+]
 
 # Merchant pool
 MERCHANTS = {
@@ -99,6 +114,13 @@ def generate_transaction(txn_id: int, base_time: datetime) -> dict:
     is_crypto = merchant_category == "high_risk"
     is_round = amount % 100 == 0 and amount > 0
 
+    if is_fraud:
+        velocity_5min = random.randint(*VELOCITY_5MIN_FRAUD)
+        velocity_1h = random.randint(*VELOCITY_1H_FRAUD)
+    else:
+        velocity_5min = random.randint(*VELOCITY_5MIN_LEGIT)
+        velocity_1h = random.randint(*VELOCITY_1H_LEGIT)
+
     return {
         "transaction_id": f"tx-{txn_id:06d}",
         "user_id": user_id,
@@ -114,6 +136,8 @@ def generate_transaction(txn_id: int, base_time: datetime) -> dict:
         "amount_round_number": int(is_round),
         "user_avg_amount": round(user["avg_amount"], 2),
         "user_std_amount": round(user["std_amount"], 2),
+        "velocity_5min": velocity_5min,
+        "velocity_1h": velocity_1h,
     }
 
 
@@ -147,29 +171,20 @@ def main() -> None:
     print(f"Generating {NUM_TRANSACTIONS:,} synthetic transactions...")
     base_time = datetime.now(tz=timezone.utc) - timedelta(days=365)
 
-    fieldnames = [
-        "transaction_id", "user_id", "amount", "currency",
-        "merchant_name", "merchant_category", "timestamp",
-        "is_fraud", "hour_of_day", "is_weekend",
-        "is_crypto", "amount_round_number",
-        "user_avg_amount", "user_std_amount",
-    ]
-
     with open(OUTPUT_PATH, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
 
         for i in range(NUM_TRANSACTIONS):
             tx = generate_transaction(i, base_time)
             writer.writerow(tx)
 
-    # Count frauds
-    fraud_count = sum(
-        1 for _ in open(OUTPUT_PATH, "r") if _.startswith("tx-")
-    )
+    # Count frauds (actual is_fraud column, not tx-id prefix)
+    with open(OUTPUT_PATH, "r", newline="") as f:
+        fraud_count = sum(1 for row in csv.DictReader(f) if row["is_fraud"] == "1")
 
     print(f"Generated {NUM_TRANSACTIONS:,} transactions to {OUTPUT_PATH}")
-    print(f"Fraud rate: {FRAUD_RATE * 100:.0f}% ({int(NUM_TRANSACTIONS * FRAUD_RATE):,} fraudulent)")
+    print(f"Fraud rate: {FRAUD_RATE * 100:.0f}% ({fraud_count:,} fraudulent)")
 
 
 if __name__ == "__main__":
