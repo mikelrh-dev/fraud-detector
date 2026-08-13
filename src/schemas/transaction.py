@@ -17,6 +17,17 @@ class TransactionCreate(BaseModel):
     user_id: uuid.UUID
 
 
+class ShapContribution(BaseModel):
+    """A single feature contribution computed by SHAP (FRD-SHP-001).
+
+    Ordered by rank in the detail response; signed contribution —
+    positive pushes toward fraud, negative toward legitimate.
+    """
+
+    feature: str
+    contribution: float
+
+
 class ScoreBreakdown(BaseModel):
     """Scoring breakdown nested in transaction responses.
 
@@ -29,6 +40,8 @@ class ScoreBreakdown(BaseModel):
     ensemble_score: float
     threshold: float
     classification: str
+
+    shap_contributions: list[ShapContribution] | None = None
 
     model_config = {"from_attributes": True}  # enables model_validate(FraudScore)
 

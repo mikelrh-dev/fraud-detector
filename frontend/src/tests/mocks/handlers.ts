@@ -97,6 +97,14 @@ export const handlers = [
         ensemble_score: 62,
         threshold: 60,
         classification: "review",
+        // FRD-SHP-002: deterministic top-5, ordered by |contribution| desc
+        shap_contributions: [
+          { feature: "amount", contribution: 35 },
+          { feature: "tx_count_last_1h", contribution: 18 },
+          { feature: "tx_count_last_5min", contribution: 12 },
+          { feature: "merchant_risk_level", contribution: -5 },
+          { feature: "amount_round_number", contribution: -2 },
+        ],
       },
       user_id: "00000000-0000-0000-0000-000000000001",
       created_at: new Date().toISOString(),

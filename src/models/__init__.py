@@ -7,6 +7,7 @@ from src.models.fraud_score import FraudScore
 from src.models.llm_report import LLMReport
 from src.models.ml_model_run import MLModelRun
 from src.models.rule import RuleMetadata
+from src.models.shap_attribution import ShapAttribution
 from src.models.transaction import Transaction
 from src.models.user import User
 
@@ -18,6 +19,7 @@ __all__ = [
     "LLMReport",
     "MLModelRun",
     "RuleMetadata",
+    "ShapAttribution",
     "Transaction",
     "User",
 ]

@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 from src.models.base import Base
 from src.models import (
     User, Transaction, FraudScore, FraudAlert,
-    RuleMetadata, LLMReport, MLModelRun, AuditEntry
+    RuleMetadata, LLMReport, MLModelRun, AuditEntry, ShapAttribution
 )
 from src.core.config import settings
 

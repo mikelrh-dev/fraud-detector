@@ -1,5 +1,10 @@
 import apiClient from "./client";
 
+export interface ShapContribution {
+  feature: string;
+  contribution: number;
+}
+
 export interface Transaction {
   id: string;
   amount: number;
@@ -16,6 +21,8 @@ export interface Transaction {
     ensemble_score: number;
     threshold: number;
     classification: string | null; // defensive; backend non-null
+    // FRD-SHP-001/2: detail-only, null when the worker has not computed it
+    shap_contributions?: ShapContribution[] | null;
   } | null;
   user_id: string;
   created_at: string;

@@ -223,3 +223,45 @@ The scoring breakdown MUST be read from the existing `fraud_scores` table; this 
 - GIVEN the `fraud_scores` table already exists
 - WHEN the read endpoints fetch scores
 - THEN they query the existing table and no migration is required
+
+---
+
+## Delta: shap-feature-attribution
+
+### Requirement: Detail SHAP Contributions Field (FRD-SHP-001)
+
+`GET /api/v1/transactions/{id}` MUST return `scoring.shap_contributions` as a list of `{feature, contribution}` objects ordered by rank (1..5) when ShapAttribution rows exist for the transaction, and null when none exist. `GET /api/v1/transactions` (list) and `GET /api/v1/transactions/{id}/report` MUST NOT expose this field.
+
+#### Scenario: Detail returns ordered contributions
+
+- GIVEN a transaction with 5 ShapAttribution rows
+- WHEN `GET /api/v1/transactions/{id}` is requested
+- THEN `scoring.shap_contributions` lists 5 `{feature, contribution}` entries ordered by rank
+
+#### Scenario: No contributions yields null
+
+- GIVEN a transaction with no ShapAttribution rows
+- WHEN `GET /api/v1/transactions/{id}` is requested
+- THEN the response is HTTP 200 with `scoring.shap_contributions` null
+
+#### Scenario: List endpoint untouched
+
+- GIVEN a transaction with persisted contributions
+- WHEN `GET /api/v1/transactions` is requested
+- THEN list rows do not include `shap_contributions` and the list shape is unchanged
+
+### Requirement: SHAP Attribution Section (FRD-SHP-002)
+
+The detail view MUST render an "Atribución SHAP" section when `scoring.shap_contributions` is non-null and non-empty: up to 5 bars with direction (positive → fraud red; negative → legit green) and Spanish feature labels. Hidden when null or empty.
+
+#### Scenario: Section renders with direction
+
+- GIVEN detail returns 5 contributions
+- WHEN the analyst opens the detail view
+- THEN the section renders up to 5 bars with Spanish labels and fraud/legit direction styling
+
+#### Scenario: Section hidden when null
+
+- GIVEN `scoring.shap_contributions` is null
+- WHEN the analyst opens the detail view
+- THEN the "Atribución SHAP" section is not rendered
