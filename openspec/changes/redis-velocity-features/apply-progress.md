@@ -106,10 +106,10 @@ None — implementation matches design.md. Notes on interpretation:
   - `f13accb` feat(velocity): add Redis-backed VelocityStore with Postgres fallback
   - `3e829fc` feat(api): wire velocity store into transaction scoring hot path
 
-## Remaining (next batch — PR 2)
+## Handoff to PR 2 (completed below)
 
-- [ ] 1.1–1.3 scripts/generate_synthetic_data.py + train_xgboost_aligned.py velocity columns
-- [ ] 2.1 regenerate CSV, 2.2 retrain, 2.3 ML-ALIGN revalidation, 2.4 commit model+CSV
+- [x] 1.1–1.3 scripts/generate_synthetic_data.py + train_xgboost_aligned.py velocity columns
+- [x] 2.1 regenerate CSV, 2.2 retrain, 2.3 ML-ALIGN revalidation, 2.4 commit model+CSV
 
 ---
 
