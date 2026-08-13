@@ -7,6 +7,7 @@ This script:
 4. Trains XGBoost with scale_pos_weight from real class imbalance
 5. Saves model to models/xgboost_paysim_v1.joblib (overwrites production model)
 6. Reports metrics on test set (PR-AUC, Recall, Precision, F1)
+7. Cost-sensitive evaluation: FN cost 10x FP, prints economic cost and optimal threshold
 
 Usage:
     python scripts/train_xgboost_aligned.py
@@ -297,7 +298,7 @@ def main() -> None:
         subsample=0.8,
         colsample_bytree=0.8,
         scale_pos_weight=scale_pos,
-        eval_metric="auc",
+        eval_metric="aucpr",
         use_label_encoder=False,
         random_state=42,
         n_jobs=-1,
@@ -340,6 +341,23 @@ def main() -> None:
     tn, fp, fn, tp = cm.ravel()
     logger.info("Confusion Matrix:")
     logger.info("  TN=%d, FP=%d, FN=%d, TP=%d", tn, fp, fn, tp)
+
+    # Cost-sensitive evaluation: FN (fraud not blocked) costs 10x an FP (review).
+    # This aligns the model objective with economic loss instead of raw accuracy.
+    cost_fn, cost_fp = 10.0, 1.0
+    cost_default = fn * cost_fn + fp * cost_fp
+    logger.info("Cost (threshold=0.5): %.2f  (FN=%d*%g + FP=%d*%g)",
+                cost_default, fn, cost_fn, fp, cost_fp)
+
+    # Find the threshold that minimizes expected cost on the test set.
+    best_thr, best_cost = 0.5, cost_default
+    for thr in np.arange(0.05, 0.95, 0.05):
+        y_thr = (y_proba >= thr).astype(int)
+        tn_t, fp_t, fn_t, tp_t = confusion_matrix(y_test, y_thr).ravel()
+        c = fn_t * cost_fn + fp_t * cost_fp
+        if c < best_cost:
+            best_cost, best_thr = c, thr
+    logger.info("Optimal cost threshold: %.2f (expected cost %.2f)", best_thr, best_cost)
 
     # 9. Save model
     Path(MODEL_PATH).parent.mkdir(parents=True, exist_ok=True)
