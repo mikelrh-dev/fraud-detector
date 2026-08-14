@@ -22,6 +22,7 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    command: redis-server --appendonly yes --appendfsync everysec --save 60 10000
     volumes:
       - redis_data:/data
     healthcheck:
@@ -55,6 +56,8 @@ services:
       dockerfile: docker/Dockerfile.api
     ports:
       - "8000:8000"
+    mem_limit: 2g
+    memswap_limit: 2.5g
     env_file:
       - .env
     environment:
@@ -85,6 +88,8 @@ services:
       dockerfile: docker/Dockerfile.api
     entrypoint: []
     command: ["python", "-m", "src.workers.llm_worker"]
+    mem_limit: 500m
+    memswap_limit: 600m
     env_file:
       - .env
     environment:
@@ -111,6 +116,8 @@ services:
       dockerfile: docker/Dockerfile.api
     entrypoint: []
     command: ["python", "-m", "src.workers.shap_worker"]
+    mem_limit: 800m
+    memswap_limit: 1g
     env_file:
       - .env
     environment:
@@ -134,6 +141,8 @@ services:
       dockerfile: docker/Dockerfile.api
     entrypoint: []
     command: ["python", "-m", "src.workers.embedding_worker"]
+    mem_limit: 1g
+    memswap_limit: 1.2g
     env_file:
       - .env
     environment:
