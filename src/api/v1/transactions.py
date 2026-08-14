@@ -141,8 +141,8 @@ async def create_and_score_transaction(
     all_user_txns = list(all_user_result.scalars().all())
     known_cards = list({t.card_last4 for t in all_user_txns if t.card_last4})
 
-    # 3. Get graph features (fraud network analysis)
-    graph_features = _graph_service.get_graph_features(str(payload.user_id))
+    # 3. Get graph features (fraud network analysis) — async
+    graph_features = await _graph_service.get_graph_features(str(payload.user_id))
 
     # 3.5. Rule engine evaluation with timestamp and context
     now = datetime.now(tz=timezone.utc)
@@ -214,10 +214,10 @@ async def create_and_score_transaction(
 
     await db.flush()
 
-    # 8.5. Update fraud graph: add transaction edges and mark fraudsters
+    # 8.5. Update fraud graph: add transaction edges and mark fraudsters (async)
     # This happens AFTER classification is made
     try:
-        _graph_service.add_transaction(
+        await _graph_service.add_transaction(
             sender_id=str(payload.user_id),
             receiver_id=f"merchant_{payload.merchant_name}",  # Treat merchant as receiver node
             card_id=payload.card_last4,
@@ -472,7 +472,7 @@ async def get_graph_stats(
     Returns overall graph metrics: nodes, edges, density, known fraudsters.
     """
     try:
-        stats = _graph_service.get_stats()
+        stats = await _graph_service.get_stats()
         return {
             "status": "ok",
             "graph": stats,
@@ -495,7 +495,7 @@ async def get_user_graph_features(
     Returns: is_near_fraud, degree_centrality, shortest_path_to_fraud, connected_fraudsters.
     """
     try:
-        features = _graph_service.get_graph_features(user_id)
+        features = await _graph_service.get_graph_features(user_id)
         return {
             "user_id": user_id,
             "graph_features": features,

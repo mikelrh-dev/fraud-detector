@@ -3,6 +3,7 @@
 Includes data drift detection, model performance metrics, and system status.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -95,8 +96,12 @@ async def get_drift_status(
             current_data = current_data.iloc[reference_size:]
             logger.info("Initialized drift service with %d reference transactions", reference_size)
 
-        # Evaluate drift
-        drift_result = _drift_service.evaluate_drift(current_data)
+        # Evaluate drift using ThreadPoolExecutor to avoid blocking event loop
+        # Evidently calculations are CPU-bound (500ms-2s), must run in thread
+        drift_result = await asyncio.to_thread(
+            _drift_service.evaluate_drift,
+            current_data,
+        )
 
         return {
             **drift_result,

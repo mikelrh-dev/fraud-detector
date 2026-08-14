@@ -27,7 +27,7 @@ async def get_stream_client() -> redis.Redis:
 
 
 async def publish_event(stream_name: str, event_data: dict[str, Any]) -> str:
-    """Publish event to a Redis Stream.
+    """Publish event to a Redis Stream with automatic size limit.
     
     Args:
         stream_name: Name of the stream (e.g., "fraud:shap", "fraud:embeddings")
@@ -45,10 +45,14 @@ async def publish_event(stream_name: str, event_data: dict[str, Any]) -> str:
             "published_at": datetime.now(tz=timezone.utc).isoformat(),
         }
         
-        # XADD to stream
+        # XADD to stream with MAXLEN to prevent unbounded growth
+        # maxlen=100000 keeps ~50MB in Redis (500B avg per event)
+        # approximate=True uses efficient trimming (~10% off)
         message_id = await client.xadd(
             stream_name,
             {"data": json.dumps(event_with_ts)},
+            maxlen=100000,  # Trim stream to 100K events
+            approximate=True,  # Use approximate trimming for efficiency
         )
         
         logger.debug("Published event to stream %s: %s", stream_name, message_id)
