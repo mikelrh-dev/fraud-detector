@@ -44,6 +44,9 @@ joblib==1.4.*
 numpy==1.26.*
 pandas==2.2.*
 shap==0.46.*
+evidently==0.4.*
+sentence-transformers==2.2.*
+networkx==3.3.*
 
 # Notebooks
 jupyter==1.1.*
