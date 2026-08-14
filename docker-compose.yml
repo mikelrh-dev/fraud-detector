@@ -128,6 +128,25 @@ services:
     networks:
       - fraud-network
 
+  embedding-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    entrypoint: []
+    command: ["python", "-m", "src.workers.embedding_worker"]
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+    networks:
+      - fraud-network
+
   frontend:
     build:
       context: .

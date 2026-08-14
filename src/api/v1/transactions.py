@@ -262,7 +262,17 @@ async def create_and_score_transaction(
         except Exception:
             logger.exception("Failed to enqueue SHAP attribution request")
 
-    # 12. Determine dynamic friction level based on score and classification
+    # 12. Enqueue embedding analysis for merchant spoofing detection
+    # Best-effort: detects if merchant name is semantically similar to known fraudulent patterns
+    try:
+        await enqueue("fraud:embeddings", {
+            "transaction_id": str(txn.id),
+            "merchant_name": payload.merchant_name,
+        })
+    except Exception:
+        logger.exception("Failed to enqueue merchant embedding request")
+
+    # 13. Determine dynamic friction level based on score and classification
     friction_level, action = _determine_friction_level(ensemble_score, classification)
 
     return ScoreResponse(
@@ -399,6 +409,42 @@ async def get_transaction_endpoint(
         created_at=txn.created_at,
         updated_at=txn.updated_at,
     )
+
+
+@router.get("/{transaction_id}/embedding", response_model=dict, status_code=status.HTTP_200_OK)
+async def get_embedding_analysis(
+    transaction_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get merchant embedding analysis results for a transaction.
+    
+    Returns spoofing detection results if available (may return 404 if
+    the worker hasn't processed the transaction yet).
+    """
+    from src.core.redis import redis_client
+    
+    try:
+        result_key = f"embedding_result:{transaction_id}"
+        result_json = await redis_client.get(result_key)
+        
+        if not result_json:
+            return {
+                "transaction_id": str(transaction_id),
+                "status": "pending",
+                "message": "Embedding analysis not yet completed",
+            }
+        
+        import json
+        result = json.loads(result_json)
+        return result
+    except Exception as exc:
+        logger.exception("Failed to retrieve embedding result: %s", exc)
+        return {
+            "transaction_id": str(transaction_id),
+            "status": "error",
+            "message": str(exc),
+        }
 
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
