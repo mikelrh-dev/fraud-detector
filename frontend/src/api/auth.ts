@@ -16,7 +16,7 @@ export interface UserResponse {
 }
 
 export interface LoginRequest {
-  username: string;
+  email: string;
   password: string;
 }
 
@@ -28,7 +28,7 @@ export interface RegisterRequest {
 }
 
 /**
- * Authenticate user with username + password.
+ * Authenticate user with email + password.
  * Returns JWT tokens.
  */
 export async function login(data: LoginRequest): Promise<LoginResponse> {
@@ -37,7 +37,7 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
 }
 
 /**
- * Register a new user (admin only).
+ * Register a new user (public registration).
  */
 export async function register(data: RegisterRequest): Promise<UserResponse> {
   const response = await apiClient.post<UserResponse>("/auth/register", data);

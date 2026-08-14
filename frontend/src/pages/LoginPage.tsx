@@ -1,24 +1,31 @@
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { login } from "../api/auth";
 import { useAuthStore } from "../store/authStore";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const DEMO_EMAIL = "admin@fraud.local";
+const DEMO_PASSWORD = "admin123";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const storeLogin = useAuthStore((s) => s.login);
 
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function submitCredentials(credentials: {
+    email: string;
+    password: string;
+  }) {
     setError(null);
     setLoading(true);
 
     try {
-      const result = await login({ username, password });
+      const result = await login(credentials);
       storeLogin(result.access_token, result.refresh_token);
       navigate("/dashboard", { replace: true });
     } catch (err: unknown) {
@@ -35,6 +42,23 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+
+    if (!EMAIL_REGEX.test(email)) {
+      setError("Ingrese un email válido.");
+      return;
+    }
+
+    void submitCredentials({ email, password });
+  }
+
+  function handleDemoLogin() {
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    void submitCredentials({ email: DEMO_EMAIL, password: DEMO_PASSWORD });
   }
 
   return (
@@ -70,17 +94,18 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label
-                htmlFor="username"
+                htmlFor="email"
                 className="block text-sm font-medium text-slate-400 mb-1"
               >
-                Usuario
+                Email
               </label>
               <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Ingrese su usuario"
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Ingrese su email"
                 required
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/60 transition-colors"
               />
@@ -96,6 +121,7 @@ export default function LoginPage() {
               <input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Ingrese su contraseña"
@@ -118,6 +144,35 @@ export default function LoginPage() {
               {loading ? "Ingresando..." : "Ingresar"}
             </button>
           </form>
+
+          {/* Demo login */}
+          <div className="mt-6">
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-slate-800" aria-hidden="true" />
+              <span className="text-xs font-medium text-slate-500">O</span>
+              <span className="h-px flex-1 bg-slate-800" aria-hidden="true" />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={loading}
+              className="mt-4 w-full py-2 px-4 bg-slate-800/60 hover:bg-slate-700/60 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700 text-slate-300 font-medium rounded-lg text-sm transition-colors"
+            >
+              Demo: Probar con Cuenta de Prueba
+            </button>
+          </div>
+
+          {/* Register link */}
+          <p className="mt-6 text-center text-sm text-slate-500">
+            ¿Primera vez?{" "}
+            <Link
+              to="/register"
+              className="text-red-400 hover:text-red-300 font-medium transition-colors"
+            >
+              Crear cuenta aquí
+            </Link>
+          </p>
         </div>
       </div>
     </div>

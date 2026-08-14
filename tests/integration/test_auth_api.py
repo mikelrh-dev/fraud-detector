@@ -67,6 +67,128 @@ class TestAuthLogin:
         )
         assert response.status_code == 422
 
+    async def test_login_by_email_valid_credentials(self, test_client: AsyncClient, mock_db: AsyncMock):
+        """Login with a valid email + password should return 200 with both tokens.
+
+        After the email migration, POST /api/v1/auth/login with
+        {"email": "admin@fraud.local", "password": "admin123"} must authenticate the
+        seeded admin user and return access_token, refresh_token and token_type "bearer".
+        """
+        # Arrange: seeded admin user (admin@fraud.local / admin123) exists in DB
+        mock_result = MagicMock()
+        mock_user = MagicMock()
+        mock_user.id = "admin-uuid"
+        mock_user.username = "admin"
+        mock_user.email = "admin@fraud.local"
+        mock_user.hashed_password = hash_password("admin123")
+        mock_user.role = MagicMock()
+        mock_user.role.value = "admin"
+        mock_user.is_active = True
+        mock_result.scalar_one_or_none.return_value = mock_user
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # Act
+        response = await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@fraud.local", "password": "admin123"},
+        )
+
+        # Assert
+        assert response.status_code == 200, (
+            f"expected 200 for valid email login, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert data["access_token"], "response must include a non-empty access_token"
+        assert data["refresh_token"], "response must include a non-empty refresh_token"
+        assert data["token_type"] == "bearer"
+
+    async def test_login_by_email_case_insensitive(self, test_client: AsyncClient, mock_db: AsyncMock):
+        """Email lookup must be case-insensitive: ADMIN@fraud.local == admin@fraud.local.
+
+        POST /api/v1/auth/login with an uppercase version of the stored email must
+        still return 200 with both tokens.
+        """
+        # Arrange: seeded admin user (admin@fraud.local / admin123) exists in DB
+        mock_result = MagicMock()
+        mock_user = MagicMock()
+        mock_user.id = "admin-uuid"
+        mock_user.username = "admin"
+        mock_user.email = "admin@fraud.local"
+        mock_user.hashed_password = hash_password("admin123")
+        mock_user.role = MagicMock()
+        mock_user.role.value = "admin"
+        mock_user.is_active = True
+        mock_result.scalar_one_or_none.return_value = mock_user
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # Act
+        response = await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "ADMIN@fraud.local", "password": "admin123"},
+        )
+
+        # Assert
+        assert response.status_code == 200, (
+            f"expected 200 for case-insensitive email login, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert data["access_token"], "response must include a non-empty access_token"
+        assert data["refresh_token"], "response must include a non-empty refresh_token"
+        assert data["token_type"] == "bearer"
+
+    async def test_login_by_email_unknown_returns_401(self, test_client: AsyncClient, mock_db: AsyncMock):
+        """Login with an email that does not exist must return 401, never 200 or 422.
+
+        POST /api/v1/auth/login with {"email": "nonexistent@test.com", "password": "x"}
+        must return 401 Unauthorized without revealing whether the account exists.
+        """
+        # Arrange: no user found for that email
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # Act
+        response = await test_client.post(
+            "/api/v1/auth/login",
+            json={"email": "nonexistent@test.com", "password": "x"},
+        )
+
+        # Assert
+        assert response.status_code == 401, (
+            f"expected 401 for unknown email, got {response.status_code}: {response.text}"
+        )
+
+    async def test_login_old_username_field_still_fails(self, test_client: AsyncClient, mock_db: AsyncMock):
+        """After the email migration the legacy username field must no longer be accepted.
+
+        POST /api/v1/auth/login with {"username": "admin", "password": "admin123"}
+        must return 422 (validation error) because username is not a recognized
+        login field anymore — even though the admin user exists in the DB.
+        """
+        # Arrange: admin exists and would be found by username if the field were still honored
+        mock_result = MagicMock()
+        mock_user = MagicMock()
+        mock_user.id = "admin-uuid"
+        mock_user.username = "admin"
+        mock_user.email = "admin@fraud.local"
+        mock_user.hashed_password = hash_password("admin123")
+        mock_user.role = MagicMock()
+        mock_user.role.value = "admin"
+        mock_user.is_active = True
+        mock_result.scalar_one_or_none.return_value = mock_user
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # Act
+        response = await test_client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "admin123"},
+        )
+
+        # Assert
+        assert response.status_code == 422, (
+            f"expected 422 (username field not recognized), got {response.status_code}: {response.text}"
+        )
+
 
 class TestAuthRegister:
     """POST /api/v1/auth/register endpoint."""

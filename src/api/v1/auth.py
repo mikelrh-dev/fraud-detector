@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.dependencies import get_current_user, get_db, get_redis
 from src.core.security import blacklist_token, create_access_token, decode_access_token
 from src.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
-from src.services.auth import login, register_user
+from src.services.auth import login, register_user, CredentialError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -45,11 +45,14 @@ async def login_endpoint(
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(check_rate_limit),
 ) -> TokenResponse:
-    """Authenticate and return JWT tokens."""
+    """Authenticate and return JWT tokens.
+    
+    Login is now email-based (case-insensitive).
+    """
     try:
         result = await login(db, request)
         return result
-    except ValueError:
+    except CredentialError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

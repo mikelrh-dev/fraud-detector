@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.security import (
@@ -18,6 +18,12 @@ from src.schemas.auth import (
 )
 
 
+class CredentialError(Exception):
+    """Raised when login credentials are invalid."""
+
+    pass
+
+
 class AuthService:
     """Authentication business logic."""
 
@@ -26,10 +32,14 @@ class AuthService:
 
 
 async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
-    """Register a new user. Raises ValueError if email already exists."""
-    # Check for existing user by email
+    """Register a new user. Raises ValueError if email already exists.
+    
+    Email is stored in lowercase to ensure case-insensitive uniqueness.
+    """
+    email_lower = request.email.lower()
+    # Check for existing user by email (case-insensitive)
     result = await db.execute(
-        select(User).where(User.email == request.email)
+        select(User).where(func.lower(User.email) == email_lower)
     )
     existing = result.scalar_one_or_none()
     if existing is not None:
@@ -38,7 +48,7 @@ async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
     user = User(
         id=uuid4(),
         username=request.username,
-        email=request.email,
+        email=email_lower,
         hashed_password=hash_password(request.password),
         role=UserRole(request.role),
         is_active=True,
@@ -51,18 +61,20 @@ async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
 async def login(db: AsyncSession, request: LoginRequest) -> TokenResponse:
     """Authenticate a user and return JWT tokens.
 
-    Raises ValueError if credentials are invalid.
+    Login is now email-based (case-insensitive). 
+    Raises CredentialError if credentials are invalid.
     """
+    email_lower = request.email.lower()
     result = await db.execute(
-        select(User).where(User.username == request.username)
+        select(User).where(func.lower(User.email) == email_lower)
     )
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:
-        raise ValueError("Invalid credentials")
+        raise CredentialError("Invalid credentials")
 
     if not verify_password(request.password, user.hashed_password):
-        raise ValueError("Invalid credentials")
+        raise CredentialError("Invalid credentials")
 
     # Handle both enum and string cases for role
     role_value = user.role.value if hasattr(user.role, 'value') else user.role
