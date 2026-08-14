@@ -24,6 +24,7 @@ class RuleEngine:
         "unusual_hours": 10,
         "off_hours_crypto": 25,
         "country_mismatch": 15,
+        "near_fraud": 15,  # Graph: user ≤2 hops from known fraudster
     }
 
     # Merchant categories considered inherently risky regardless of the name
@@ -103,6 +104,11 @@ class RuleEngine:
         home_country = ctx.get("home_country")
         if tx_country and home_country and tx_country != home_country:
             fired.append("country_mismatch")
+
+        # 7. Near fraud: user or card is ≤2 hops from known fraudster (graph network)
+        graph_features = ctx.get("graph_features") or {}
+        if graph_features.get("is_near_fraud"):
+            fired.append("near_fraud")
 
         total = float(sum(self.WEIGHTS[r] for r in fired))
         total = min(total, 100.0)

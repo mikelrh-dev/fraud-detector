@@ -30,6 +30,7 @@ from src.schemas.transaction import (
 from src.services.audit import AuditService
 from src.services.ensemble import EnsembleScorer
 from src.services.feature_engine import FeatureEngine
+from src.services.graph_service import FraudGraphService
 from src.services.ml_model import MLModelService
 from src.services.rule_engine import RuleEngine
 from src.services.shap_service import ShapService
@@ -86,6 +87,7 @@ _audit_service = AuditService()
 _ml_service = MLModelService()
 _feature_engine = FeatureEngine()
 _shap_service = ShapService()
+_graph_service = FraudGraphService()
 
 # Load ML model at startup (synchronous, runs once)
 _ml_service.load_model()
@@ -138,7 +140,10 @@ async def create_and_score_transaction(
     all_user_txns = list(all_user_result.scalars().all())
     known_cards = list({t.card_last4 for t in all_user_txns if t.card_last4})
 
-    # 3. Rule engine evaluation with timestamp and context
+    # 3. Get graph features (fraud network analysis)
+    graph_features = _graph_service.get_graph_features(str(payload.user_id))
+
+    # 3.5. Rule engine evaluation with timestamp and context
     now = datetime.now(tz=timezone.utc)
     tx_data: dict[str, Any] = {
         "amount": payload.amount,
@@ -154,6 +159,7 @@ async def create_and_score_transaction(
         "known_cards": known_cards,
         "merchant_blacklist": ["crypto exchange pro", "online gambling", "money transfer now"],
         "home_country": "AR",
+        "graph_features": graph_features,  # Add graph context for rules
     }
     rule_score, fired_rules = _rule_engine.evaluate(tx_data, context)
 
@@ -206,6 +212,18 @@ async def create_and_score_transaction(
     txn.status = status_map.get(classification, TransactionStatus.PENDING)
 
     await db.flush()
+
+    # 8.5. Update fraud graph: add transaction edges and mark fraudsters
+    # This happens AFTER classification is made
+    try:
+        _graph_service.add_transaction(
+            sender_id=str(payload.user_id),
+            receiver_id=f"merchant_{payload.merchant_name}",  # Treat merchant as receiver node
+            card_id=payload.card_last4,
+            is_fraud=(classification == "fraud"),
+        )
+    except Exception:
+        logger.exception("Failed to update fraud graph")
 
     # 9. Record audit trail for the scoring decision
     await _audit_service.create_entry(
@@ -442,6 +460,52 @@ async def get_embedding_analysis(
         logger.exception("Failed to retrieve embedding result: %s", exc)
         return {
             "transaction_id": str(transaction_id),
+            "status": "error",
+            "message": str(exc),
+        }
+
+
+@router.get("/graph/stats", response_model=dict, status_code=status.HTTP_200_OK)
+async def get_graph_stats(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get fraud network graph statistics.
+    
+    Returns overall graph metrics: nodes, edges, density, known fraudsters.
+    """
+    try:
+        stats = _graph_service.get_stats()
+        return {
+            "status": "ok",
+            "graph": stats,
+        }
+    except Exception as exc:
+        logger.exception("Failed to retrieve graph stats: %s", exc)
+        return {
+            "status": "error",
+            "message": str(exc),
+        }
+
+
+@router.get("/{user_id}/graph-features", response_model=dict, status_code=status.HTTP_200_OK)
+async def get_user_graph_features(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get fraud network features for a specific user.
+    
+    Returns: is_near_fraud, degree_centrality, shortest_path_to_fraud, connected_fraudsters.
+    """
+    try:
+        features = _graph_service.get_graph_features(user_id)
+        return {
+            "user_id": user_id,
+            "graph_features": features,
+        }
+    except Exception as exc:
+        logger.exception("Failed to retrieve graph features for user %s: %s", user_id, exc)
+        return {
+            "user_id": user_id,
             "status": "error",
             "message": str(exc),
         }
