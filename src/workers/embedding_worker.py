@@ -3,8 +3,11 @@
 Processes transactions from Redis Streams (fraud:embeddings) and performs
 merchant spoofing analysis using sentence embeddings.
 
-Consumer group: "embedding-workers"
-Stream: "fraud:embeddings"
+Features:
+- Consumer group: "embedding-workers"
+- Stream: "fraud:embeddings"
+- Automatic recovery of stuck messages (XAUTOCLAIM)
+- Dead-letter queue for failed messages
 """
 
 import asyncio
@@ -15,6 +18,7 @@ from datetime import datetime, timezone
 import redis.asyncio as redis
 
 from src.core.config import settings
+from src.core.stream_dlq import recover_pending_messages, get_consumer_group_status
 from src.core.stream_publisher import ensure_consumer_group
 from src.services.merchant_embedding_service import MerchantEmbeddingService
 
@@ -23,6 +27,7 @@ logger = logging.getLogger(__name__)
 STREAM_NAME = "fraud:embeddings"
 GROUP_NAME = "embedding-workers"
 CONSUMER_NAME = "embedding-worker-1"
+RECOVERY_INTERVAL = 60  # Check for stuck messages every 60 seconds
 
 
 class EmbeddingWorker:
@@ -67,43 +72,49 @@ class EmbeddingWorker:
             GROUP_NAME,
             CONSUMER_NAME,
         )
+        
+        # Start recovery task
+        recovery_task = asyncio.create_task(self._recovery_loop())
 
-        while True:
-            try:
-                # XREADGROUP: blocking read from consumer group
-                # Returns: [(stream_name, [(message_id, fields_dict), ...]), ...]
-                messages = await self.redis_client.xreadgroup(
-                    GROUP_NAME,
-                    CONSUMER_NAME,
-                    {STREAM_NAME: ">"},  # ">" means new messages only
-                    count=1,
-                    block=1000,  # 1 second timeout
-                )
+        try:
+            while True:
+                try:
+                    # XREADGROUP: blocking read from consumer group
+                    messages = await self.redis_client.xreadgroup(
+                        GROUP_NAME,
+                        CONSUMER_NAME,
+                        {STREAM_NAME: ">"},  # ">" means new messages only
+                        count=1,
+                        block=1000,  # 1 second timeout
+                    )
 
-                if not messages:
-                    continue
+                    if not messages:
+                        continue
 
-                # Process each message
-                for stream_name, msg_list in messages:
-                    for message_id, fields in msg_list:
-                        try:
-                            # Decode message
-                            data_json = fields.get(b"data", b"{}").decode("utf-8")
-                            message_data = json.loads(data_json)
+                    # Process each message
+                    for stream_name, msg_list in messages:
+                        for message_id, fields in msg_list:
+                            try:
+                                # Decode message
+                                data_json = fields.get(b"data", b"{}").decode("utf-8")
+                                message_data = json.loads(data_json)
 
-                            # Process
-                            await self.process_message(message_data)
+                                # Process
+                                await self.process_message(message_data)
 
-                            # ACK if success
-                            await self.redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
-                            logger.debug("Embedding message ACKed: %s", message_id)
+                                # ACK if success
+                                await self.redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+                                logger.debug("Embedding message ACKed: %s", message_id)
 
-                        except Exception as exc:
-                            logger.error("Error processing embedding message: %s", exc)
+                            except Exception as exc:
+                                logger.error("Error processing embedding message: %s", exc)
 
-            except Exception as exc:
-                logger.error("Error in embedding worker loop: %s", exc)
-                await asyncio.sleep(1)  # Backoff
+                except Exception as exc:
+                    logger.error("Error in embedding worker loop: %s", exc)
+                    await asyncio.sleep(1)  # Backoff
+        
+        finally:
+            recovery_task.cancel()
 
     async def process_message(self, message: dict) -> None:
         """Process a single embedding task.
