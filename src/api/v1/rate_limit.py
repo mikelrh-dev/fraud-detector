@@ -15,7 +15,8 @@ _request_log: dict[tuple[str, str], list[float]] = defaultdict(list)
 
 # Rate limits: (path_prefix, max_requests, window_seconds)
 RATE_LIMITS: dict[str, tuple[int, float]] = {
-    "/api/v1/auth/login": (10, 60.0),
+    "/api/v1/auth/login": (10, 60.0),  # 10 attempts per 60 seconds
+    "/api/v1/auth/register": (10, 60.0),  # 10 attempts per 60 seconds
     "/api/v1/transactions": (100, 60.0),
     "/api/v1/alerts": (60, 60.0),
 }

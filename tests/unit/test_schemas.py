@@ -24,20 +24,20 @@ class TestAuthSchemas:
     """Auth schema validation tests."""
 
     def test_login_request_valid(self):
-        """LoginRequest should accept valid username and password."""
-        data = LoginRequest(username="analyst1", password="secure_pass_123")
-        assert data.username == "analyst1"
+        """LoginRequest should accept a valid email and password."""
+        data = LoginRequest(email="analyst1@example.com", password="secure_pass_123")
+        assert data.email == "analyst1@example.com"
         assert data.password == "secure_pass_123"
 
-    def test_login_request_empty_username_raises(self):
-        """LoginRequest with empty username should fail validation."""
+    def test_login_request_empty_email_raises(self):
+        """LoginRequest with empty email should fail validation."""
         with pytest.raises(ValidationError):
-            LoginRequest(username="", password="secure_pass_123")
+            LoginRequest(email="", password="secure_pass_123")
 
     def test_login_request_empty_password_raises(self):
         """LoginRequest with empty password should fail validation."""
         with pytest.raises(ValidationError):
-            LoginRequest(username="analyst1", password="")
+            LoginRequest(email="analyst1@example.com", password="")
 
     def test_register_request_valid(self):
         """RegisterRequest should accept valid user data."""
@@ -69,6 +69,52 @@ class TestAuthSchemas:
                 password="secure_pass_123",
                 role="superadmin",
             )
+
+    def test_password_too_short(self):
+        """Password with fewer than 8 characters should fail validation."""
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="testuser", email="test@example.com", password="short1")
+
+    def test_password_too_long(self):
+        """Password longer than 64 characters should fail validation (bcrypt 72-byte limit)."""
+        long_pw = "a" * 65
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="testuser", email="test@example.com", password=long_pw)
+
+    def test_password_is_common(self):
+        """Common/weak passwords should fail validation."""
+        for common_pw in ["password", "12345678", "qwerty123", "admin123"]:
+            with pytest.raises(ValidationError):
+                RegisterRequest(username="testuser", email="test@example.com", password=common_pw)
+
+    def test_password_matches_email_local_part(self):
+        """Password derived from the email local part should fail validation."""
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="testuser", email="alice@example.com", password="alice123")
+
+    def test_password_equals_email_local_part(self):
+        """Password equal to the email local part should fail validation."""
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="testuser", email="johnsmith@example.com", password="johnsmith")
+
+    def test_password_matches_username(self):
+        """Password containing the username should fail validation."""
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="bob", email="test@example.com", password="bob12345")
+
+    def test_password_matches_username_case_insensitive(self):
+        """Password containing the username in different case should fail validation."""
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="bob", email="test@example.com", password="BOB12345")
+
+    def test_valid_strong_password(self):
+        """A strong password should be accepted."""
+        req = RegisterRequest(
+            username="testuser",
+            email="test@example.com",
+            password="SecureP@ssw0rd123",
+        )
+        assert req.password == "SecureP@ssw0rd123"
 
     def test_token_response_valid(self):
         """TokenResponse should accept valid token data."""

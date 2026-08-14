@@ -17,12 +17,13 @@ class TestAuthLogin:
     """POST /api/v1/auth/login endpoint."""
 
     async def test_successful_login_returns_tokens(self, test_client: AsyncClient, mock_db: AsyncMock):
-        """Valid credentials should return access and refresh tokens."""
+        """Valid email credentials should return access and refresh tokens."""
         # Arrange: user exists in DB
         mock_result = MagicMock()
         mock_user = MagicMock()
         mock_user.id = "test-user-uuid"
         mock_user.username = "test_analyst"
+        mock_user.email = "test_analyst@example.com"
         mock_user.hashed_password = hash_password("test_password_123")
         mock_user.role = MagicMock()
         mock_user.role.value = "analyst"
@@ -33,7 +34,7 @@ class TestAuthLogin:
         # Act
         response = await test_client.post(
             "/api/v1/auth/login",
-            json={"username": "test_analyst", "password": "test_password_123"},
+            json={"email": "test_analyst@example.com", "password": "test_password_123"},
         )
 
         # Assert
@@ -53,14 +54,14 @@ class TestAuthLogin:
         # Act
         response = await test_client.post(
             "/api/v1/auth/login",
-            json={"username": "nonexistent", "password": "wrong_password"},
+            json={"email": "nonexistent@example.com", "password": "wrong_password"},
         )
 
         # Assert
         assert response.status_code == 401
 
     async def test_missing_fields_returns_422(self, test_client: AsyncClient):
-        """Missing username/password should return 422."""
+        """Missing email/password should return 422."""
         response = await test_client.post(
             "/api/v1/auth/login",
             json={},
@@ -71,15 +72,15 @@ class TestAuthLogin:
         """Login with a valid email + password should return 200 with both tokens.
 
         After the email migration, POST /api/v1/auth/login with
-        {"email": "admin@fraud.local", "password": "admin123"} must authenticate the
+        {"email": "admin@frauddetector.dev", "password": "admin123"} must authenticate the
         seeded admin user and return access_token, refresh_token and token_type "bearer".
         """
-        # Arrange: seeded admin user (admin@fraud.local / admin123) exists in DB
+        # Arrange: seeded admin user (admin@frauddetector.dev / admin123) exists in DB
         mock_result = MagicMock()
         mock_user = MagicMock()
         mock_user.id = "admin-uuid"
         mock_user.username = "admin"
-        mock_user.email = "admin@fraud.local"
+        mock_user.email = "admin@frauddetector.dev"
         mock_user.hashed_password = hash_password("admin123")
         mock_user.role = MagicMock()
         mock_user.role.value = "admin"
@@ -90,7 +91,7 @@ class TestAuthLogin:
         # Act
         response = await test_client.post(
             "/api/v1/auth/login",
-            json={"email": "admin@fraud.local", "password": "admin123"},
+            json={"email": "admin@frauddetector.dev", "password": "admin123"},
         )
 
         # Assert
@@ -103,17 +104,17 @@ class TestAuthLogin:
         assert data["token_type"] == "bearer"
 
     async def test_login_by_email_case_insensitive(self, test_client: AsyncClient, mock_db: AsyncMock):
-        """Email lookup must be case-insensitive: ADMIN@fraud.local == admin@fraud.local.
+        """Email lookup must be case-insensitive: ADMIN@frauddetector.dev == admin@frauddetector.dev.
 
         POST /api/v1/auth/login with an uppercase version of the stored email must
         still return 200 with both tokens.
         """
-        # Arrange: seeded admin user (admin@fraud.local / admin123) exists in DB
+        # Arrange: seeded admin user (admin@frauddetector.dev / admin123) exists in DB
         mock_result = MagicMock()
         mock_user = MagicMock()
         mock_user.id = "admin-uuid"
         mock_user.username = "admin"
-        mock_user.email = "admin@fraud.local"
+        mock_user.email = "admin@frauddetector.dev"
         mock_user.hashed_password = hash_password("admin123")
         mock_user.role = MagicMock()
         mock_user.role.value = "admin"
@@ -124,7 +125,7 @@ class TestAuthLogin:
         # Act
         response = await test_client.post(
             "/api/v1/auth/login",
-            json={"email": "ADMIN@fraud.local", "password": "admin123"},
+            json={"email": "ADMIN@frauddetector.dev", "password": "admin123"},
         )
 
         # Assert
@@ -170,7 +171,7 @@ class TestAuthLogin:
         mock_user = MagicMock()
         mock_user.id = "admin-uuid"
         mock_user.username = "admin"
-        mock_user.email = "admin@fraud.local"
+        mock_user.email = "admin@frauddetector.dev"
         mock_user.hashed_password = hash_password("admin123")
         mock_user.role = MagicMock()
         mock_user.role.value = "admin"
@@ -219,7 +220,11 @@ class TestAuthRegister:
         assert data["email"] == "new@example.com"
 
     async def test_duplicate_email_returns_409(self, test_client: AsyncClient, mock_db: AsyncMock, admin_headers: dict):
-        """Duplicate email should return 409."""
+        """Duplicate email should return 409 without echoing the email address.
+
+        The 409 detail MUST be generic (enumeration-safe): it must not contain
+        the submitted email, otherwise an attacker can probe which accounts exist.
+        """
         # Arrange: existing user found
         mock_result = MagicMock()
         existing_user = MagicMock()
@@ -239,6 +244,154 @@ class TestAuthRegister:
             headers=admin_headers,
         )
         assert response.status_code == 409
+        assert "existing@example.com" not in response.text, (
+            f"409 detail must not echo the email address, got: {response.text}"
+        )
+
+
+class TestAuthRegisterSecurity:
+    """POST /api/v1/auth/register — security hardening scenarios.
+
+    Task 4.1 RED tests: rate limiting, enumeration-safe 409, SQLi rejection.
+    Register is a PUBLIC endpoint (no auth required), so these tests exercise
+    it exactly as an unauthenticated attacker would — no admin headers.
+    """
+
+    async def test_register_rate_limit_exceeded(self, test_client: AsyncClient, mock_db: AsyncMock):
+        """After N register attempts in T seconds, return 429 Too Many Requests.
+
+        The register endpoint must be rate limited the same way login is
+        (RATE_LIMITS in src/api/v1/rate_limit.py — currently register is missing
+        from that table, so the 11th request is NOT limited today).
+        """
+        # Arrange: no existing user → each request would succeed (201)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # Use a TEST-NET-3 reserved IP (RFC 5737) so the rate-limit bucket is
+        # isolated from the other tests in this file.
+        headers = {"X-Forwarded-For": "203.0.113.50"}
+        payload = {
+            "username": "burst_user",
+            "email": "burst@example.com",
+            "password": "secure_password_123",
+            "role": "analyst",
+        }
+
+        # Act: fire 11 rapid requests (expected limit: 10 per minute)
+        responses = [
+            await test_client.post("/api/v1/auth/register", json=payload, headers=headers)
+            for _ in range(11)
+        ]
+
+        # Assert
+        assert all(r.status_code != 429 for r in responses[:10]), (
+            "rate limit must not trigger before the limit is reached"
+        )
+        assert responses[-1].status_code == 429, (
+            f"expected 429 on request 11, got {responses[-1].status_code}: {responses[-1].text}"
+        )
+        assert responses[-1].headers.get("Retry-After") is not None, (
+            "429 response must include a Retry-After header"
+        )
+
+    async def test_register_duplicate_email_returns_generic_409(self, test_client: AsyncClient, mock_db: AsyncMock):
+        """409 for duplicate email must NOT echo the email address.
+
+        Current behavior echoes it: "User with email 'test@example.com' already exists"
+        (src/services/auth.py). That is an email-enumeration vector. The detail must
+        be a generic message with no account identifiers.
+        """
+        # Arrange: first call → no existing user (201); second call → existing user (409)
+        no_user = MagicMock()
+        no_user.scalar_one_or_none.return_value = None
+        existing_user = MagicMock()
+        existing_user.email = "test@example.com"
+        existing_result = MagicMock()
+        existing_result.scalar_one_or_none.return_value = existing_user
+        mock_db.execute = AsyncMock(side_effect=[no_user, existing_result])
+
+        payload = {
+            "username": "user1",
+            "email": "test@example.com",
+            "password": "secure_password_123",
+            "role": "analyst",
+        }
+
+        # Act
+        first = await test_client.post("/api/v1/auth/register", json=payload)
+        assert first.status_code == 201, (
+            f"expected 201 on first register, got {first.status_code}: {first.text}"
+        )
+
+        second = await test_client.post(
+            "/api/v1/auth/register",
+            json={**payload, "username": "user2"},
+        )
+
+        # Assert
+        assert second.status_code == 409, (
+            f"expected 409 on duplicate email, got {second.status_code}: {second.text}"
+        )
+        detail = second.json().get("detail", "")
+        assert detail, "409 detail must contain a generic message"
+        assert "test@example.com" not in detail, (
+            f"409 detail must not echo the email address, got: {detail!r}"
+        )
+
+    async def test_register_sqli_in_email_field_rejected(self, test_client: AsyncClient):
+        """SQLi payload in email field should be rejected with 422, never 500.
+
+        The email field is validated by Pydantic EmailStr, so a malformed
+        injection payload like "' OR 1=1 -- @example.com" must fail validation
+        (422) before it ever reaches the database layer.
+        """
+        # Act
+        response = await test_client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "hacker",
+                "email": "' OR 1=1 -- @example.com",
+                "password": "secure_password_123",
+                "role": "analyst",
+            },
+        )
+
+        # Assert
+        assert response.status_code == 422, (
+            f"expected 422 for SQLi email payload, got {response.status_code}: {response.text}"
+        )
+
+    async def test_register_sqli_in_username_field_rejected(self, test_client: AsyncClient, mock_db: AsyncMock):
+        """SQLi payload in username field should be rejected with 422, never 500.
+
+        The username field currently accepts any string (only min/max length), so
+        "'; DROP TABLE users; --" sails through validation today and is stored as a
+        literal username by the parameterized ORM query — returning 201 instead of
+        rejecting it. A public register endpoint must reject injection metacharacters
+        with 422 so payloads never reach the query layer.
+        """
+        # Arrange: mock says no existing user (would otherwise be 201 today)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # Act
+        response = await test_client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "'; DROP TABLE users; --",
+                "email": "test@example.com",
+                "password": "secure_password_123",
+                "role": "analyst",
+            },
+        )
+
+        # Assert
+        assert response.status_code == 422, (
+            f"expected 422 for SQLi username payload, got {response.status_code}: {response.text}"
+        )
 
 
 class TestAuthProtectedAccess:

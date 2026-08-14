@@ -30,6 +30,13 @@ class AuthService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def login(self, request: LoginRequest) -> TokenResponse:
+        """Authenticate a user via email and return JWT tokens.
+
+        Raises CredentialError if credentials are invalid.
+        """
+        return await login(self.db, request)
+
 
 async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
     """Register a new user. Raises ValueError if email already exists.
@@ -43,7 +50,7 @@ async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
     )
     existing = result.scalar_one_or_none()
     if existing is not None:
-        raise ValueError(f"User with email '{request.email}' already exists")
+        raise ValueError("Email ya registrado")  # Generic, no email echo
 
     user = User(
         id=uuid4(),

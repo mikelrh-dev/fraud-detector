@@ -1,4 +1,4 @@
-"""Seed the demo admin account (admin@fraud.local / admin123) for local development.
+"""Seed the demo admin account (admin@frauddetector.dev / admin123) for local development.
 
 Matches the Demo Login button credentials on the LoginPage.
 Idempotent: skips when the account already exists.
@@ -12,7 +12,7 @@ from src.core.database import async_session_maker
 from src.core.security import hash_password
 from src.models.user import User, UserRole
 
-DEMO_EMAIL = "admin@fraud.local"
+DEMO_EMAIL = "admin@frauddetector.dev"
 
 
 async def create_admin() -> None:

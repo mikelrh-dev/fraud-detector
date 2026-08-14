@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import User, UserRole
 from src.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
-from src.services.auth import AuthService, login, register_user
+from src.services.auth import AuthService, CredentialError, login, register_user
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ class TestAuthService:
             role="analyst",
         )
 
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValueError, match="Email ya registrado"):
             await register_user(mock_db, request)
 
     async def test_login_valid_credentials(self, mock_db):
@@ -79,6 +79,7 @@ class TestAuthService:
         hashed_pw = hash_password("secure_pass_123")
         user = MagicMock(spec=User)
         user.username = "analyst1"
+        user.email = "analyst1@example.com"
         user.hashed_password = hashed_pw
         user.role = UserRole.ANALYST
         user.id = "test-uuid"
@@ -88,7 +89,7 @@ class TestAuthService:
         mock_result.scalar_one_or_none.return_value = user
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        request = LoginRequest(username="analyst1", password="secure_pass_123")
+        request = LoginRequest(email="analyst1@example.com", password="secure_pass_123")
         result = await login(mock_db, request)
 
         assert isinstance(result, TokenResponse)
@@ -103,6 +104,7 @@ class TestAuthService:
         hashed_pw = hash_password("secure_pass_123")
         user = MagicMock(spec=User)
         user.username = "analyst1"
+        user.email = "analyst1@example.com"
         user.hashed_password = hashed_pw
         user.is_active = True
 
@@ -110,44 +112,45 @@ class TestAuthService:
         mock_result.scalar_one_or_none.return_value = user
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        request = LoginRequest(username="analyst1", password="wrong_password")
-        with pytest.raises(ValueError, match="Invalid credentials"):
+        request = LoginRequest(email="analyst1@example.com", password="wrong_password")
+        with pytest.raises(CredentialError, match="Invalid credentials"):
             await login(mock_db, request)
 
     async def test_login_inactive_user_raises(self, mock_db):
         """Login with inactive user should raise unauthorized."""
         user = MagicMock(spec=User)
         user.username = "inactive_user"
+        user.email = "inactive@example.com"
         user.is_active = False
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = user
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        request = LoginRequest(username="inactive_user", password="any_pass")
-        with pytest.raises(ValueError, match="Invalid credentials"):
+        request = LoginRequest(email="inactive@example.com", password="any_pass")
+        with pytest.raises(CredentialError, match="Invalid credentials"):
             await login(mock_db, request)
 
     async def test_login_user_not_found_raises(self, mock_db):
-        """Login with non-existent username should raise unauthorized."""
+        """Login with non-existent email should raise unauthorized."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        request = LoginRequest(username="nonexistent", password="any_pass")
-        with pytest.raises(ValueError, match="Invalid credentials"):
+        request = LoginRequest(email="nonexistent@example.com", password="any_pass")
+        with pytest.raises(CredentialError, match="Invalid credentials"):
             await login(mock_db, request)
 
     @staticmethod
     def _seed_admin_user(mock_db: AsyncMock) -> None:
-        """Seed mock_db so the seeded admin (admin@fraud.local / admin123) is found."""
+        """Seed mock_db so the seeded admin (admin@frauddetector.dev / admin123) is found."""
         from src.core.security import hash_password
 
         mock_result = MagicMock()
         admin = MagicMock(spec=User)
         admin.id = "admin-uuid"
         admin.username = "admin"
-        admin.email = "admin@fraud.local"
+        admin.email = "admin@frauddetector.dev"
         admin.hashed_password = hash_password("admin123")
         admin.role = UserRole.ADMIN
         admin.is_active = True
@@ -158,14 +161,14 @@ class TestAuthService:
         """auth_service.login with a valid email + password should return both tokens.
 
         Once the service migrates to email login, calling
-        auth_service.login(LoginRequest(email="admin@fraud.local", password="admin123"))
+        auth_service.login(LoginRequest(email="admin@frauddetector.dev", password="admin123"))
         must return a TokenResponse with non-empty access_token and refresh_token
         and token_type "bearer".
         """
         self._seed_admin_user(mock_db)
 
         result = await auth_service.login(
-            LoginRequest(email="admin@fraud.local", password="admin123")
+            LoginRequest(email="admin@frauddetector.dev", password="admin123")
         )
 
         assert result.token_type == "bearer"
@@ -173,15 +176,15 @@ class TestAuthService:
         assert result.refresh_token, "login must return a non-empty refresh token"
 
     async def test_login_email_case_insensitive(self, mock_db, auth_service):
-        """Email lookup must be case-insensitive: ADMIN@FRAUD.LOCAL matches the stored email.
+        """Email lookup must be case-insensitive: ADMIN@FRAUDDETECTOR.DEV matches the stored email.
 
-        auth_service.login(LoginRequest(email="ADMIN@FRAUD.LOCAL", password="admin123"))
+        auth_service.login(LoginRequest(email="ADMIN@FRAUDDETECTOR.DEV", password="admin123"))
         must return the same tokens as the lowercase email.
         """
         self._seed_admin_user(mock_db)
 
         result = await auth_service.login(
-            LoginRequest(email="ADMIN@FRAUD.LOCAL", password="admin123")
+            LoginRequest(email="ADMIN@FRAUDDETECTOR.DEV", password="admin123")
         )
 
         assert result.token_type == "bearer"
@@ -201,5 +204,5 @@ class TestAuthService:
 
         with pytest.raises(CredentialError, match="Invalid credentials"):
             await auth_service.login(
-                LoginRequest(email="admin@fraud.local", password="wrong_password")
+                LoginRequest(email="admin@frauddetector.dev", password="wrong_password")
             )

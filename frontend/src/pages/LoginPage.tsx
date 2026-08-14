@@ -5,7 +5,7 @@ import { useAuthStore } from "../store/authStore";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const DEMO_EMAIL = "admin@fraud.local";
+const DEMO_EMAIL = "admin@frauddetector.dev";
 const DEMO_PASSWORD = "admin123";
 
 export default function LoginPage() {

@@ -110,7 +110,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
-    "email": "admin@fraud-detector.local",
+    "email": "admin@frauddetector.dev",
     "password": "admin123"
   }'
 
@@ -118,7 +118,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@fraud-detector.local",
+    "email": "admin@frauddetector.dev",
     "password": "admin123"
   }'
 
@@ -181,7 +181,7 @@ curl http://localhost:8000/api/v1/transactions/{transaction_id}/report \
 Abrir http://localhost:3000 en el navegador.
 
 **Credenciales:**
-- Email: `admin@fraud-detector.local`
+- Email: `admin@frauddetector.dev`
 - Password: `admin123`
 
 **Funcionalidades:**

@@ -13,6 +13,6 @@ user_id = str(uuid4())
 hashed = hash_password("admin123")
 
 sql = f"""INSERT INTO users (id, username, email, hashed_password, role, is_active, created_at, updated_at)
-VALUES ('{user_id}', 'admin', 'admin@fraud-detector.local', '{hashed}', 'admin', true, NOW(), NOW());"""
+VALUES ('{user_id}', 'admin', 'admin@frauddetector.dev', '{hashed}', 'admin', true, NOW(), NOW());"""
 
 print(sql)
