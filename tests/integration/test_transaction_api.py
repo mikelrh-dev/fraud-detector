@@ -491,7 +491,7 @@ class TestCreateTransactionVelocity:
 
 
 class TestCreateTransactionShapEnqueue:
-    """POST /api/v1/transactions — fraud:shap enqueue behavior (FD-SHP-001)."""
+    """POST /api/v1/transactions — fraud:shap publish behavior (FD-SHP-001, FD-STREAM-001)."""
 
     _PAYLOAD = {
         "amount": 500.00,
@@ -527,9 +527,9 @@ class TestCreateTransactionShapEnqueue:
             "classify",
             lambda score, threshold: classification,
         )
-        enqueue_mock = AsyncMock()
-        monkeypatch.setattr(transactions_api, "enqueue", enqueue_mock)
-        return enqueue_mock
+        publish_mock = AsyncMock()
+        monkeypatch.setattr(transactions_api, "publish_transaction_event", publish_mock)
+        return publish_mock
 
     async def _post(self, test_client: AsyncClient, auth_headers: dict):
         return await test_client.post(
@@ -547,16 +547,16 @@ class TestCreateTransactionShapEnqueue:
         auth_headers: dict,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        """Fraud/review must enqueue a fraud:shap message with the scored vector snapshot."""
+        """Fraud/review must publish a shap_attribution event with the scored vector snapshot."""
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
-        enqueue_mock = self._patch_scoring(monkeypatch, classification)
+        publish_mock = self._patch_scoring(monkeypatch, classification)
 
         response = await self._post(test_client, auth_headers)
 
         assert response.status_code == 201
         shap_calls = [
-            call for call in enqueue_mock.call_args_list
-            if call.args[0] == "fraud:shap"
+            call for call in publish_mock.call_args_list
+            if call.args[0] == "shap_attribution"
         ]
         assert len(shap_calls) == 1
         message = shap_calls[0].args[1]
@@ -574,15 +574,15 @@ class TestCreateTransactionShapEnqueue:
         auth_headers: dict,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        """Legitimate classification must NOT enqueue a fraud:shap message (FD-SHP-001)."""
+        """Legitimate classification must NOT publish a shap_attribution event (FD-SHP-001)."""
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
-        enqueue_mock = self._patch_scoring(monkeypatch, "legitimate")
+        publish_mock = self._patch_scoring(monkeypatch, "legitimate")
 
         response = await self._post(test_client, auth_headers)
 
         assert response.status_code == 201
         assert not any(
-            call.args[0] == "fraud:shap" for call in enqueue_mock.call_args_list
+            call.args[0] == "shap_attribution" for call in publish_mock.call_args_list
         )
 
     async def test_enqueue_failure_keeps_201(
@@ -593,7 +593,7 @@ class TestCreateTransactionShapEnqueue:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ):
-        """Redis unreachable during enqueue must not fail the request — HTTP 201 (FD-SHP-001)."""
+        """Redis unreachable during publish must not fail the request — HTTP 201 (FD-SHP-001)."""
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
         monkeypatch.setattr(
             transactions_api._feature_engine,
@@ -612,7 +612,7 @@ class TestCreateTransactionShapEnqueue:
         )
         monkeypatch.setattr(
             transactions_api,
-            "enqueue",
+            "publish_transaction_event",
             AsyncMock(side_effect=ConnectionError("redis down")),
         )
 

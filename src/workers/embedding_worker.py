@@ -1,7 +1,10 @@
-"""Embedding Worker — Asynchronous merchant spoofing detection.
+"""Embedding Worker — Asynchronous merchant spoofing detection with Redis Streams.
 
-Processes transactions from Redis queue and performs merchant spoofing analysis
-using sentence embeddings. Results are stored for later retrieval by the API.
+Processes transactions from Redis Streams (fraud:embeddings) and performs
+merchant spoofing analysis using sentence embeddings.
+
+Consumer group: "embedding-workers"
+Stream: "fraud:embeddings"
 """
 
 import asyncio
@@ -12,20 +15,23 @@ from datetime import datetime, timezone
 import redis.asyncio as redis
 
 from src.core.config import settings
+from src.core.stream_publisher import ensure_consumer_group
 from src.services.merchant_embedding_service import MerchantEmbeddingService
 
 logger = logging.getLogger(__name__)
 
+STREAM_NAME = "fraud:embeddings"
+GROUP_NAME = "embedding-workers"
+CONSUMER_NAME = "embedding-worker-1"
+
 
 class EmbeddingWorker:
-    """Async worker for merchant embedding analysis."""
+    """Async worker for merchant embedding analysis with Redis Streams."""
 
     def __init__(self):
         """Initialize the embedding worker."""
         self.redis_client: redis.Redis | None = None
         self.embedding_service = MerchantEmbeddingService()
-        self.queue_key = "fraud:embeddings"
-        self.result_key_prefix = "embedding_result"
 
     async def connect(self) -> None:
         """Connect to Redis."""
@@ -44,40 +50,68 @@ class EmbeddingWorker:
             logger.info("Disconnected from Redis")
 
     async def process_queue(self) -> None:
-        """Process embedding queue continuously.
-        
-        Listens for messages on the embedding queue and performs
+        """Process embedding stream continuously using consumer groups.
+
+        Listens for messages on the embedding stream and performs
         spoofing detection for each transaction.
         """
         if not self.redis_client:
             await self.connect()
 
-        logger.info("Starting embedding worker, listening on queue: %s", self.queue_key)
+        # Ensure consumer group exists
+        await ensure_consumer_group(STREAM_NAME, GROUP_NAME)
+
+        logger.info(
+            "Starting embedding worker: stream=%s, group=%s, consumer=%s",
+            STREAM_NAME,
+            GROUP_NAME,
+            CONSUMER_NAME,
+        )
 
         while True:
             try:
-                # Blocking pop from queue (waits up to 1 second)
-                result = await self.redis_client.brpop(self.queue_key, timeout=1)
+                # XREADGROUP: blocking read from consumer group
+                # Returns: [(stream_name, [(message_id, fields_dict), ...]), ...]
+                messages = await self.redis_client.xreadgroup(
+                    GROUP_NAME,
+                    CONSUMER_NAME,
+                    {STREAM_NAME: ">"},  # ">" means new messages only
+                    count=1,
+                    block=1000,  # 1 second timeout
+                )
 
-                if result is None:
-                    # No message, check health periodically
+                if not messages:
                     continue
 
-                queue_name, message = result
-                await self.process_message(message.decode("utf-8"))
+                # Process each message
+                for stream_name, msg_list in messages:
+                    for message_id, fields in msg_list:
+                        try:
+                            # Decode message
+                            data_json = fields.get(b"data", b"{}").decode("utf-8")
+                            message_data = json.loads(data_json)
+
+                            # Process
+                            await self.process_message(message_data)
+
+                            # ACK if success
+                            await self.redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+                            logger.debug("Embedding message ACKed: %s", message_id)
+
+                        except Exception as exc:
+                            logger.error("Error processing embedding message: %s", exc)
 
             except Exception as exc:
                 logger.error("Error in embedding worker loop: %s", exc)
-                await asyncio.sleep(1)  # Backoff on error
+                await asyncio.sleep(1)  # Backoff
 
-    async def process_message(self, message_json: str) -> None:
+    async def process_message(self, message: dict) -> None:
         """Process a single embedding task.
-        
+
         Args:
-            message_json: JSON string with transaction data
+            message: Dict with transaction data
         """
         try:
-            message = json.loads(message_json)
             transaction_id = message.get("transaction_id")
             merchant_name = message.get("merchant_name")
 
@@ -90,50 +124,49 @@ class EmbeddingWorker:
                 merchant_name
             )
 
-            # Store result
-            result = {
-                "transaction_id": transaction_id,
-                "merchant_name": merchant_name,
-                "is_spoofed": is_spoofed,
-                "matched_merchant": matched_merchant,
-                "similarity_score": similarity,
-                "processed_at": datetime.now(tz=timezone.utc).isoformat(),
-            }
+            # Store result in Redis (for API retrieval)
+            if self.redis_client:
+                result = {
+                    "transaction_id": transaction_id,
+                    "merchant_name": merchant_name,
+                    "is_spoofed": is_spoofed,
+                    "matched_merchant": matched_merchant,
+                    "similarity_score": similarity,
+                    "processed_at": datetime.now(tz=timezone.utc).isoformat(),
+                }
 
-            result_key = f"{self.result_key_prefix}:{transaction_id}"
-            await self.redis_client.setex(
-                result_key,
-                86400,  # Expire after 24 hours
-                json.dumps(result),
-            )
+                result_key = f"embedding_result:{transaction_id}"
+                await self.redis_client.setex(
+                    result_key,
+                    3600,  # 1 hour TTL
+                    json.dumps(result),
+                )
 
             logger.info(
-                "Processed embedding for transaction %s: spoofed=%s, match=%s, similarity=%.3f",
+                "Embedding processed: transaction=%s, spoofed=%s, similarity=%.2f",
                 transaction_id,
                 is_spoofed,
-                matched_merchant,
-                similarity or 0.0,
+                similarity,
             )
 
-        except json.JSONDecodeError as exc:
-            logger.error("Failed to parse message: %s", exc)
         except Exception as exc:
             logger.error("Error processing embedding message: %s", exc)
 
+    async def run(self) -> None:
+        """Run the worker (entry point)."""
+        await self.connect()
+        try:
+            await self.process_queue()
+        except KeyboardInterrupt:
+            logger.info("Embedding worker stopped by user")
+        finally:
+            await self.disconnect()
+
 
 async def main() -> None:
-    """Entry point for the embedding worker."""
+    """Entry point."""
     worker = EmbeddingWorker()
-
-    try:
-        await worker.connect()
-        await worker.process_queue()
-    except KeyboardInterrupt:
-        logger.info("Embedding worker stopped by user")
-    except Exception as exc:
-        logger.error("Embedding worker crashed: %s", exc)
-    finally:
-        await worker.disconnect()
+    await worker.run()
 
 
 if __name__ == "__main__":

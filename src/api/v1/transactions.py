@@ -15,6 +15,7 @@ from src.api.v1.rate_limit import check_rate_limit
 from src.core.config import settings
 from src.core.dependencies import get_current_user, get_db, get_velocity_store, require_role
 from src.core.redis import enqueue
+from src.core.stream_publisher import publish_event
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
 from src.models.shap_attribution import ShapAttribution
@@ -241,9 +242,9 @@ async def create_and_score_transaction(
         },
     )
 
-    # 10. Enqueue LLM report request (best-effort, non-blocking)
+    # 10. Publish LLM report event to Redis Stream (best-effort, non-blocking)
     try:
-        await enqueue("fraud:reports", {
+        await publish_event("fraud:llm", {
             "transaction_id": str(txn.id),
             "score_breakdown": {
                 "rule_score": rule_score,
@@ -262,15 +263,13 @@ async def create_and_score_transaction(
             },
         })
     except Exception:
-        logger.exception("Failed to enqueue LLM report request")
+        logger.exception("Failed to publish LLM event")
 
-    # 11. Enqueue SHAP attribution request (FD-SHP-001) — best-effort, only for
-    # fraud/review. The message snapshots the EXACT feature vector used for
-    # scoring (features.tolist()) so the worker explains the scored vector,
-    # never a recalculation. A Redis failure must not fail the request.
+    # 11. Publish SHAP attribution event to Redis Stream (best-effort, only for fraud/review)
+    # Snapshots the EXACT feature vector used for scoring
     if classification in ("fraud", "review"):
         try:
-            await enqueue("fraud:shap", {
+            await publish_event("fraud:shap", {
                 "transaction_id": str(txn.id),
                 "classification": classification,
                 "features": features.tolist(),
@@ -278,17 +277,16 @@ async def create_and_score_transaction(
                 "model_fingerprint": _shap_service.model_fingerprint(),
             })
         except Exception:
-            logger.exception("Failed to enqueue SHAP attribution request")
+            logger.exception("Failed to publish SHAP event")
 
-    # 12. Enqueue embedding analysis for merchant spoofing detection
-    # Best-effort: detects if merchant name is semantically similar to known fraudulent patterns
+    # 12. Publish merchant embedding event for spoofing detection (best-effort)
     try:
-        await enqueue("fraud:embeddings", {
+        await publish_event("fraud:embeddings", {
             "transaction_id": str(txn.id),
             "merchant_name": payload.merchant_name,
         })
     except Exception:
-        logger.exception("Failed to enqueue merchant embedding request")
+        logger.exception("Failed to publish embedding event")
 
     # 13. Determine dynamic friction level based on score and classification
     friction_level, action = _determine_friction_level(ensemble_score, classification)

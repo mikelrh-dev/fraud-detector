@@ -1,12 +1,8 @@
-"""Async SHAP worker — consumes ``fraud:shap`` queue messages and computes
-feature attribution with ``shap.TreeExplainer`` over the scored feature
-vector snapshot (SHP-001).
+"""SHAP Attribution Worker — consumes Redis Streams (fraud:shap) and computes feature attribution.
 
-Mirrors the LLM worker: BRPOP loop, per-message session, retry with
-incremented ``retry_count`` (max 3), and audit entries ``shap_computed``
-/ ``shap_failed``. ``shap`` is imported lazily via ShapService — when it
-or the model is unavailable the worker logs a warning and continues the
-loop instead of crashing (SHP-005).
+Uses Redis Consumer Groups (XREADGROUP) for scaling horizontally.
+Consumer group: "shap-workers"
+Stream: "fraud:shap"
 """
 
 import asyncio
@@ -14,183 +10,156 @@ import json
 import logging
 from typing import Any
 
-from redis.asyncio import Redis
+import redis.asyncio as redis
 from sqlalchemy import delete
 
 from src.core.database import async_session_maker
-from src.core.redis import enqueue_for_retry, get_redis
+from src.core.stream_publisher import ensure_consumer_group
 from src.models.shap_attribution import ShapAttribution
 from src.services.audit import AuditService
 from src.services.shap_service import ShapService, ShapUnavailableError
 
 logger = logging.getLogger(__name__)
 
-QUEUE_NAME = "fraud:shap"
+STREAM_NAME = "fraud:shap"
+GROUP_NAME = "shap-workers"
+CONSUMER_NAME = "shap-worker-1"
 MAX_RETRIES = 3
-BACKOFF_BASE = 3
 
 
 async def process_shap_message(
     message: dict[str, Any],
     db: Any,
     shap_service: ShapService,
-    max_retries: int = MAX_RETRIES,
-    audit_service: AuditService | None = None,
 ) -> bool:
-    """Process a single SHAP request from the queue.
-
-    Computes contributions off the snapshot feature vector, persists the
-    top-5 rows (delete-then-insert — idempotent, SHP-002) and writes the
-    audit trail (SHP-004). CPU-bound work runs via ``asyncio.to_thread``
-    so the event loop stays responsive (SHP-001).
+    """Process a single SHAP request from the stream.
 
     Returns:
-        True if the message is fully processed (success or permanent
-        failure — no re-enqueue), False if it must be re-enqueued.
+        True if processed (success or permanent failure — no re-enqueue),
+        False if must be retried.
     """
     transaction_id = message.get("transaction_id", "unknown")
     features = message.get("features", [])
     feature_names = message.get("feature_names")
-    retry_count = message.get("retry_count", 0)
-    audit = audit_service or AuditService()
 
     try:
+        # CPU-bound work runs async
         contributions = await asyncio.to_thread(
             shap_service.explain,
             features,
             feature_names,
         )
+
+        # Persist to DB (delete old, insert new — idempotent)
+        async with async_session_maker() as session:
+            # Delete old attributions for this transaction
+            await session.execute(
+                delete(ShapAttribution).where(
+                    ShapAttribution.transaction_id == transaction_id
+                )
+            )
+
+            # Insert new attributions (top 5)
+            for rank, (feature, contribution) in enumerate(contributions[:5], 1):
+                attr = ShapAttribution(
+                    transaction_id=transaction_id,
+                    feature=feature,
+                    contribution=float(contribution),
+                    rank=rank,
+                )
+                session.add(attr)
+
+            await session.commit()
+
+        logger.info(
+            "SHAP computed for transaction %s: %d features",
+            transaction_id,
+            len(contributions),
+        )
+        return True
+
     except ShapUnavailableError as exc:
-        # SHP-005: shap or the model is missing — skip, never retry.
         logger.warning(
             "SHAP unavailable for transaction %s: %s — skipping",
             transaction_id,
             exc,
         )
         return True
+
     except Exception as exc:
         logger.exception(
-            "SHAP computation failed for transaction %s (retry %d/%d)",
+            "SHAP computation failed for transaction %s: %s",
             transaction_id,
-            retry_count,
-            max_retries,
+            exc,
         )
-        if retry_count >= max_retries:
-            await audit.create_entry(
-                db=db,
-                action_type="shap_failed",
-                transaction_id=transaction_id,
-                details={
-                    "error_type": type(exc).__name__,
-                    "retry_count": retry_count,
-                    "error": str(exc),
-                },
-            )
-            logger.warning(
-                "Max retries reached for transaction %s — SHAP attribution failed",
-                transaction_id,
-            )
-            return True
-        return False
-
-    # Idempotent: replace any previous rows, never duplicate (SHP-002).
-    await db.execute(
-        delete(ShapAttribution).where(
-            ShapAttribution.transaction_id == transaction_id
-        )
-    )
-
-    rows = [
-        ShapAttribution(
-            transaction_id=transaction_id,
-            feature=contribution.feature,
-            contribution=contribution.contribution,
-            rank=rank,
-        )
-        for rank, contribution in enumerate(contributions, start=1)
-    ]
-    db.add_all(rows)
-    await db.flush()
-
-    await audit.create_entry(
-        db=db,
-        action_type="shap_computed",
-        transaction_id=transaction_id,
-        details={
-            "rank_count": len(rows),
-            "model_fingerprint": message.get("model_fingerprint"),
-            "retry_count": retry_count,
-        },
-    )
-    logger.info(
-        "SHAP attribution computed for transaction %s (retry=%d)",
-        transaction_id,
-        retry_count,
-    )
-    return True
+        return False  # Retry
 
 
-async def run_worker(
-    redis_client: Redis | None = None,
-    shap_service: ShapService | None = None,
-    max_iterations: int | None = None,
-) -> None:
-    """Main worker loop — consume and process SHAP requests (BRPOP).
+async def worker_loop(redis_client: redis.Redis) -> None:
+    """Main worker loop — consume from stream with consumer group."""
+    await ensure_consumer_group(STREAM_NAME, GROUP_NAME)
+    shap_service = ShapService()
 
-    Args:
-        redis_client: Redis client instance. If None, creates a new one.
-        shap_service: ShapService instance. If None, creates a new one.
-        max_iterations: Optional limit for testing (None = run forever).
-    """
-    svc = shap_service or ShapService()
-    r = redis_client or get_redis()
+    logger.info("SHAP worker started: stream=%s, group=%s", STREAM_NAME, GROUP_NAME)
 
-    logger.info("SHAP worker started — waiting for messages on %s", QUEUE_NAME)
-    iterations = 0
-
-    while max_iterations is None or iterations < max_iterations:
+    while True:
         try:
-            result = await r.brpop([QUEUE_NAME], timeout=5)  # type: ignore[misc]
-            if result is None:
-                iterations += 1
+            # XREADGROUP: blocking read from consumer group
+            # Returns: [(stream_name, [(message_id, fields_dict), ...]), ...]
+            messages = await redis_client.xreadgroup(
+                GROUP_NAME,
+                CONSUMER_NAME,
+                {STREAM_NAME: ">"},  # ">" means new messages only
+                count=1,
+                block=1000,  # 1 second timeout
+            )
+
+            if not messages:
                 continue
 
-            _, data = result
-            message = json.loads(data)
+            # Process each message
+            for stream_name, msg_list in messages:
+                for message_id, fields in msg_list:
+                    try:
+                        # Decode message
+                        data_json = fields.get(b"data", b"{}").decode("utf-8")
+                        message_data = json.loads(data_json)
 
-            logger.info(
-                "Processing SHAP request for transaction %s",
-                message.get("transaction_id", "unknown"),
-            )
+                        # Process
+                        async with async_session_maker() as db:
+                            success = await process_shap_message(
+                                message_data,
+                                db,
+                                shap_service,
+                            )
 
-            db = async_session_maker()
-            try:
-                processed = await process_shap_message(
-                    message=message,
-                    db=db,
-                    shap_service=svc,
-                )
+                        # ACK if success (remove from pending list)
+                        if success:
+                            await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+                            logger.debug("SHAP message ACKed: %s", message_id)
+                        else:
+                            logger.warning("SHAP message will retry: %s", message_id)
 
-                if not processed:
-                    # Need retry — re-enqueue with incremented retry_count
-                    await enqueue_for_retry(r, message, QUEUE_NAME)
+                    except Exception as exc:
+                        logger.error("Error processing SHAP message: %s", exc)
 
-                await db.commit()
-            except Exception:
-                await db.rollback()
-                raise
-            finally:
-                await db.close()
-
-        except json.JSONDecodeError:
-            logger.warning("Malformed message in queue — skipping")
         except Exception as exc:
-            logger.exception("Unexpected error in worker loop: %s", exc)
+            logger.error("Error in SHAP worker loop: %s", exc)
+            await asyncio.sleep(1)  # Backoff
 
-        iterations += 1
 
-    logger.info("SHAP worker stopped after %d iterations", iterations)
+async def main() -> None:
+    """Entry point."""
+    redis_client = await redis.from_url("redis://localhost:6379/0")
+
+    try:
+        await worker_loop(redis_client)
+    except KeyboardInterrupt:
+        logger.info("SHAP worker stopped by user")
+    finally:
+        await redis_client.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(run_worker())
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(main())
