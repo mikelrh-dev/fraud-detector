@@ -2,213 +2,267 @@
 
 [![CI](https://github.com/mikelrh-dev/fraud-detector/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelrh-dev/fraud-detector/actions/workflows/ci.yml)
 
-Sistema híbrido de detección de fraude que combina **motor de reglas** (determinista), **machine learning** (XGBoost + FeatureEngine) y **LLM local** (Ollama qwen2.5:0.5b) para generar informes técnicos explicativos.
+**English** | [Español](README.es.md)
 
-## Arquitectura de 3 Capas
+Hybrid fraud detection system for financial transactions. A **deterministic rule engine** (9 rules), a **supervised ML model** (XGBoost, trained on PaySim) and a **local LLM** (Ollama) that writes explanatory reports for analysts — the LLM never decides, it only explains.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    TRANSACTION SCORING PIPELINE              │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Layer 1: Rule Engine (Deterministic)                       │
-│  ├── 6 reglas: high_amount, high_velocity, unusual_merchant │
-│  ├── unusual_hours, country_mismatch, card_mismatch         │
-│  └── unusual_merchant dispara en btc/crypto/gambling/casino/money_transfer
-│  └── Score: 0-100 (cap)                                     │
-│                                                              │
-│  Layer 2: ML Model (XGBoost + FeatureEngine)                │
-│  ├── 10 features: amount vs avg, velocity, geo, time, MCC   │
-│  ├── Supervised: trained on PaySim (50k, 1% fraud)          │
-│  └── Score: 0-100 (normalized)                              │
-│                                                              │
-│  Layer 3: Ensemble Scoring                                  │
-│  ├── Weighted: rules 60% + ML 25% + context 15%             │
-│  ├── Dynamic thresholds by amount tier                      │
-│  └── Classification: legitimate | review | fraud            │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ (if fraud)
-┌─────────────────────────────────────────────────────────────┐
-│              LLM WORKER (Async via Redis Queue)              │
-├─────────────────────────────────────────────────────────────┤
-│  • Consumes from "fraud:reports" queue                      │
-│  • Generates technical report in Spanish                    │
-│  • Includes: risk justification, recommendation, context    │
-│  • Retry with exponential backoff (3/9/27s, max 3)          │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              MONITORING + AUDIT TRAIL                        │
-├─────────────────────────────────────────────────────────────┤
-│  • Custom PSI: drift detection on feature distributions     │
-│  • Retraining triggers: F1 < 0.7 OR drift_score > 30        │
-│  • SHA-256 checksums on every audit entry                   │
-│  • Immutable audit log: scoring, analyst actions, reports   │
-└─────────────────────────────────────────────────────────────┘
+Every transaction gets a 0–100 risk score, a classification (`legitimate | review | fraud`), SHAP feature attributions, and — when flagged — an async LLM-generated technical report.
+
+## Highlights
+
+- **3-layer ensemble scoring**: rules 60% + ML 25% + context 15%, with dynamic fraud thresholds by amount tier
+- **9 deterministic rules** covering amount, velocity, merchant risk, card mismatch, off-hours patterns, country mismatch and fraud-ring proximity
+- **XGBoost** with 10 engineered features, graceful degradation (system works with `ml_score = 0` if no model is loaded)
+- **SHAP explainability**: top-5 feature contributions persisted per transaction
+- **Fraud ring detection**: directed graph (NetworkX), flags users within 2 hops of a known fraudster
+- **Merchant spoofing detection**: sentence-transformers embeddings + cosine similarity (catches `AMAZ0N_STORE` → `Amazon`)
+- **Redis Streams** with consumer groups, pending-message recovery (`XAUTOCLAIM`) and a dead-letter queue
+- **Model monitoring**: Evidently data drift + custom PSI, automatic retraining triggers (F1 < 0.7 or drift > 30)
+- **Immutable audit trail** with SHA-256 checksums on every scoring decision and analyst action
+- **JWT auth** (access + refresh + blacklist), role-based access (user/admin), per-route rate limiting
+- **React 19 dashboard** with score trends, SHAP cards and alert workflow
+- **337 tests** (unit + integration), CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build)
+
+## Architecture
+
+```mermaid
+flowchart TB
+    FE["React 19 Dashboard"] -->|"REST + JWT"| API["FastAPI (async)"]
+
+    API --> RE["Layer 1 · Rule Engine<br/>9 deterministic rules"]
+    API --> ML["Layer 2 · XGBoost<br/>10 engineered features"]
+    API --> CTX["Layer 3 · Context<br/>user history · geo · time"]
+
+    RE --> ENS["Ensemble Scorer<br/>0.60 / 0.25 / 0.15"]
+    ML --> ENS
+    CTX --> ENS
+
+    ENS --> DB[("PostgreSQL 16")]
+    ENS -->|"review / fraud"| PUB["Stream Publisher"]
+
+    PUB --> Q1["fraud:llm"] --> W1["LLM Worker<br/>Ollama report (ES)"]
+    PUB --> Q2["fraud:shap"] --> W2["SHAP Worker<br/>top-5 attributions"]
+    PUB --> Q3["fraud:embeddings"] --> W3["Embedding Worker<br/>spoofing check"]
+
+    W1 -. "3 failed retries" .-> DLQ["DLQ · fraud:dlq"]
+    W2 -. "3 failed retries" .-> DLQ
 ```
 
-## Stack Tecnológico
+**Stack:** Python 3.11 · FastAPI · PostgreSQL 16 (asyncpg) · Redis 7 (Streams) · XGBoost · SHAP · NetworkX · sentence-transformers · Evidently · Ollama · React 19 + TypeScript + Vite + Tailwind 4 · Docker Compose (8 services)
 
-| Capa | Tecnología |
-|------|-----------|
-| **Backend** | Python 3.11 + FastAPI (async) |
-| **Base de datos** | PostgreSQL 16 (async via asyncpg) |
-| **Cache/Queue** | Redis 7 |
-| **ML** | scikit-learn (Isolation Forest), joblib, numpy, pandas |
-| **LLM** | Ollama (Llama 3.2 3B) |
-| **Monitoring** | Evidently AI (drift detection, metrics) |
-| **Frontend** | React 19 + TypeScript + Vite + Recharts + Zustand |
-| **Auth** | JWT (python-jose) + bcrypt |
-| **Contenedores** | Docker + docker-compose |
-| **Testing** | pytest + pytest-asyncio + pytest-cov |
+## How a Transaction Is Scored
+
+```
+risk_score = 0.60 × rule_score + 0.25 × ml_score + 0.15 × context_score
+```
+
+Classification against a dynamic threshold that tightens for larger amounts:
+
+| Amount tier | Fraud threshold |
+|---|---|
+| $0 – $1,000 | ≥ 70 |
+| $1,001 – $10,000 | ≥ 50 |
+| $10,001 – $50,000 | ≥ 45 |
+| $50,001+ | ≥ 40 |
+
+`review` band starts at 75% of the tier threshold. Everything below is `legitimate`.
+
+### Layer 1 — Rule Engine (deterministic, capped at 100)
+
+| Rule | Weight | Trigger |
+|---|---|---|
+| `high_amount` | 35 | amount > $1,000 |
+| `velocity_burst` | 30 | > 1 txn in 5 min in a risky category |
+| `high_velocity` | 25 | > 3 txns in 5 minutes |
+| `off_hours_crypto` | 25 | night hours (0–6) + risky category |
+| `unusual_merchant` | 20 | blacklisted merchant or risky category |
+| `card_mismatch` | 20 | card not among the user's known cards |
+| `country_mismatch` | 15 | txn country ≠ user home country |
+| `near_fraud` | 15 | user ≤ 2 hops from a known fraudster (graph) |
+| `unusual_hours` | 10 | txn between 00:00–06:00 |
+
+Risky categories: `btc`, `crypto`, `gambling`, `casino`, `money_transfer`.
+
+### Layer 2 — ML Model (XGBoost)
+
+10 features: `amount`, `amount_vs_user_avg`, `amount_vs_user_std`, `tx_count_last_5min`, `tx_count_last_1h`, `hour_of_day`, `is_weekend`, `merchant_risk_level`, `is_crypto`, `amount_round_number`.
+
+`predict_proba` is smoothed with a cubic curve and scaled to 0–100, so only confident predictions score high. If no model file is present, the API keeps working with `ml_score = 0`.
+
+### Layer 3 — Context
+
+User-level signals (historical averages, geography, time patterns) contribute the remaining 15%.
+
+## Explainability, Monitoring & Audit
+
+- **SHAP** (`TreeExplainer` over XGBoost): top-5 feature attributions computed async per scored transaction, rendered in the dashboard.
+- **Drift detection**: Evidently `DataDriftPreset` (reference vs current distributions) plus a custom PSI implementation. `GET /api/v1/monitoring/drift`.
+- **Retraining triggers**: fire when `F1 < 0.7` or `drift_score > 30` (checked in `MonitoringService`).
+- **Audit trail**: every score, analyst review and LLM report is recorded with SHA-256 checksums. Analyst activity export is admin-only.
+
+## Async Workers (Redis Streams)
+
+| Stream | Consumer group | Worker | Output | Retry policy |
+|---|---|---|---|---|
+| `fraud:llm` | `llm-workers` | `llm_worker` | `LLMReport` row + audit entry | stays PENDING, max 3 |
+| `fraud:shap` | `shap-workers` | `shap_worker` | `ShapAttribution` rows (top 5) | 3 retries → DLQ |
+| `fraud:embeddings` | `embedding-workers` | `embedding_worker` | Redis result key (1h TTL) | ack on success, log on failure |
+
+Streams are trimmed (`MAXLEN ~ 100,000`). The DLQ (`fraud:dlq`, capped at 10K) stores the original stream, consumer group and error reason. A recovery loop reclaims idle pending messages every 60s via `XAUTOCLAIM` (5-min idle timeout).
 
 ## Quick Start
 
-### Con Docker (recomendado)
+### Docker (recommended)
 
 ```bash
-# 1. Clonar y configurar
-git clone <repo-url>
+git clone https://github.com/mikelrh-dev/fraud-detector.git
 cd fraud-detector
 cp .env.example .env
 
-# 2. Levantar servicios
-docker compose up -d
+docker compose up -d                                # 8 services: postgres, redis, ollama, api, 3 workers, frontend
+docker compose exec ollama ollama pull qwen2.5:0.5b # default LLM (configurable via OLLAMA_MODEL)
+docker compose exec api python scripts/init_db.py   # create tables
 
-# 3. Pull del modelo LLM
-docker compose exec ollama ollama pull llama3.2:3b
-
-# 4. Ejecutar migraciones
-docker compose exec api alembic upgrade head
-
-# 5. Acceder
-# API: http://localhost:8000/docs
-# Frontend: http://localhost:3000
+# API docs:  http://localhost:8000/docs
+# Frontend:  http://localhost:3000
 ```
 
-### Desarrollo local
+Create your first user via the API:
 
 ```bash
-# 1. Instalar dependencias backend
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "analyst@example.com", "password": "...", "full_name": "Analyst"}'
+```
+
+> `scripts/create_admin.py` prints a ready-to-run SQL `INSERT` if you prefer to seed an admin directly.
+
+### Local development
+
+```bash
+# Backend
+python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# 2. Instalar dependencias frontend
-cd frontend
-npm install
-cd ..
+# Infrastructure only
+docker compose up postgres redis ollama -d
 
-# 3. Levantar PostgreSQL y Redis
-docker compose up postgres redis -d
-
-# 4. Ejecutar migraciones
-alembic upgrade head
-
-# 5. Ejecutar API
+python scripts/init_db.py
 uvicorn src.api.main:app --reload
 
-# 6. Ejecutar frontend (en otra terminal)
-cd frontend
-npm run dev
+# Frontend (second terminal)
+cd frontend && npm install && npm run dev
 ```
 
-## Entrenamiento del Modelo ML
+## Training the ML Model
 
-El sistema funciona sin modelo ML (ml_score = 0), pero para activar la detección completa:
+The system runs without a model (`ml_score = 0`). To enable full detection:
 
 ```bash
-# 1. Descargar dataset de Kaggle
-# https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
-# Guardar como data/creditcard.csv
-
-# 2. O generar datos sintéticos
-python scripts/generate_synthetic_data.py
-
-# 3. Entrenar modelo
-python scripts/train_model.py
-
-# 4. El modelo se guarda en models/isolation_forest_v1.joblib
-# 5. Reiniciar API para cargar el modelo
+python scripts/generate_synthetic_data.py     # 50k synthetic transactions (~5% fraud)
+python scripts/train_xgboost_aligned.py       # → models/xgboost_paysim_v1.joblib
+# restart the API to load the model
 ```
 
-## Estructura del Proyecto
+`train_xgboost_aligned.py` trains on the exact `FeatureEngine` features used in production. (`scripts/train_model.py` trains a legacy Isolation Forest — kept for reference, not used in the scoring path.)
+
+## API Endpoints
+
+### Auth
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/api/v1/auth/register` | public |
+| POST | `/api/v1/auth/login` | public |
+| POST | `/api/v1/auth/refresh` | refresh token |
+| POST | `/api/v1/auth/logout` | user (blacklists token) |
+
+### Transactions
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/api/v1/transactions` | user — create + full scoring pipeline |
+| GET | `/api/v1/transactions` | user — list, filters, pagination |
+| GET | `/api/v1/transactions/{id}` | user — detail + SHAP attributions |
+| DELETE | `/api/v1/transactions/{id}` | **admin** — soft delete |
+| GET | `/api/v1/transactions/graph/stats` | user — fraud network stats |
+| GET | `/api/v1/transactions/{uid}/graph-features` | user — graph features per user |
+| GET | `/api/v1/transactions/{id}/embedding` | user — merchant embedding analysis |
+
+### Alerts
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/v1/alerts` | user |
+| POST | `/api/v1/alerts/{id}/review` | user |
+| POST | `/api/v1/alerts/{id}/false-positive` | user |
+| POST | `/api/v1/alerts/{id}/revert` | user |
+
+### Reports · Monitoring · Audit
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/v1/transactions/{id}/report` | user — LLM report (200 / 202 / 404) |
+| GET | `/api/v1/monitoring/drift` | user — drift analysis |
+| GET | `/api/v1/audit/transactions/{id}` | user — decision trail |
+| GET | `/api/v1/audit/analysts/{uid}` | **admin** — analyst activity |
+| POST | `/api/v1/audit/export` | **admin** — export by date range |
+
+Health: `GET /health`, `GET /api/v1/health`, `GET /api/v1/status` (public).
+
+**Rate limits:** login & register 10/min · transactions 100/min · alerts 60/min.
+
+## Project Structure
 
 ```
 fraud-detector/
 ├── src/
-│   ├── api/              # FastAPI endpoints
-│   │   └── v1/           # Versioned API
-│   ├── core/             # Config, database, redis, security
-│   ├── models/           # SQLAlchemy models (9 entities)
-│   ├── schemas/          # Pydantic schemas
-│   ├── services/         # Business logic
-│   │   ├── rule_engine.py      # 6 deterministic rules
-│   │   ├── feature_engine.py   # 10 ML features
-│   │   ├── ml_model.py         # Isolation Forest wrapper
-│   │   ├── ensemble.py         # Weighted scoring
-│   │   ├── llm.py              # Ollama client
-│   │   ├── monitoring.py       # Drift detection
-│   │   └── audit.py            # SHA-256 audit trail
-│   └── workers/          # Async workers
-│       └── llm_worker.py # Redis queue consumer
-├── frontend/             # React dashboard
-│   ├── src/
-│   │   ├── api/          # Axios client + JWT interceptor
-│   │   ├── store/        # Zustand state management
-│   │   ├── pages/        # Login, Dashboard, Transactions, Alerts
-│   │   └── components/   # Charts, tables, forms
-│   └── ...
-├── tests/                # pytest suite (246 tests, 88% coverage)
-├── scripts/              # Training + data generation
-├── docker/               # Dockerfiles + nginx.conf
-├── openspec/             # SDD artifacts (specs, design, tasks)
-└── ...
+│   ├── api/                # FastAPI: main, rate_limit, v1/ (auth, transactions, alerts, reports, monitoring, audit)
+│   ├── core/               # config, database, redis, security + stream_publisher / stream_manager / stream_dlq
+│   ├── models/             # 10 SQLAlchemy models (transaction, user, fraud_score, fraud_alert, llm_report,
+│   │                       #   ml_model_run, audit_entry, shap_attribution, rule_metadata, base)
+│   ├── schemas/            # Pydantic v2 schemas
+│   ├── services/           # rule_engine, feature_engine, ml_model, ensemble, shap_service,
+│   │                       #   graph_service, merchant_embedding_service, velocity_store,
+│   │                       #   llm, drift_service, monitoring, audit, transaction, auth
+│   └── workers/            # llm_worker, shap_worker, embedding_worker (Redis Streams consumers)
+├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 7 components, vitest + MSW)
+├── tests/                  # unit + integration (337 tests)
+├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
+├── notebooks/              # PaySim exploration / training notebooks
+├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
+├── alembic/                # migrations
+└── docker-compose.yml      # 8 services
 ```
 
-## API Endpoints
+## Testing
 
-### Transacciones
-- `POST /api/v1/transactions` — Crear + score completo
-- `GET /api/v1/transactions` — Listar con filtros
-- `GET /api/v1/transactions/{id}` — Detalle
-- `DELETE /api/v1/transactions/{id}` — Soft delete (admin)
+```bash
+# Backend (337 tests)
+pytest tests/ -v --cov=src --cov-report=term
+pytest tests/unit -v            # unit only
+pytest tests/integration -v     # integration only (needs postgres + redis)
 
-### Alertas
-- `GET /api/v1/alerts` — Listar alertas
-- `POST /api/v1/alerts/{id}/review` — Marcar como revisada
-- `POST /api/v1/alerts/{id}/false-positive` — Marcar falso positivo
-- `POST /api/v1/alerts/{id}/revert` — Revertir bloqueo
+# Frontend
+cd frontend && npm test         # vitest
+```
 
-### Reportes LLM
-- `GET /api/v1/transactions/{id}/report` — Obtener informe (200/202/404)
+## CI/CD
 
-### Monitoreo
-- `GET /api/v1/monitoring/drift` — Reporte de drift
-- `GET /api/v1/monitoring/metrics` — Métricas del modelo
-- `GET /api/v1/monitoring/dashboard` — Dashboard metrics
+GitHub Actions (`.github/workflows/ci.yml`), triggered on push/PR to `main`:
 
-### Auditoría
-- `GET /api/v1/audit/transactions/{id}` — Trail de decisiones
-- `GET /api/v1/audit/analysts/{id}` — Actividad del analista (admin)
-- `POST /api/v1/audit/export` — Exportar log (admin)
+| Job | What it does |
+|---|---|
+| `backend-lint` | ruff + mypy |
+| `backend-test` | pytest with PostgreSQL 16 + Redis 7 service containers |
+| `frontend-lint-test` | ESLint + vitest |
+| `frontend-build` | production build (after lint+test) |
+| `docker-build` | Docker image smoke build (PRs only) |
 
-### Autenticación
-- `POST /api/v1/auth/register` — Registro
-- `POST /api/v1/auth/login` — Login (JWT)
-- `POST /api/v1/auth/refresh` — Refresh token
-- `POST /api/v1/auth/logout` — Logout (blacklist)
+## Environment Variables
 
-## Variables de Entorno
+See [.env.example](.env.example). Key settings (defaults from `src/core/config.py`):
 
 ```env
 # Database
 DB_USER=fraud
-DB_PASSWORD=your_password
+DB_PASSWORD=change_me_in_production
 DB_NAME=fraud_detector
 DB_HOST=localhost
 DB_PORT=5432
@@ -218,90 +272,49 @@ REDIS_URL=redis://localhost:6379/0
 
 # Ollama
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=llama3.2:3b
+OLLAMA_MODEL=qwen2.5:0.5b        # any local tag works
 OLLAMA_TIMEOUT=30
 
 # JWT
-JWT_SECRET_KEY=your_jwt_secret
+JWT_SECRET_KEY=change-me-in-production
 JWT_ALGORITHM=HS256
 JWT_EXP_MINUTES=15
 
-# Ensemble Weights
-ENSEMBLE_RULE_WEIGHT=0.45
-ENSEMBLE_ML_WEIGHT=0.45
-ENSEMBLE_CONTEXT_WEIGHT=0.10
+# Ensemble weights
+ENSEMBLE_RULE_WEIGHT=0.60
+ENSEMBLE_ML_WEIGHT=0.25
+ENSEMBLE_CONTEXT_WEIGHT=0.15
 
-# Feature Flags
-FRAUD_DETECTION_ENABLED=true
+# Feature flags
+FRAUD_DETECTION_ENABLED=true     # false → scoring endpoints return 503
+VELOCITY_STORE_ENABLED=true
 
-# Frontend
+# CORS
 FRONTEND_URL=http://localhost:3000
 ```
 
-## Testing
+## Design Decisions
 
-```bash
-# Ejecutar todos los tests
-pytest tests/ -v --cov=src --cov-report=term
+**Why 3 layers?** Rules are fast, deterministic and explainable — they capture known fraud patterns. ML catches what rules can't express. Context adapts the score to each user's baseline. If one layer fails, the others still produce a score.
 
-# Solo tests unitarios
-pytest tests/unit/ -v
+**Why doesn't the LLM decide?** LLMs are non-deterministic and can hallucinate. No fraud-blocking decision should depend on one. The LLM's job is strictly to *explain* an already-made decision to a human analyst — value without risk.
 
-# Solo tests de integración
-pytest tests/integration/ -v
+**Why XGBoost?** Supervised, fast on CPU, and its tree structure plugs directly into `TreeExplainer` for per-transaction SHAP attributions.
 
-# Con coverage detallado
-pytest tests/ -v --cov=src --cov-report=html
-# Abrir htmlcov/index.html en el navegador
-```
+**Why Redis Streams (not just lists)?** Consumer groups give at-least-once delivery, pending-message recovery (`XAUTOCLAIM`) and a dead-letter queue — the difference between "usually works" and an auditable pipeline.
 
-**Cobertura actual:** 88% (246 tests)
+**Why soft delete?** Transactions are financial records. `DELETE` flags rows as deleted; history stays queryable for audit and retraining.
 
-## Decisiones de Arquitectura
-
-### ¿Por qué 3 capas?
-- **Reglas**: Rápido, explicable, determinista. Captura patrones conocidos.
-- **ML**: Detecta anomalías no obvias. Complementa las reglas.
-- **LLM**: Genera informes técnicos para analistas. NO decide, solo explica.
-
-### ¿Por qué Isolation Forest?
-- Unsupervised: no necesita datos etiquetados
-- Rápido: entrena en segundos, predice en microsegundos
-- Explicable: anomaly_score se puede convertir a risk_score
-- Liviano: corre en CPU, no necesita GPU
-
-### ¿Por qué ensemble ponderado?
-- Simple y tunable: los pesos se pueden ajustar sin reentrenar
-- Explicable: cada capa contribuye al score final
-- Robusto: si una capa falla, las otras compensan
-
-### ¿Por qué LLM solo explica?
-- El LLM NO decide (no bloquea, no aprueba)
-- Solo genera informes técnicos para analistas
-- Evita alucinaciones críticas en la decisión de fraude
-
-## Rate Limiting
-
-- `/auth/login`: 10 requests/min
-- `/transactions`: 100 requests/min
-- `/alerts`: 60 requests/min
-
-## Feature Flags
-
-- `FRAUD_DETECTION_ENABLED`: Si es `false`, endpoints de scoring devuelven 503
-
-## Licencia
+## License
 
 MIT
 
-## Autor
+## Author
 
-Desarrollado como proyecto de portfolio para demostrar:
-- Arquitectura de 3 capas (reglas + ML + LLM)
-- ML en producción (no solo notebooks)
-- Feature engineering + ensemble scoring
-- Model monitoring con drift detection
-- Audit trail con checksums SHA-256
-- Frontend React con visualizaciones avanzadas
-- Testing riguroso (246 tests, 88% coverage)
-- Docker + deployment ready
+Portfolio project by [mikelrh-dev](https://github.com/mikelrh-dev) demonstrating:
+
+- Hybrid architecture: deterministic rules + ML + local LLM (with strict separation of decision vs explanation)
+- ML in production: feature engineering aligned between training and serving, SHAP explainability, drift monitoring, retraining triggers
+- Reliable async pipelines: Redis Streams, consumer groups, retries, DLQ
+- Security: JWT with refresh + blacklist, RBAC, rate limiting, immutable SHA-256 audit trail
+- Testing discipline: 337 backend tests + frontend vitest suite, 5-job CI
