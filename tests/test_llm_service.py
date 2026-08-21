@@ -71,7 +71,7 @@ class TestLLMPromptTemplate:
         assert "transacción" in prompt.lower()
 
     def test_prompt_includes_three_sections(self):
-        """The prompt should ask for: risk justification, technical recommendation,
+        """The prompt should ask for: score analysis, decision explanation,
         and contextual factors."""
         service = LLMService()
         score_breakdown = {
@@ -85,9 +85,9 @@ class TestLLMPromptTemplate:
         prompt = service.build_prompt(score_breakdown, transaction)
 
         # Should contain the three required sections
-        assert "justificación" in prompt.lower() or "justificacion" in prompt.lower()
-        assert "recomendación" in prompt.lower() or "recomendacion" in prompt.lower()
-        assert "factores" in prompt.lower() or "contexto" in prompt.lower()
+        assert "análisis de puntajes" in prompt.lower() or "analisis de puntajes" in prompt.lower()
+        assert "explicación de la decisión" in prompt.lower() or "explicacion de la decision" in prompt.lower()
+        assert "factores contextuales" in prompt.lower()
 
     def test_prompt_contains_transaction_details(self):
         """The prompt should include transaction details like amount and merchant."""

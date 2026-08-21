@@ -15,32 +15,36 @@ from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """Eres un analista de fraude senior. Analiza la siguiente transacción y genera un informe técnico en español.
+_PROMPT_TEMPLATE = """Eres un analista técnico de sistemas de detección. Analiza los siguientes datos de una transacción y genera un informe explicativo en español.
 
 ## Datos de la Transacción
 - Monto: ${amount} {currency}
 - Comercio: {merchant_name}
 - ID de Transacción: {transaction_id}
 
-## Puntajes de Riesgo por Capa
+## Análisis de Puntajes
 - Motor de Reglas (determinista): {rule_score:.1f}/100
 - Modelo ML (anomalía): {ml_score:.1f}/100
 - Puntaje Ensemble (combinado): {ensemble_score:.1f}/100
-- Umbral de fraude: {threshold:.1f}/100
+- Umbral de decisión: {threshold:.1f}/100
 
-## Reglas Activadas
+## Resultado del Sistema
+El sistema clasificó esta transacción como: **{classification_label}**
+(Score {ensemble_score:.1f} comparado con umbral {threshold:.1f})
+
+## Reglas Que Se Activaron
 {rule_details}
 
 ## Instrucciones
-Genera un informe estructurado con las siguientes secciones:
+Basándote en los datos anteriores, genera un informe con las siguientes secciones:
 
-1. **Justificación del Riesgo**: Explica por qué esta transacción recibió estos puntajes. Menciona qué capa (reglas, ML, o ensemble) contribuyó más al riesgo y por qué.
+1. **Análisis de Puntajes**: Explica qué puntajes contribuyeron al resultado final. Menciona si fue más por reglas deterministas, anomalías del ML, o una combinación.
 
-2. **Recomendación Técnica**: Indica qué acciones debería tomar el equipo de operaciones. ¿Bloquear, revisar manualmente, o permitir? Justifica técnicamente.
+2. **Explicación de la Decisión**: Describe por qué el sistema llegó a la conclusión de **{classification_label}** basándote en los números mostrados.
 
-3. **Factores Contextuales**: Menciona factores adicionales que podrían influir en la decisión (hora del día, tipo de comercio, patrones estacionales, etc.).
+3. **Factores Contextuales**: Menciona factores que podrían influir en la interpretación (hora del día, tipo de comercio, patrón de transacciones, etc.).
 
-IMPORTANTE: NO determines si es fraude o no. Solo provee análisis y recomendaciones. El sistema de reglas determina la clasificación final."""
+Nota: Tu análisis es explicativo. El motor de reglas y ML ya han tomado la decisión de clasificar esto como **{classification_label}**."""
 
 
 class LLMService:
@@ -76,7 +80,7 @@ class LLMService:
 
         Args:
             score_breakdown: Dict with rule_score, ml_score, ensemble_score,
-                fired_rules, threshold.
+                fired_rules, threshold, classification.
             transaction: Dict with amount, merchant_name, currency, etc.
 
         Returns:
@@ -88,6 +92,22 @@ class LLMService:
         else:
             rule_details = "- Ninguna regla activada"
 
+        # Map classification to Spanish labels and decision text
+        classification = score_breakdown.get("classification", "review")
+        classification_map = {
+            "legitimate": "LEGÍTIMA",
+            "fraud": "FRAUDE",
+            "review": "REQUIERE REVISIÓN",
+        }
+        classification_label = classification_map.get(classification, "DESCONOCIDA")
+        
+        decision_map = {
+            "legitimate": "APROBADA - Transacción legítima",
+            "fraud": "BLOQUEADA - Transacción fraudulenta",
+            "review": "PENDIENTE - Requiere revisión manual",
+        }
+        decision = decision_map.get(classification, "DESCONOCIDA")
+
         return _PROMPT_TEMPLATE.format(
             amount=transaction.get("amount", "N/A"),
             currency=transaction.get("currency", "USD"),
@@ -98,6 +118,8 @@ class LLMService:
             ensemble_score=score_breakdown.get("ensemble_score", 0),
             threshold=score_breakdown.get("threshold", 70),
             rule_details=rule_details,
+            classification_label=classification_label,
+            decision=decision,
         )
 
     async def generate_report(
