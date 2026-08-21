@@ -59,3 +59,6 @@ transaccion/
 notebooks/.ipynb_checkpoints/
 mejoras_portfolio_fraud_detector/
 mejoras_portfolio_fraud_detector.zip
+
+# Personal knowledge base (InterviewTTS digital twin) - contains private data
+wiki/
