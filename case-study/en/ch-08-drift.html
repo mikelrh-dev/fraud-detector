@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>08 Drift - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Home</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html" class="active">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Chapter 08</span>
+      <h1>Monitoring and Drift</h1>
+      <p class="chapter-subtitle">Models decay in silence — so the system listens.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>A deployed model doesn't announce when it stops working. User behavior shifts, fraud
+        tactics evolve, and accuracy bleeds out month by month. Two complementary detectors watch
+        for this:</p>
+        <ul>
+          <li><strong>Data drift (Evidently):</strong> compares current feature distributions against a reference window. If <code>tx_count_last_5min</code> suddenly looks nothing like training data, predictions become unreliable even before labels say so.</li>
+          <li><strong>Custom PSI:</strong> a hand-rolled Population Stability Index provides a lightweight, dependency-free sanity check on the same distributions.</li>
+        </ul>
+        <p>Detection is paired with action. Retraining triggers fire automatically when either:</p>
+        <div class="formula">
+          F1 &lt; 0.7&nbsp;&nbsp;<span class="f-comment">// quality floor</span><br>
+          drift_score &gt; 30&nbsp;&nbsp;<span class="f-comment">// distribution alarm</span>
+        </div>
+        <p>This converts model maintenance from "someone notices someday" into an observable,
+        testable condition — the difference between an ML demo and ML in production.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-07-network-signals.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">07 · Network Signals: Graphs and Embeddings &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-09-reliability.html">
+        <span class="pager-label">Next chapter</span>
+        <span class="pager-title">09 · Redis Streams and DLQ &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

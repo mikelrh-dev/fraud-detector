@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fraud Detector — Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html" class="active">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <!-- Hero -->
+    <section class="hero reveal">
+      <span class="hero-kicker">Technical Case Study · Hybrid Fraud Detection</span>
+      <h1>Every decision,<br><span class="accent">explained.</span></h1>
+      <p class="tagline">A production-grade fraud detection engine that combines deterministic
+      rules, supervised ML and a local LLM — where the model shows its work and nothing critical
+      is left to chance. This is how it works and what building it taught me.</p>
+      <div class="link-btn-group">
+        <a class="link-btn btn-solid" href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">View on GitHub &rarr;</a>
+        <a class="link-btn" href="ch-01-arquitectura.html">Start reading &rarr;</a>
+      </div>
+      <div class="stat-pills">
+        <span class="stat-pill">9 rules</span>
+        <span class="stat-pill">337 tests</span>
+        <span class="stat-pill">23 endpoints</span>
+        <span class="stat-pill">88% coverage</span>
+      </div>
+    </section>
+
+    <!-- The problem -->
+    <section class="reveal">
+      <h2>The problem</h2>
+      <div class="prose">
+        <p>Card fraud is adversarial, extremely imbalanced (~1% of transactions) and unforgiving:
+        every blocked purchase needs a justification, every missed fraud costs money. A model that
+        predicts "legitimate" for everything scores 99% accuracy and catches zero fraud — which is
+        why this project treats <strong>explainability and calibration</strong> as first-class
+        requirements, not afterthoughts.</p>
+        <p>The answer is a hybrid: rules for transparency, gradient boosting for pattern discovery,
+        graphs and embeddings for network-level signals, and infrastructure that keeps all of it
+        honest over time.</p>
+      </div>
+    </section>
+
+    <!-- Metrics -->
+    <section class="reveal">
+      <div class="metric-strip">
+        <div class="metric-block">
+          <div class="metric-number">9</div>
+          <div class="metric-label">deterministic rules</div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-number">337</div>
+          <div class="metric-label">tests</div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-number">23</div>
+          <div class="metric-label">API endpoints</div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-number">88%</div>
+          <div class="metric-label">coverage</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chapter index -->
+    <section class="reveal">
+      <h2>Chapters</h2>
+      <div class="chapter-index">
+
+        <a href="ch-01-arquitectura.html" class="chapter-card">
+          <span class="chapter-card-num">01</span>
+          <div class="chapter-card-body">
+            <h3>Architecture End-to-End</h3>
+            <p>Three independent scoring layers fused into one auditable score — and why hybrid beat pure-ML on day one.</p>
+          </div>
+        </a>
+
+        <a href="ch-02-rule-engine.html" class="chapter-card">
+          <span class="chapter-card-num">02</span>
+          <div class="chapter-card-body">
+            <h3>The Rule Engine</h3>
+            <p>Nine deterministic rules with explicit weights: transparent by construction, tunable without retraining.</p>
+          </div>
+        </a>
+
+        <a href="ch-03-xgboost.html" class="chapter-card">
+          <span class="chapter-card-num">03</span>
+          <div class="chapter-card-body">
+            <h3>XGBoost on Ten Features</h3>
+            <p>The trained artifact opened up: real feature importances, imbalance math, smoothing curves and training discipline.</p>
+          </div>
+        </a>
+
+        <a href="ch-04-model-evaluation.html" class="chapter-card">
+          <span class="chapter-card-num">04</span>
+          <div class="chapter-card-body">
+            <h3>Model Evaluation</h3>
+            <p>Held-out metrics, baselines and a warning about perfect scores — the numbers behind the claims.</p>
+          </div>
+        </a>
+        <a href="ch-05-ensemble.html" class="chapter-card">
+          <span class="chapter-card-num">05</span>
+          <div class="chapter-card-body">
+            <h3>Ensemble &amp; Thresholds</h3>
+            <p>Why $50 and $50,000 deserve different bars: risk policy as configuration, not code.</p>
+          </div>
+        </a>
+
+        <a href="ch-06-shap.html" class="chapter-card">
+          <span class="chapter-card-num">06</span>
+          <div class="chapter-card-body">
+            <h3>Explainability with SHAP</h3>
+            <p>Game theory applied to fraud: every prediction ships with its own receipt.</p>
+          </div>
+        </a>
+
+        <a href="ch-07-network-signals.html" class="chapter-card">
+          <span class="chapter-card-num">07</span>
+          <div class="chapter-card-body">
+            <h3>Network Signals</h3>
+            <p>Fraud is social: fraud rings via graphs and merchant spoofing caught by sentence embeddings.</p>
+          </div>
+        </a>
+
+        <a href="ch-08-drift.html" class="chapter-card">
+          <span class="chapter-card-num">08</span>
+          <div class="chapter-card-body">
+            <h3>Drift Monitoring</h3>
+            <p>Models decay silently. Two detectors plus automatic retraining triggers keep the system honest.</p>
+          </div>
+        </a>
+
+        <a href="ch-09-reliability.html" class="chapter-card">
+          <span class="chapter-card-num">09</span>
+          <div class="chapter-card-body">
+            <h3>Streams &amp; DLQ</h3>
+            <p>At-least-once delivery, pending recovery, dead-letter queues — "usually works" is not an architecture.</p>
+          </div>
+        </a>
+
+        <a href="ch-10-security.html" class="chapter-card">
+          <span class="chapter-card-num">10</span>
+          <div class="chapter-card-body">
+            <h3>Security &amp; Audit</h3>
+            <p>JWT lifecycle, role-based access, rate limits and an SHA-256 chain that makes tampering detectable.</p>
+          </div>
+        </a>
+
+        <a href="ch-11-aprendizajes.html" class="chapter-card">
+          <span class="chapter-card-num">11</span>
+          <div class="chapter-card-body">
+            <h3>Learnings &amp; Limitations</h3>
+            <p>What building this taught me — including the things I would do differently.</p>
+          </div>
+        </a>
+
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-01-arquitectura.html">
+        <span class="pager-label">Next chapter</span>
+        <span class="pager-title">01 · Architecture End-to-End &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

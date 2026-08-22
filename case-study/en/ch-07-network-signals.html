@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>07 Networks - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Home</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html" class="active">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Chapter 07</span>
+      <h1>Network Signals: Graphs and Embeddings</h1>
+      <p class="chapter-subtitle">Graphs and embeddings — the signals that live between entities.</p>
+    </header>
+
+    <!-- Graph -->
+    <section class="reveal">
+      <div class="prose">
+        <h2>Fraud Rings: Because Fraud Is Social</h2>
+        <p>Fraudsters rarely act alone — stolen cards get resold through shared mule accounts and
+        reused merchant endpoints. Individual scoring misses this; graph analysis does not.</p>
+        <p>The system maintains a directed graph (NetworkX) whose edges connect users to merchants
+        and cards they touch. From this structure it derives:</p>
+        <ul>
+          <li><strong>Fraud proximity:</strong> if a user transacts within ≤ 2 hops of a known fraudster, the <code>near_fraud</code> rule fires (+15).</li>
+          <li><strong>Degree centrality:</strong> unusually connected nodes surface as coordination hubs worth reviewing.</li>
+          <li><strong>Automatic hygiene:</strong> nodes older than 30 days are pruned (known fraudsters are preserved) so the graph stays bounded and current.</li>
+        </ul>
+        <p>This is a second-order feature: it captures relationships that neither rules nor
+        per-transaction ML can see, because the signal lives <em>between</em> entities, not inside
+        one transaction.</p>
+      </div>
+    </section>
+
+    <!-- Embeddings -->
+    <section class="reveal">
+      <div class="prose">
+        <h2>Catching Lookalike Merchants with Embeddings</h2>
+        <p>A classic fraud trick is impersonation: register as <code>AMAZ0N_STORE</code> or
+        <code>Amaz0n Payments</code> and hope string-matching blacklists miss the typo. Exact and
+        character-distance matching catch some cases but fail systematically against deliberate
+        substitution.</p>
+        <p>Instead, merchant names are embedded with sentence-transformers
+        (<code>all-MiniLM-L6-v2</code>) and compared against ten trusted merchant names using cosine
+        similarity. Names scoring above <strong>0.85</strong> similarity to a trusted brand — without
+        being that brand — are treated as likely spoofs and feed the merchant-risk signal.</p>
+        <p>Semantic embeddings understand that <code>AMAZ0N_STORE</code> sits "close" to Amazon in
+        vector space even though the strings barely share characters. The computation runs in its own
+        async worker and caches results in Redis with a 1-hour TTL, keeping the hot path clean.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-06-shap.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">06 · Explainability with SHAP &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-08-drift.html">
+        <span class="pager-label">Next chapter</span>
+        <span class="pager-title">08 · Monitoring and Drift &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

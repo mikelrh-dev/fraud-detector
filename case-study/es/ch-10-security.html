@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>10 Seguridad - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html" class="active">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Capítulo 10</span>
+      <h1>Seguridad y Auditoría</h1>
+      <p class="chapter-subtitle">Endureciendo el sistema que caza fraude.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>Un sistema antifraude es en sí mismo un objetivo. El hardening base incluye:</p>
+        <ul>
+          <li><strong>Ciclo JWT:</strong> access tokens de vida corta (15 min), refresh tokens, y blacklist server-side al hacer logout — los tokens robados expiran rápido y mueren explícitamente.</li>
+          <li><strong>Acceso por roles:</strong> los analistas consultan y revisan; solo los admins hacen soft-delete de transacciones, exportan logs de auditoría o inspeccionan actividad de analistas.</li>
+          <li><strong>Rate limiting:</strong> login/registro 10/min, transacciones 100/min, alertas 60/min — el credential-stuffing se vuelve caro.</li>
+          <li><strong>Cadena de auditoría SHA-256:</strong> cada score, revisión de analista e informe LLM cae en un log append-only con checksums, haciendo la manipulación detectable.</li>
+          <li><strong>Soft delete:</strong> las transacciones se marcan, jamás se borran físicamente — el historial financiero queda consultable para auditoría y futuro reentrenamiento.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-09-reliability.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">09 · Redis Streams y DLQ &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-11-aprendizajes.html">
+        <span class="pager-label">Capítulo siguiente</span>
+        <span class="pager-title">11 · Aprendizajes y Limitaciones &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

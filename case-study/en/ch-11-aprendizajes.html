@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>11 Learnings - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Home</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html" class="active">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Chapter 11</span>
+      <h1>Learnings and Limitations</h1>
+      <p class="chapter-subtitle">Honest reflections, known gaps and what comes next.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>What building this taught me</h2>
+        <ul>
+          <li><strong>Feature engineering beats model complexity.</strong> The relative features (amount vs each user's average and deviation) carry the personalization signal — raw amount alone is nearly meaningless until normalized against a baseline.</li>
+          <li><strong>Class imbalance is a math problem, not a mystery.</strong> scale_pos_weight ≈ 100 plus train-only SMOTE turned a severe imbalance into a learnable signal without distorting evaluation.</li>
+          <li><strong>Explainability is a product feature.</strong> SHAP attributions changed how alerts get reviewed: analysts trust a score that shows its work.</li>
+          <li><strong>Reliability is an architecture decision.</strong> Consumer groups, pending-message recovery and a dead-letter queue separate "usually works" from an auditable pipeline.</li>
+          <li><strong>The LLM belongs after the decision.</strong> Keeping report generation asynchronous and strictly non-decisive removed the scariest failure mode from day one.</li>
+        </ul>
+
+        <h2>What I would do differently</h2>
+        <ul>
+          <li>Publish held-out metrics from week one — evaluation debt compounds silently.</li>
+          <li>Deploy the demo before polishing documentation this far; a running system teaches faster than any diagram.</li>
+          <li>Chase real labeled traffic earlier. Synthetic data got the architecture right but cannot prove production F1.</li>
+        </ul>
+
+        <h2>Known limitations</h2>
+        <p>A case study that hides its gaps is marketing, not engineering. Known limitations, stated plainly:</p>
+        <ul>
+          <li><strong>No published held-out metrics yet.</strong> Figures 2 and 3 come from the model's own training dataset, so their separation is optimistic. The immediate next step is a reproducible evaluation split reporting honest F1 / PR-AUC on unseen transactions.</li>
+          <li><strong>Synthetic data provenance.</strong> The current artifact trains on generated transactions (with a PaySim mapping path available). Real-world claims require real labeled traffic — by design, the pipeline is dataset-agnostic.</li>
+          <li><strong>Bounded score range.</strong> The cubic serving curve compresses <code>ml_score</code> into roughly [26, 74] — the medians in Figure 2 sit exactly on those bounds. A deliberate calibration trade-off worth revisiting only if finer granularity near the extremes is ever needed.</li>
+          <li><strong>Screenshots pending deployment.</strong> The analyst dashboard exists and is tested; this page will embed real UI captures once the demo runs publicly.</li>
+                  <li><strong>Hyperparameter search not yet systematic.</strong> Current parameters are hand-tuned with regularization judgment (Chapter 3 states this plainly); a randomized/Optuna study over the documented search space is queued.</li>
+          <li><strong>Benchmarks pending a running deployment.</strong> Scoring-endpoint latency percentiles, per-rule false-positive rates and a fairness audit across segments require live labeled traffic — they are first-class roadmap items, not afterthoughts.</li>
+        </ul>
+        <p>Each of these has a concrete owner and plan — which is exactly what separates an
+        honest roadmap from a wish list.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-10-security.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">10 · Security and Audit &larr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

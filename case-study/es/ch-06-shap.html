@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>06 SHAP - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html" class="active">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Capítulo 06</span>
+      <h1>Explicabilidad con SHAP</h1>
+      <p class="chapter-subtitle">Cada predicción viene con su recibo.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>Un score dice <em>cuánto</em> riesgo hay; SHAP dice <em>qué features lo causaron</em>.
+        SHAP (SHapley Additive exPlanations) toma prestada la teoría de juegos cooperativos: cada
+        feature es un jugador, la predicción es el pago, y los valores de Shapley reparten el crédito
+        equitativamente según su contribución marginal sobre todos los órdenes posibles de
+        features.</p>
+        <p>En la práctica, el sistema corre <code>TreeExplainer</code> — un algoritmo SHAP exacto de
+        tiempo polinomial especializado en ensambles de árboles — asíncronamente después de cada
+        transacción puntuada, y persiste las top-5 contribuciones por valor absoluto, expresadas
+        en <strong>log-odds</strong>: la escala aditiva cruda del modelo, antes de que cualquier
+        sigmoide la convierta en probabilidad. El dashboard
+        React las muestra como tarjetas de atribución.</p>
+
+        <figure class="figure">
+          <img src="../assets/shap-attribution.png" alt="Gráfico de barras horizontales de atribuciones SHAP reales para una transacción cripto de $50.000 a las 3am con alta velocidad: el conteo de transacciones de 5 minutos contribuye +2,22 log-odds, el nivel de riesgo del merchant +0,36, la velocidad horaria +0,30 y el importe +0,19; las demás features muestran contribución exactamente cero." width="1440" height="750">
+          <figcaption><strong>Figura 3 — Atribuciones SHAP reales</strong> para una única
+          transacción de $50.000 en cripto a las 3am con ráfaga de velocidad, calculadas con el
+          artefacto entrenado. La ráfaga de 5 minutos (+2,22 log-odds sobre una base de 11,54) hace
+          la mayor parte del trabajo, seguida por el riesgo del merchant y la velocidad horaria
+          sostenida. Las barras en exactamente cero también dicen algo: los ensambles de árboles solo acreditan
+          features realmente usadas en algún split del camino de decisión — el silencio también es
+          información. Tras la curva de suavizado de producción, esta predicción emerge como
+          <span style="color:#ef4444">ml_score ≈ 74/100</span>.</figcaption>
+        </figure>
+        <p>Esto cierra el círculo entre capas: las reglas dan disparadores nombrados, SHAP da causas
+        a nivel feature, y juntos convierten un score caja-negra en una narrativa defendible. Las
+        atribuciones se computan en un worker dedicado precisamente para que el costo de explicar
+        nunca pese sobre la ruta de scoring.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-05-ensemble.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">05 · Ensemble y Umbrales Dinámicos &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-07-network-signals.html">
+        <span class="pager-label">Capítulo siguiente</span>
+        <span class="pager-title">07 · Señales de Red: Grafos y Embeddings &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

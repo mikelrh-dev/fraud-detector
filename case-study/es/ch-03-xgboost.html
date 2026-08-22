@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>03 ML - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html" class="active">03 ML</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+      <span class="chapter-num">Capítulo 03</span>
+      <h1>XGBoost sobre Diez Features</h1>
+      <p class="chapter-subtitle">Abrimos el artefacto entrenado: features, hiperparámetros y la disciplina detrás.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>La capa ML aprende lo que las reglas no pueden expresar: combinaciones no obvias de
+        importe, ritmo, geografía y categoría que separan el fraude del gasto legítimo.</p>
+
+        <h3>Feature engineering: donde vive el conocimiento del dominio</h3>
+        <p>Los inputs crudos (importe, timestamp, merchant) se transforman en diez features que
+        exponen señal conductual al modelo:</p>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Feature</th><th>Qué captura</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">amount</td><td>importe crudo de la transacción</td></tr>
+            <tr><td class="mono">amount_vs_user_avg</td><td>cuántas veces mayor que el gasto promedio de este usuario</td></tr>
+            <tr><td class="mono">amount_vs_user_std</td><td>z-score vs la desviación del usuario — "¿esto es anormal PARA ESTE usuario?"</td></tr>
+            <tr><td class="mono">tx_count_last_5min</td><td>velocidad de ráfaga, ventana de 5 minutos</td></tr>
+            <tr><td class="mono">tx_count_last_1h</td><td>velocidad sostenida, ventana de 1 hora</td></tr>
+            <tr><td class="mono">hour_of_day</td><td>posición temporal — el fraude se concentra de noche</td></tr>
+            <tr><td class="mono">is_weekend</td><td>flag de fin de semana — los patrones de gasto cambian</td></tr>
+            <tr><td class="mono">merchant_risk_level</td><td>flag de categoría de alto riesgo (crypto, gambling…)</td></tr>
+            <tr><td class="mono">is_crypto</td><td>flag de criptomoneda — pagos irreversibles</td></tr>
+            <tr><td class="mono">amount_round_number</td><td>montos redondos correlacionan con pruebas manuales de tarjetas robadas</td></tr>
+          </tbody>
+        </table>
+        <p>Las features relativas (<code>amount_vs_user_avg</code>, <code>_std</code>) son las más
+        importantes: $2,000 es normal para un usuario y alarmante para otro. Normalizar contra la
+        propia línea base de cada usuario permite que un único modelo sirva a todos.</p>
+
+        <h3>¿Por qué XGBoost?</h3>
+        <ul>
+          <li><strong>Señal supervisada:</strong> entrenado con fraude etiquetado (~1% de prevalencia), optimiza directamente la separación entre clases — a diferencia de detectores de anomalías como Isolation Forest, que solo saben "esto luce inusual".</li>
+          <li><strong>Latencia amigable en CPU:</strong> la inferencia de árboles tarda microsegundos — compatible con scoring en tiempo real, sin infraestructura de GPU.</li>
+          <li><strong>Nativo para SHAP:</strong> su estructura de árboles conecta directo con <code>TreeExplainer</code> para atribuciones exactas por predicción (Capítulo 6).</li>
+          <li><strong>Rey de datos tabulares:</strong> en datos tabulares pequeños/medianos, los gradient-boosted trees siguen siendo estado del arte frente al deep learning.</li>
+        </ul>
+
+        <h3>Domando la curva de probabilidad</h3>
+        <p>La probabilidad cruda de XGBoost queda comprimida hacia 0.5 bajo desbalance de clases.
+        El sistema aplica un suavizado cúbico antes de escalar a 0–100, de modo que solo las
+        predicciones confiadas puntúan alto mientras la incertidumbre media se queda en el medio,
+        sin generar falsas alarmas:</p>
+        <div class="formula">
+          smoothed = 0.5 + 0.7 × (p − 0.5)³ + 0.3 × (p − 0.5)<br>
+          ml_score = clip(smoothed, 0, 1) × 100
+        </div>
+        <p>Si falta el archivo del modelo, la capa devuelve <code>ml_score = 0</code> y el sistema
+        sigue puntuando con reglas + contexto. La degradación es explícita, jamás un crash.</p>
+
+        <h3>Dentro del artefacto entrenado</h3>
+        <p>El modelo de producción es un XGBClassifier serializado cuyos propios hiperparámetros
+        cuentan la historia del desbalance:</p>
+        <table class="data-table">
+          <thead>
+            <tr><th>Hiperparámetro</th><th>Valor</th><th>Qué significa</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">n_estimators</td><td class="weight">500</td><td>árboles boosted en el ensemble</td></tr>
+            <tr><td class="mono">max_depth</td><td class="weight">6</td><td>profundidad de interacción acotada contra el overfitting</td></tr>
+            <tr><td class="mono">learning_rate</td><td class="weight">0.1</td><td>tamaño de paso conservador por árbol</td></tr>
+            <tr><td class="mono">subsample</td><td class="weight">0.8</td><td>muestreo de filas por árbol — aleatoriedad incorporada</td></tr>
+            <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 99.8</td><td>un ejemplo de fraude pesa como ~100 legítimos — la respuesta matemática al desbalance de clases</td></tr>
+          </tbody>
+        </table>
+
+        <figure class="figure">
+          <img src="../assets/feature-importance.png" alt="Gráfico de barras horizontales de las importancias de features del modelo XGBoost entrenado: merchant risk level domina con 0.655, seguido por la velocidad de 5 minutos con 0.264 y amount con 0.081; las demás features aportan casi cero." width="1440" height="810">
+          <figcaption><strong>Figura 1 — Importancias reales de features</strong>, extraídas
+          directamente del artefacto entrenado <code>xgboost_paysim_v1.joblib</code>. Tres features
+          concentran prácticamente toda la señal: categoría de riesgo del merchant (65,5%),
+          velocidad de ráfaga a 5 minutos (26,4%) e importe crudo (8,1%). Las features casi-cero no
+          son un error: su información se solapa en gran parte con lo que la capa de reglas ya
+          expresa, así que gradient boosting encontró poca ganancia marginal restante que extraer.</figcaption>
+        </figure>
+
+        <h3>Disciplina de entrenamiento</h3>
+        <ul>
+          <li><strong>Sin leakage:</strong> el oversampling SMOTE se aplica estrictamente sobre el split de entrenamiento, nunca antes.</li>
+          <li><strong>Inyección de ruido realista:</strong> los importes fraudulentos reciben ±15% de varianza, 3% de merchants fraudulentos reciben typos en el nombre, los timestamps fluctúan ±30 min — enseñando deliberadamente que los defraudadores no repiten patrones exactos.</li>
+          <li><strong>Splits estratificados:</strong> el ratio de fraude (~1–5%) se preserva entre train/test.</li>
+          <li><strong>Evaluación cost-sensitive:</strong> un fraude no detectado (falso negativo) se pondera a 10× una falsa alarma, y el umbral de decisión se elige para minimizar el costo económico esperado, no el accuracy crudo.</li>
+        </ul>
+
+        <figure class="figure">
+          <img src="../assets/score-distribution.png" alt="Dos histogramas superpuestos de valores ml_score: las transacciones legítimas se agrupan alrededor de una mediana de 26 mientras que las fraudulentas lo hacen alrededor de 74, con una línea punteada marcando el umbral de fraude del tier bajo en 70." width="1440" height="750">
+          <figcaption><strong>Figura 2 — Separación real de scores.</strong> Producida corriendo el
+          <code>FeatureEngine</code> de producción más el artefacto entrenado sobre las 50k
+          transacciones sintéticas, aplicando después la fórmula exacta de suavizado cúbico usada en
+          serving. Medianas: <span style="color:#3b82f6">26,3 legítimas</span> vs
+          <span style="color:#ef4444">73,7 fraude</span> — una brecha de 47,5 puntos. Advertencia
+          honesta: estos scores provienen del propio dataset de entrenamiento del modelo, así que la
+          separación aquí es optimista respecto de tráfico genuinamente no visto; el monitoreo de
+          drift (Capítulo 8) existe precisamente para cazar esa brecha en producción.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <!-- Procedencia y honestidad -->
+    <section class="reveal">
+      <div class="prose">
+        <h2>Procedencia del dataset e hiperparámetros honestos</h2>
+        <p><strong>De dónde vienen los datos.</strong> El artefacto actual entrena sobre el generador
+        sintético del repositorio (50k transacciones, ~5% de fraude) con una ruta documentada de mapeo a
+        PaySim cuando ese archivo está presente. Todavía no hay versionado de datasets (sin pinning tipo
+        DVC); el CSV en <code>data/</code> actúa como snapshot de facto. Una data card formal está en el
+        roadmap.</p>
+        <p><strong>Cómo se eligieron los hiperparámetros.</strong> Con honestidad: a mano. 500 árboles,
+        depth 6, learning rate 0.1 más regularización L1/L2 siguen los defaults-más-criterio para problemas
+        tabulares, y el <code>scale_pos_weight &asymp; 99.8</code> del artefacto guardado refleja el
+        desbalance de su corrida de entrenamiento. Ningún grid search ni estudio de Optuna los respalda
+        todavía — una búsqueda aleatoria está en cola como trabajo del roadmap, y el próximo capítulo
+        muestra por qué hasta los parámetros perfectos no rescatan datos poco realistas.</p>
+        <p><strong>Reproducilo:</strong> <code>scripts/train_xgboost_aligned.py</code> (pipeline completo
+        documentado), <code>notebooks/01-paysim-fraud-detection.ipynb</code> (exploración).</p>
+      </div>
+    </section>
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-02-rule-engine.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">02 · El Motor de Reglas &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-04-model-evaluation.html"><span class="pager-label">Capítulo siguiente</span><span class="pager-title">04 · Evaluación del Modelo &rarr;</span></a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

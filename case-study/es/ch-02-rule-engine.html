@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>02 Reglas - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html" class="active">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+      <span class="chapter-num">Capítulo 02</span>
+      <h1>El Motor de Reglas</h1>
+      <p class="chapter-subtitle">Determinista, transparente, ajustable — la capa que hace defendible cada decisión.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>Antes de que corra cualquier machine learning, nueve reglas deterministas evalúan la
+        transacción. Cada regla codifica un patrón de fraude conocido con un peso explícito; los
+        pesos de las reglas activadas se suman con tope de 100.</p>
+        <p><strong>¿Por qué reglas?</strong> Las reglas corren en microsegundos, nunca fallan en
+        silencio y producen gratis una justificación legible ("activadas: high_amount +
+        off_hours_crypto"). Además cubren el arranque en frío cuando aún no existe modelo ML — el
+        sistema puntúa de forma útil desde el día cero con <code>ml_score = 0</code>.</p>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Regla</th><th>Peso</th><th>Disparador</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">high_amount</td><td class="weight">35</td><td>importe &gt; $1,000</td></tr>
+            <tr><td class="mono">velocity_burst</td><td class="weight">30</td><td>&gt; 1 txn en 5 min en categoría de riesgo</td></tr>
+            <tr><td class="mono">high_velocity</td><td class="weight">25</td><td>&gt; 3 txns en 5 minutos</td></tr>
+            <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>horario nocturno (00–06) + categoría de riesgo</td></tr>
+            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>merchant en blacklist o categoría de riesgo</td></tr>
+            <tr><td class="mono">card_mismatch</td><td class="weight">20</td><td>tarjeta fuera de las conocidas del usuario</td></tr>
+            <tr><td class="mono">country_mismatch</td><td class="weight">15</td><td>país de la txn ≠ país de origen</td></tr>
+            <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>usuario a ≤ 2 saltos de un defraudador (grafo)</td></tr>
+            <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transacción entre 00:00–06:00</td></tr>
+          </tbody>
+        </table>
+        <p class="table-caption">Categorías de riesgo: btc, crypto, gambling, casino, money_transfer.</p>
+        <p>Los pesos codifican lógica de dominio a propósito: el importe por sí solo (35) pesa más que el
+        horario sospechoso por sí solo (10), pero crypto de madrugada (25) salta casi al tope porque la
+        combinación es mucho más sospechosa que cualquiera de los factores por separado. Estos
+        números son configuración ajustable — los analistas pueden recalibrar la política de riesgo
+        sin tocar código ni reentrenar nada.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-01-arquitectura.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">01 · Arquitectura de Punta a Punta &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-03-xgboost.html">
+        <span class="pager-label">Capítulo siguiente</span>
+        <span class="pager-title">03 · XGBoost sobre Diez Features &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

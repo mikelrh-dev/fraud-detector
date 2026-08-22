@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>04 Model Evaluation - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html" class="active">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/ch-04-model-evaluation.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+      <span class="chapter-num">Chapter 04</span>
+      <h1>Model Evaluation — and a Warning About Perfect Scores</h1>
+      <p class="chapter-subtitle">We ran the full documented protocol on a held-out split. The metrics came back perfect. Here is why that is a warning sign, not a victory.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>This chapter reports the first published evaluation of the model, following the exact
+        protocol from the training script: stratified 80/20 split (seed 42), the documented
+        feature-noise step and train-only SMOTE, then scoring on the untouched 20% (10,000
+        transactions). The production artifact was not retrained or modified.</p>
+
+        <h2>The results table</h2>
+        <table class="data-table">
+          <thead>
+            <tr><th>Model</th><th>Precision @0.5</th><th>Recall @0.5</th><th>F1 @0.5</th><th>PR-AUC</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Dummy (majority class)</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.048</td></tr>
+            <tr><td>Logistic Regression</td><td class="mono">1.000</td><td class="mono">0.998</td><td class="mono">0.999</td><td class="mono">1.000</td></tr>
+            <tr><td>Random Forest (200)</td><td class="mono">1.000</td><td class="mono">1.000</td><td class="mono">1.000</td><td class="mono">1.000</td></tr>
+            <tr><td class="mono">XGBoost (production params)</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td></tr>
+          </tbody>
+        </table>
+        <p class="table-caption">ROC-AUC (XGBoost): 1.000 · 5-fold CV: F1 = 1.000 ± 0.000, PR-AUC = 1.000 ± 0.000 (SMOTE inside every fold).</p>
+
+        <figure class="figure">
+          <img src="../assets/fig-eval-confusion.png" alt="Two confusion matrices side by side at threshold 0.50 and at the cost-optimal threshold: both show 9,516 true negatives, zero false positives, zero false negatives and 484 true positives." width="1440" height="660">
+          <figcaption><strong>Confusion matrix on the held-out test set:</strong> 9,516 legitimate
+          correctly cleared, 484 frauds caught, zero errors on either side — at both the default and
+          the cost-optimal threshold.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>The warning: perfect scores are a red flag</h2>
+        <p>A model that never errs on test data is not a triumph — it is a measurement of how far
+        the synthetic data is from reality. Look at the baselines row: <strong>logistic regression
+        scores 0.999</strong>. When a linear model matches gradient boosting perfectly, model choice
+        was never the bottleneck. The classes themselves are almost non-overlapping:</p>
+
+        <figure class="figure">
+          <img src="../assets/fig-eval-separability.png" alt="Two histograms: transaction amounts by class on a log scale barely overlap between legitimate and fraud; hour-of-day distributions also barely overlap." width="1560" height="690">
+          <figcaption><strong>Why the test set is trivially separable:</strong> the synthetic
+          generator draws fraud amounts from a log-normal centered near $36k and legitimate ones
+          near $90, with night-vs-day hours and disjoint velocity ranges. The classes share almost
+          no support, so any classifier — however simple — can separate them perfectly.</figcaption>
+        </figure>
+
+        <p>This is one of the most important lessons in applied machine learning:
+        <strong>evaluation can only be as honest as the data it runs on</strong>. These numbers
+        validate that the pipeline is wired correctly — splits, resampling, training, inference —
+        but they say nothing about production performance against real fraud, which is noisy,
+        adaptive and subtly imbalanced. That gap is exactly why the drift monitoring in Chapter 08
+        exists, and why publishing held-out metrics on real labeled traffic is the top item on the
+        roadmap.</p>
+
+        <div class="callout">
+          <span class="callout-title">How to read this honestly</span>
+          <p>Perfect held-out metrics on synthetic data prove engineering correctness, not model
+          quality. Any portfolio claiming F1 = 1.0 as an achievement without this caveat is telling
+          you they did not look closely at their own numbers.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>The machinery still had to earn it</h2>
+        <p>Even with separable classes, the cost-sensitive layer was exercised end to end: false
+        negatives priced at 10× false positives, threshold swept from 0.05 to 0.95, economic cost
+        minimized. On easy data the optimal threshold lands low (0.05) because recall is free — on
+        real data this curve becomes the decision-making tool.</p>
+
+        <figure class="figure">
+          <img src="../assets/fig-eval-pr.png" alt="Precision-recall curve hugging the top-right corner with PR-AUC 1.000, compared against random forest and the dummy prevalence baseline." width="1260" height="780">
+          <figcaption><strong>PR curve</strong> against the dummy prevalence baseline (0.048).
+          With separable classes the curve hugs the corner; on real data its shape — especially the
+          precision drop-off at high recall — becomes the operational story.</figcaption>
+        </figure>
+
+        <figure class="figure">
+          <img src="../assets/fig-eval-cost.png" alt="Economic cost versus decision threshold: flat at zero beyond threshold 0.05, showing any threshold above 0.05 yields zero misclassifications on this dataset." width="1260" height="750">
+          <figcaption><strong>Cost vs threshold</strong> (FN × $10 + FP × $1): flat zero beyond
+          0.05 here. The machinery is what matters — on production data this curve typically has a
+          clear minimum away from both extremes, and picking that point is a business decision, not
+          a default.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>Is the score honest? Calibration check</h2>
+        <p>The serving path applies a cubic smoothing to raw probabilities (Chapter 3). A
+        reliability diagram tests whether predicted probabilities match observed fraud rates — for
+        both the raw output and the smoothed serving output:</p>
+
+        <figure class="figure">
+          <img src="../assets/fig-eval-calibration.png" alt="Reliability diagram with both raw predict_proba and cubic-smoothed curves tracking close to the diagonal across quantile bins." width="1080" height="840">
+          <figcaption><strong>Reliability diagram:</strong> both curves track the diagonal across
+          deciles — the smoothing compresses extremes but does not systematically distort ordering.
+          On harder data this chart is how you decide whether a calibration step
+          (<code>CalibratedClassifierCV</code>) belongs in the pipeline.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-03-xgboost.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">&larr; 03 · XGBoost on Ten Features</span>
+      </a>
+      <a class="pager-next" href="ch-05-ensemble.html">
+        <span class="pager-label">Next chapter</span>
+        <span class="pager-title">05 · Ensemble &amp; Thresholds &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

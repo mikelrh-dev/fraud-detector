@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>07 Redes - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html" class="active">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Capítulo 07</span>
+      <h1>Señales de Red: Grafos y Embeddings</h1>
+      <p class="chapter-subtitle">Grafos y embeddings — las señales que viven entre entidades.</p>
+    </header>
+
+    <!-- Grafos -->
+    <section class="reveal">
+      <div class="prose">
+        <h2>Anillos de Fraude: Porque el Fraude Es Social</h2>
+        <p>Los defraudadores rara vez actúan solos — las tarjetas robadas se revenden vía cuentas
+        mulas compartidas y merchants reutilizados. El scoring individual no ve esto; el análisis de
+        grafos sí.</p>
+        <p>El sistema mantiene un grafo dirigido (NetworkX) cuyas aristas conectan usuarios con los
+        merchants y tarjetas que tocan. De esa estructura derivan:</p>
+        <ul>
+          <li><strong>Proximidad a fraude:</strong> si un usuario transacciona a ≤ 2 saltos de un defraudador conocido, se dispara la regla <code>near_fraud</code> (+15).</li>
+          <li><strong>Centralidad de grado:</strong> los nodos inusualmente conectados afloran como hubs de coordinación dignos de revisión.</li>
+          <li><strong>Higiene automática:</strong> los nodos con más de 30 días se podan (los defraudadores conocidos se preservan) para que el grafo quede acotado y vigente.</li>
+        </ul>
+        <p>Es una feature de segundo orden: captura relaciones que ni las reglas ni el ML
+        por-transacción ven, porque la señal vive <em>entre</em> entidades, no dentro de una sola
+        transacción.</p>
+      </div>
+    </section>
+
+    <!-- Embeddings -->
+    <section class="reveal">
+      <div class="prose">
+        <h2>Cazando Merchants Parecidos con Embeddings</h2>
+        <p>Un truco clásico de fraude es la suplantación: registrarse como <code>AMAZ0N_STORE</code>
+        o <code>Amaz0n Payments</code> y esperar que las blacklists por coincidencia de strings
+        pasen por alto el typo. La coincidencia exacta y por distancia de caracteres captura algunos
+        casos pero falla sistemáticamente ante sustituciones deliberadas.</p>
+        <p>En su lugar, los nombres de merchants se embeben con sentence-transformers
+        (<code>all-MiniLM-L6-v2</code>) y se comparan contra diez nombres de merchants confiables
+        usando similitud coseno. Nombres con similitud superior a <strong>0.85</strong> respecto de
+        una marca confiable — sin SER esa marca — se tratan como suplantaciones probables y alimentan
+        la señal de riesgo de merchant.</p>
+        <p>Los embeddings semánticos entienden que <code>AMAZ0N_STORE</code> está "cerca" de Amazon
+        en espacio vectorial aunque los strings casi no compartan caracteres. El cómputo corre en su
+        propio worker async y cachea resultados en Redis con TTL de 1 hora, dejando limpia la ruta
+        caliente.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-06-shap.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">06 · Explicabilidad con SHAP &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-08-drift.html">
+        <span class="pager-label">Capítulo siguiente</span>
+        <span class="pager-title">08 · Monitoreo y Drift &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

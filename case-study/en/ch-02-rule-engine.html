@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>02 Rules - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Home</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html" class="active">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+      <span class="chapter-num">Chapter 02</span>
+      <h1>The Rule Engine</h1>
+      <p class="chapter-subtitle">Deterministic, transparent, tunable — the layer that makes every decision defensible.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>Before any machine learning runs, nine deterministic rules evaluate the transaction.
+        Each rule encodes a known fraud pattern with an explicit weight; fired rule weights are
+        summed and capped at 100.</p>
+        <p><strong>Why rules at all?</strong> Rules run in microseconds, never fail silently, and
+        produce a human-readable justification for free ("triggered: high_amount + off_hours_crypto").
+        They also cover cold-start scenarios where no ML model exists yet — the system scores
+        meaningfully from day zero with <code>ml_score = 0</code>.</p>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Rule</th><th>Weight</th><th>Trigger</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">high_amount</td><td class="weight">35</td><td>amount &gt; $1,000</td></tr>
+            <tr><td class="mono">velocity_burst</td><td class="weight">30</td><td>&gt; 1 txn in 5 min in a risky category</td></tr>
+            <tr><td class="mono">high_velocity</td><td class="weight">25</td><td>&gt; 3 txns in 5 minutes</td></tr>
+            <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>night hours (00–06) + risky category</td></tr>
+            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>blacklisted merchant or risky category</td></tr>
+            <tr><td class="mono">card_mismatch</td><td class="weight">20</td><td>card not among user's known cards</td></tr>
+            <tr><td class="mono">country_mismatch</td><td class="weight">15</td><td>transaction country ≠ home country</td></tr>
+            <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>user ≤ 2 hops from a known fraudster (graph)</td></tr>
+            <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transaction between 00:00–06:00</td></tr>
+          </tbody>
+        </table>
+        <p class="table-caption">Risky categories: btc, crypto, gambling, casino, money_transfer.</p>
+        <p>Note how the weights encode domain logic: amount alone (35) outweighs odd timing alone
+        (10), but night-hour crypto activity (25) jumps near the top because the combination is far
+        more suspicious than either factor individually. These numbers are tunable configuration —
+        analysts can recalibrate risk policy without touching code or retraining anything.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-01-arquitectura.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">01 · Architecture End-to-End &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-03-xgboost.html">
+        <span class="pager-label">Next chapter</span>
+        <span class="pager-title">03 · XGBoost on Ten Features &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

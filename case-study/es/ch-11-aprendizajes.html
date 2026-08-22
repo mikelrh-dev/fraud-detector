@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>11 Aprendizajes - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html" class="active">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Capítulo 11</span>
+      <h1>Aprendizajes y Limitaciones</h1>
+      <p class="chapter-subtitle">Reflexiones honestas, huecos conocidos y qué viene después.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>Lo que me enseñó construirlo</h2>
+        <ul>
+          <li><strong>El feature engineering le gana a la complejidad del modelo.</strong> Las features relativas (importe contra el promedio y desviación de cada usuario) llevan la señal de personalización — el importe crudo solo casi no significa nada hasta normalizarlo contra una línea base.</li>
+          <li><strong>El desbalance de clases es un problema matemático, no un misterio.</strong> scale_pos_weight ≈ 100 más SMOTE solo-en-train convirtieron un desbalance severo en señal aprendible sin distorsionar la evaluación.</li>
+          <li><strong>La explicabilidad es una feature del producto.</strong> Las atribuciones SHAP cambiaron cómo se revisan las alertas: los analistas confían en un score que muestra su trabajo.</li>
+          <li><strong>La confiabilidad es una decisión de arquitectura.</strong> Consumer groups, recuperación de pendientes y una cola de mensajes muertos separan el "casi siempre funciona" del pipeline auditable.</li>
+          <li><strong>El LLM va después de la decisión.</strong> Mantener la generación de informes asíncrona y estrictamente no-decisiva eliminó el modo de fallo más peligroso desde el día uno.</li>
+        </ul>
+
+        <h2>Qué haría diferente</h2>
+        <ul>
+          <li>Publicar métricas held-out desde la primera semana — la deuda de evaluación se acumula en silencio.</li>
+          <li>Deployar la demo antes de pulir tanto la documentación; un sistema corriendo enseña más rápido que cualquier diagrama.</li>
+          <li>Buscar tráfico real etiquetado antes. Los datos sintéticos dejaron bien parada la arquitectura pero no pueden probar un F1 de producción.</li>
+        </ul>
+
+        <h2>Limitaciones conocidas</h2>
+        <p>Un caso de estudio que esconde sus huecos es marketing, no ingeniería. Limitaciones
+        conocidas, dichas sin rodeos:</p>
+        <ul>
+          <li><strong>Sin métricas held-out publicadas todavía.</strong> Las figuras 2 y 3 provienen del propio dataset de entrenamiento del modelo, así que su separación es optimista. El próximo paso inmediato es un split de evaluación reproducible que reporte F1 / PR-AUC honestos sobre transacciones no vistas.</li>
+          <li><strong>Procedencia sintética de los datos.</strong> El artefacto actual entrena sobre transacciones generadas (con una ruta de mapeo a PaySim disponible). Las afirmaciones del mundo real requieren tráfico real etiquetado — por diseño, el pipeline es agnóstico del dataset.</li>
+          <li><strong>Rango de score acotado.</strong> La curva cúbica de serving comprime <code>ml_score</code> en aproximadamente [26, 74] — las medianas de la Figura 2 se apoyan exactamente en esos bordes. Un trade-off deliberado de calibración, revisable solo si algún día hiciera falta granularidad fina cerca de los extremos.</li>
+          <li><strong>Capturas pendientes de deploy.</strong> El dashboard de analistas existe y está testeado; esta página incrustará capturas reales de UI cuando la demo corra públicamente.</li>
+                  <li><strong>Búsqueda de hiperparámetros aún no sistemática.</strong> Los parámetros actuales están ajustados a mano con criterio de regularización (el Capítulo 3 lo declara sin rodeos); un estudio randomizado/Optuna sobre el espacio documentado está en cola.</li>
+          <li><strong>Benchmarks pendientes de un deploy corriendo.</strong> Los percentiles de latencia del endpoint de scoring, las tasas de falsos positivos por regla y una auditoría de fairness por segmentos requieren tráfico real etiquetado — son items de primera clase en el roadmap, no parches.</li>
+        </ul>
+        <p>Cada una tiene dueño y plan concreto — que es justo lo que separa un roadmap honesto
+        de una lista de deseos.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-10-security.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">10 · Seguridad y Auditoría &larr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

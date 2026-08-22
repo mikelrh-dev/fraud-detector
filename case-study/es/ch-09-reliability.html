@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>09 Streams - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html" class="active">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Capítulo 09</span>
+      <h1>Redis Streams y DLQ</h1>
+      <p class="chapter-subtitle">Entrega al-menos-una-vez, bucles de recuperación y letras muertas que dicen la verdad.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>El trabajo pesado (informes LLM, SHAP, embeddings) ocurre fuera de la ruta de request a
+        través de tres Redis Streams. Listas simples de Redis servirían como cola básica, pero los
+        Streams traen la semántica que un pipeline financiero necesita:</p>
+        <ul>
+          <li><strong>Consumer groups:</strong> cada pool de workers lee independientemente con su propio offset — los mensajes llegan al-menos-una-vez y sobreviven crashes del consumidor.</li>
+          <li><strong>Recuperación de pendientes:</strong> un loop corre <code>XAUTOCLAIM</code> cada 60s para reclamar mensajes atascados idle &gt; 5 minutos (consumidores muertos), así nada se pudre sin que nadie lo vea.</li>
+          <li><strong>Dead-letter queue:</strong> tras fallos repetidos los mensajes van a <code>fraud:dlq</code> estampados con stream original, grupo y motivo del error — los fallos se vuelven eventos inspectables, no trabajo perdido.</li>
+          <li><strong>Memoria acotada:</strong> los streams se recortan en ~100K entradas (<code>MAXLEN</code> aproximado); la DLQ tiene tope de 10K.</li>
+        </ul>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Stream</th><th>Worker</th><th>Produce</th><th>Política ante fallos</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">fraud:llm</td><td class="mono">llm_worker</td><td>fila LLMReport + entrada de auditoría</td><td>queda PENDING, máx. 3 intentos</td></tr>
+            <tr><td class="mono">fraud:shap</td><td class="mono">shap_worker</td><td>top-5 atribuciones SHAP</td><td>3 reintentos → DLQ</td></tr>
+            <tr><td class="mono">fraud:embeddings</td><td class="mono">embedding_worker</td><td>clave Redis con resultado (TTL 1h)</td><td>ack al éxito, log al fallo</td></tr>
+          </tbody>
+        </table>
+        <p>El principio de diseño: la API siempre responde rápido; el enriquecimiento llega
+        eventualmente; y cuando falla, el fallo mismo es un dato durable que un ingeniero puede
+        reprocesar.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-08-drift.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">08 · Monitoreo y Drift &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-10-security.html">
+        <span class="pager-label">Capítulo siguiente</span>
+        <span class="pager-title">10 · Seguridad y Auditoría &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>10 Security - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Home</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html" class="active">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Chapter 10</span>
+      <h1>Security and Audit</h1>
+      <p class="chapter-subtitle">Hardening the system that hunts fraud.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>A fraud system is itself a target. Baseline hardening includes:</p>
+        <ul>
+          <li><strong>JWT lifecycle:</strong> short-lived access tokens (15 min), refresh tokens, and server-side blacklist on logout — stolen tokens expire fast and die explicitly.</li>
+          <li><strong>Role-based access:</strong> analysts query and review; only admins soft-delete transactions, export audit logs, or inspect analyst activity.</li>
+          <li><strong>Rate limiting:</strong> login/register 10/min, transactions 100/min, alerts 60/min — credential-stuffing gets expensive.</li>
+          <li><strong>SHA-256 audit chain:</strong> every score, analyst review and LLM report lands in an append-only log with checksums, making tampering detectable.</li>
+          <li><strong>Soft delete:</strong> transactions are flagged, never physically erased — financial history stays queryable for audit and future retraining.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-09-reliability.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">09 · Redis Streams and DLQ &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-11-aprendizajes.html">
+        <span class="pager-label">Next chapter</span>
+        <span class="pager-title">11 · Learnings and Limitations &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fraud Detector — Caso de Estudio</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html" class="active">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <!-- Hero -->
+    <section class="hero reveal">
+      <span class="hero-kicker">Caso Técnico · Detección Híbrida de Fraude</span>
+      <h1>Cada decisión,<br><span class="accent">explicada.</span></h1>
+      <p class="tagline">Un motor de detección de fraude listo para producción que combina reglas
+      deterministas, ML supervisado y un LLM local — donde el modelo muestra su trabajo y nada
+      crítico se deja al azar. Así funciona y qué me enseñó construirlo.</p>
+      <div class="link-btn-group">
+        <a class="link-btn btn-solid" href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Ver en GitHub &rarr;</a>
+        <a class="link-btn" href="ch-01-arquitectura.html">Empezar a leer &rarr;</a>
+      </div>
+      <div class="stat-pills">
+        <span class="stat-pill">9 reglas</span>
+        <span class="stat-pill">337 tests</span>
+        <span class="stat-pill">23 endpoints</span>
+        <span class="stat-pill">88% cobertura</span>
+      </div>
+    </section>
+
+    <!-- El problema -->
+    <section class="reveal">
+      <h2>El problema</h2>
+      <div class="prose">
+        <p>El fraude con tarjetas es un problema de predicción adversarial y extremadamente
+        desbalanceado (~1% de transacciones). Un modelo que predice "legítima" para todo consigue
+        99% de accuracy y cero fraudes detectados — por eso este proyecto trata
+        <strong>explicabilidad y calibración</strong> como requisitos de primera clase, no como
+        añadidos posteriores.</p>
+        <p>La respuesta es un híbrido: reglas para transparencia, gradient boosting para descubrir
+        patrones, grafos y embeddings para señales a nivel de red, e infraestructura que mantiene
+        todo honesto con el tiempo.</p>
+      </div>
+    </section>
+
+    <!-- Métricas -->
+    <section class="reveal">
+      <div class="metric-strip">
+        <div class="metric-block">
+          <div class="metric-number">9</div>
+          <div class="metric-label">reglas deterministas</div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-number">337</div>
+          <div class="metric-label">tests</div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-number">23</div>
+          <div class="metric-label">endpoints API</div>
+        </div>
+        <div class="metric-block">
+          <div class="metric-number">88%</div>
+          <div class="metric-label">cobertura</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Índice de capítulos -->
+    <section class="reveal">
+      <h2>Capítulos</h2>
+      <div class="chapter-index">
+
+        <a href="ch-01-arquitectura.html" class="chapter-card">
+          <span class="chapter-card-num">01</span>
+          <div class="chapter-card-body">
+            <h3>Arquitectura de Punta a Punta</h3>
+            <p>Tres capas de scoring independientes fusionadas en un score auditable — y por qué el híbrido superó al ML puro desde el primer día.</p>
+          </div>
+        </a>
+
+        <a href="ch-02-rule-engine.html" class="chapter-card">
+          <span class="chapter-card-num">02</span>
+          <div class="chapter-card-body">
+            <h3>El Motor de Reglas</h3>
+            <p>Nueve reglas deterministas con pesos explícitos: transparentes por construcción, ajustables sin reentrenar.</p>
+          </div>
+        </a>
+
+        <a href="ch-03-xgboost.html" class="chapter-card">
+          <span class="chapter-card-num">03</span>
+          <div class="chapter-card-body">
+            <h3>XGBoost sobre Diez Features</h3>
+            <p>El artefacto entrenado abierto: importancias reales de features, matemática del desbalance y disciplina de entrenamiento.</p>
+          </div>
+        </a>
+
+        <a href="ch-04-model-evaluation.html" class="chapter-card">
+          <span class="chapter-card-num">04</span>
+          <div class="chapter-card-body">
+            <h3>Evaluación del Modelo</h3>
+            <p>Métricas held-out, baselines y una advertencia sobre los puntajes perfectos — los números detrás de los claims.</p>
+          </div>
+        </a>
+        <a href="ch-05-ensemble.html" class="chapter-card">
+          <span class="chapter-card-num">05</span>
+          <div class="chapter-card-body">
+            <h3>Ensemble y Umbrales Dinámicos</h3>
+            <p>Por qué $50 y $50,000 merecen barras distintas: política de riesgo como configuración, no como código.</p>
+          </div>
+        </a>
+
+        <a href="ch-06-shap.html" class="chapter-card">
+          <span class="chapter-card-num">06</span>
+          <div class="chapter-card-body">
+            <h3>Explicabilidad con SHAP</h3>
+            <p>Teoría de juegos aplicada al fraude: cada predicción viene con su propio recibo.</p>
+          </div>
+        </a>
+
+        <a href="ch-07-network-signals.html" class="chapter-card">
+          <span class="chapter-card-num">07</span>
+          <div class="chapter-card-body">
+            <h3>Señales de Red: Grafos y Embeddings</h3>
+            <p>Fraude es social: anillos de fraude vía grafos y suplantación de merchants capturada por embeddings de oraciones.</p>
+          </div>
+        </a>
+
+        <a href="ch-08-drift.html" class="chapter-card">
+          <span class="chapter-card-num">08</span>
+          <div class="chapter-card-body">
+            <h3>Monitoreo y Drift</h3>
+            <p>Los modelos decaen en silencio. Dos detectores más triggers automáticos de reentrenamiento mantienen el sistema honesto.</p>
+          </div>
+        </a>
+
+        <a href="ch-09-reliability.html" class="chapter-card">
+          <span class="chapter-card-num">09</span>
+          <div class="chapter-card-body">
+            <h3>Redis Streams y DLQ</h3>
+            <p>Entrega al-menos-una-vez, recuperación de pendientes y colas de mensajes muertos — "casi siempre funciona" no es una arquitectura.</p>
+          </div>
+        </a>
+
+        <a href="ch-10-security.html" class="chapter-card">
+          <span class="chapter-card-num">10</span>
+          <div class="chapter-card-body">
+            <h3>Seguridad y Auditoría</h3>
+            <p>Ciclo JWT, acceso por roles, rate limits y una cadena SHA-256 que hace la manipulación detectable.</p>
+          </div>
+        </a>
+
+        <a href="ch-11-aprendizajes.html" class="chapter-card">
+          <span class="chapter-card-num">11</span>
+          <div class="chapter-card-body">
+            <h3>Aprendizajes y Limitaciones</h3>
+            <p>Lo que construir esto me enseñó — incluyendo las cosas que haría diferente.</p>
+          </div>
+        </a>
+
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-01-arquitectura.html">
+        <span class="pager-label">Siguiente capítulo</span>
+        <span class="pager-title">01 · Arquitectura de Punta a Punta &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

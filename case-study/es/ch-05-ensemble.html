@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>05 Ensemble - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html" class="active">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Capítulo 05</span>
+      <h1>Ensemble y Umbrales Dinámicos</h1>
+      <p class="chapter-subtitle">La política de riesgo como configuración: umbrales dinámicos y banda de revisión humana.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>Un corte fijo sería incorrecto: bloquear toda transacción de $50 con score ≥ 45 ahogaría
+        a los analistas en falsos positivos, mientras que esperar score 70 para una transferencia de
+        $60,000 sería negligente. Por eso el umbral de decisión escala inversamente al monto:</p>
+
+        <table class="threshold-table">
+          <thead>
+            <tr><th>Tier de Monto</th><th>Umbral de Fraude</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="tier-label">$0 – $1,000</td><td class="tier-threshold">≥ 70</td></tr>
+            <tr><td class="tier-label">$1,001 – $10,000</td><td class="tier-threshold">≥ 50</td></tr>
+            <tr><td class="tier-label">$10,001 – $50,000</td><td class="tier-threshold">≥ 45</td></tr>
+            <tr><td class="tier-label">$50,001+</td><td class="tier-threshold">≥ 40</td></tr>
+          </tbody>
+        </table>
+        <p>La intuición: cuánto más dinero se mueve, menos certeza se exige antes de actuar. Los
+        scores entre el 75% del umbral del tier y el umbral caen en una
+        <strong style="color:#eab308">banda de revisión</strong> — marcadas para análisis humano en
+        vez de autobloqueo. Ahí vive el diseño human-in-the-loop: el sistema reduce miles de
+        transacciones a una cola revisable, y los analistas toman la decisión final.</p>
+        <div class="callout">
+          <span class="callout-title">¿Por qué no dejar que el ML decida solo?</span>
+          <p>El ensemble le da deliberadamente el mayor peso a las reglas (0.60). Cuando un analista
+          pregunta "¿por qué se bloqueó esto?", la respuesta arranca con una regla nombrada y
+          ponderada — lógica auditable — reforzada por evidencia del modelo. Los bloqueos puro-ML son
+          más difíciles de defender e imposibles de ajustar quirúrgicamente.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <!-- Playground interactivo del umbral -->
+    <section class="reveal">
+      <h2>Prueba la política</h2>
+      <div class="playground" id="threshold-playground">
+        <p class="pg-hint">No es un mockup: las barras son la distribución real de scores producida por el artefacto entrenado sobre 50k transacciones (Capítulo 3). Mueve el slider y mira reaccionar la política de decisión.</p>
+        <div class="pg-controls">
+          <label for="pg-slider">Monto</label>
+          <input type="range" id="pg-slider" class="pg-slider" min="50" max="60000" step="50" value="2500">
+          <output class="pg-amount">$2.500</output>
+        </div>
+        <div class="pg-readout">
+          <span class="pg-chip">Tier: <strong class="pg-tier">medio</strong></span>
+          <span class="pg-chip">Umbral de fraude: <strong class="pg-threshold">&ge; 50</strong></span>
+          <span class="pg-chip">Banda de revisión desde <strong class="pg-band">&ge; 37.5</strong></span>
+        </div>
+        <svg class="pg-chart" viewBox="0 0 720 220" role="img" aria-label="Distribución real de scores de transacciones legítimas contra fraudulentas, con la línea de umbral moviéndose según cambia el monto"></svg>
+      </div>
+    </section>
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="ch-03-xgboost.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">03 · XGBoost sobre Diez Features &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-06-shap.html">
+        <span class="pager-label">Capítulo siguiente</span>
+        <span class="pager-title">06 · Explicabilidad con SHAP &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../assets/data/score-bins.js"></script>
+  <script src="../script.js"></script>
+</body>
+</html>

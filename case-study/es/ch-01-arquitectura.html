@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Inicio</a></li>
+        <li><a href="ch-01-arquitectura.html" class="active">01 Arquitectura</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Reglas</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluación</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Redes</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Seguridad</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+      <span class="chapter-num">Capítulo 01</span>
+      <h1>Arquitectura de Punta a Punta</h1>
+      <p class="chapter-subtitle">De transacción cruda a veredicto explicado: tres capas, workers asíncronos, un score auditable.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <svg id="architecture-diagram" viewBox="0 0 1200 480" role="img" aria-label="Diagrama de arquitectura: pipeline de detección de fraude en 3 capas" xmlns="http://www.w3.org/2000/svg">
+          <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+
+          <!-- Layer 1: Rule Engine -->
+          <g class="diagram-node" data-target="ch-02-rule-engine.html" data-tip="Capa 1 · 9 reglas deterministas · pesos 10-35 · tope 100">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="30" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+            <text x="150" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Motor de Reglas</text>
+            <text x="150" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">9 reglas deterministas</text>
+          </g>
+
+          <!-- Arrow: Rules → XGBoost -->
+          <line x1="270" y1="80" x2="350" y2="80" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead-es)"/>
+
+          <!-- Layer 2: XGBoost -->
+          <g class="diagram-node" data-target="ch-03-xgboost.html" data-tip="Capa 2 · XGBoost: 500 árboles · depth 6 · scale_pos_weight ≈ 99.8">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="350" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+            <text x="470" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">XGBoost</text>
+            <text x="470" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">11 features</text>
+          </g>
+
+          <!-- Arrow: XGBoost → Context -->
+          <line x1="590" y1="80" x2="670" y2="80" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead-es)"/>
+
+          <!-- Layer 3: Context -->
+          <g class="diagram-node" data-target="ch-05-ensemble.html" data-tip="Capa 3 · baseline de usuario — 15% del score final">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="670" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+            <text x="790" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Contexto</text>
+            <text x="790" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">Baseline de usuario</text>
+          </g>
+
+          <!-- Converge into Ensemble -->
+          <line x1="150" y1="120" x2="150" y2="170" stroke="#94a3b8" stroke-width="1"/>
+          <line x1="470" y1="120" x2="470" y2="170" stroke="#94a3b8" stroke-width="1"/>
+          <line x1="790" y1="120" x2="790" y2="170" stroke="#94a3b8" stroke-width="1"/>
+          <line x1="150" y1="170" x2="790" y2="170" stroke="#94a3b8" stroke-width="1"/>
+          <line x1="630" y1="170" x2="630" y2="200" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead-es)"/>
+
+          <!-- Ensemble -->
+          <g class="diagram-node" data-target="ch-05-ensemble.html" data-tip="Ensemble · 0.60 reglas + 0.25 ML + 0.15 contexto">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="490" y="200" width="280" height="70" rx="12" fill="#0f172a" stroke="#dc2626" stroke-width="2"/>
+            <text x="630" y="228" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Ensemble</text>
+            <text x="630" y="252" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="13" fill="#cbd5e1">0.60 / 0.25 / 0.15</text>
+          </g>
+
+          <!-- Arrow: Ensemble → Storage -->
+          <line x1="630" y1="270" x2="630" y2="290" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead-es)"/>
+
+          <!-- Storage -->
+          <g class="diagram-node" data-target="ch-09-reliability.html" data-tip="PostgreSQL 16 + Redis Streams · consumer groups + DLQ">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="440" y="290" width="380" height="50" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="630" y="320" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="500" fill="#cbd5e1">PostgreSQL + Redis Streams</text>
+          </g>
+
+          <!-- Worker flow lines -->
+          <line x1="440" y1="340" x2="440" y2="358" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrowhead-es)"/>
+          <line x1="630" y1="340" x2="630" y2="358" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrowhead-es)"/>
+          <line x1="820" y1="340" x2="820" y2="358" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrowhead-es)"/>
+
+          <!-- Workers -->
+          <g class="diagram-node" data-target="ch-09-reliability.html" data-tip="Worker · consume fraud:llm → informe Ollama (ES)">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="370" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="440" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker LLM</text>
+            <text x="440" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:llm</text>
+          </g>
+          <g class="diagram-node" data-target="ch-06-shap.html" data-tip="Worker · consume fraud:shap → top-5 atribuciones">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="560" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="630" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker SHAP</text>
+            <text x="630" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:shap</text>
+          </g>
+          <g class="diagram-node" data-target="ch-07-network-signals.html" data-tip="Worker · consume fraud:embeddings → chequeo de spoofing">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <rect x="750" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="820" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker Embeddings</text>
+            <text x="820" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:embeddings</text>
+          </g>
+
+          <!-- DLQ -->
+          <g class="diagram-node" data-target="ch-09-reliability.html" data-tip="DLQ · mensajes fallidos tras reintentos, estampados con contexto">
+            <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+            <line x1="630" y1="402" x2="630" y2="424" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrowhead-dlq-es)"/>
+            <rect x="530" y="424" width="200" height="40" rx="8" fill="#0f172a" stroke="#ef4444" stroke-width="1" stroke-dasharray="4 3"/>
+            <text x="630" y="448" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="12" font-weight="500" fill="#ef4444">DLQ · fraud:dlq</text>
+          </g>
+
+          <!-- Arrowhead markers -->
+          <defs>
+            <marker id="arrowhead-es" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+            </marker>
+            <marker id="arrowhead-dlq-es" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>Cada transacción atraviesa tres capas de scoring independientes. Sus salidas se combinan en
+        un único score de riesgo 0–100:</p>
+        <div class="formula">
+          risk_score = 0.60 × rule_score + 0.25 × ml_score + 0.15 × context_score<br>
+          <span class="f-comment">// pesos configurables por entorno, sin reentrenar para ajustarlos</span>
+        </div>
+        <p>El score final se compara contra un umbral dinámico (Capítulo 5) para clasificar cada
+        transacción como <strong style="color:#22c55e">legítima</strong>,
+        <strong style="color:#eab308">requiere revisión</strong>, o
+        <strong style="color:#ef4444">fraude</strong>. Las transacciones marcadas se persisten y se
+        envían a workers asíncronos que las enriquecen con informes LLM, atribuciones SHAP y análisis
+        de embeddings del merchant — sin bloquear nunca la respuesta de la API.</p>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <nav class="pager" aria-label="Paginación de capítulos">
+      <a href="index.html">
+        <span class="pager-label">Capítulo anterior</span>
+        <span class="pager-title">00 · Inicio &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-02-rule-engine.html">
+        <span class="pager-label">Capítulo siguiente</span>
+        <span class="pager-title">02 · El Motor de Reglas &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Caso de estudio técnico</p>
+        <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Fuentes auto-hospedadas, cero requests externos. Funciona offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

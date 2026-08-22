@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>03 ML - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Home</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html" class="active">03 ML</a></li>
+        <li><a href="ch-05-ensemble.html">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+      <span class="chapter-num">Chapter 03</span>
+      <h1>XGBoost on Ten Features</h1>
+      <p class="chapter-subtitle">Opening the trained artifact: features, hyperparameters and the discipline behind them.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>The ML layer learns what rules cannot express: non-obvious combinations of amount,
+        rhythm, geography and category that separate fraud from legitimate spending.</p>
+
+        <h3>Feature engineering: where the domain knowledge lives</h3>
+        <p>Raw inputs (amount, timestamp, merchant) are transformed into ten features that expose
+        behavioral signal to the model:</p>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Feature</th><th>What it captures</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">amount</td><td>raw transaction amount</td></tr>
+            <tr><td class="mono">amount_vs_user_avg</td><td>how many times larger than this user's average spend</td></tr>
+            <tr><td class="mono">amount_vs_user_std</td><td>z-score vs the user's spending deviation — "is this abnormal FOR THIS USER?"</td></tr>
+            <tr><td class="mono">tx_count_last_5min</td><td>burst velocity, 5-minute window</td></tr>
+            <tr><td class="mono">tx_count_last_1h</td><td>sustained velocity, 1-hour window</td></tr>
+            <tr><td class="mono">hour_of_day</td><td>temporal position — fraud concentrates at night</td></tr>
+            <tr><td class="mono">is_weekend</td><td>weekend flag — spending patterns differ</td></tr>
+            <tr><td class="mono">merchant_risk_level</td><td>high-risk category flag (crypto, gambling…)</td></tr>
+            <tr><td class="mono">is_crypto</td><td>cryptocurrency flag — irreversible payments</td></tr>
+            <tr><td class="mono">amount_round_number</td><td>round amounts correlate with manual testing of stolen cards</td></tr>
+          </tbody>
+        </table>
+        <p>The relative features (<code>amount_vs_user_avg</code>, <code>_std</code>) matter most:
+        $2,000 is unremarkable for one user and alarming for another. Normalizing against each
+        user's own baseline lets a single model serve everyone.</p>
+
+        <h3>Why XGBoost?</h3>
+        <ul>
+          <li><strong>Supervised signal:</strong> trained on labeled fraud (~1% prevalence), it optimizes directly for separating the classes — unlike anomaly detectors such as Isolation Forest, which only know "this looks unusual".</li>
+          <li><strong>CPU-friendly latency:</strong> tree inference is microseconds — compatible with real-time scoring, no GPU serving infra needed.</li>
+          <li><strong>SHAP-native:</strong> its tree structure plugs directly into <code>TreeExplainer</code> for exact per-prediction attributions (Chapter 6).</li>
+          <li><strong>Tabular king:</strong> on small-to-medium tabular data, gradient-boosted trees remain the state of the art versus deep learning.</li>
+        </ul>
+
+        <h3>Taming the probability curve</h3>
+        <p>XGBoost's raw probability is compressed toward 0.5 under class imbalance. The system
+        applies a cubic smoothing before scaling to 0–100, so only confident predictions score high
+        while mid-range uncertainty stays mid-range instead of producing false alarms:</p>
+        <div class="formula">
+          smoothed = 0.5 + 0.7 × (p − 0.5)³ + 0.3 × (p − 0.5)<br>
+          ml_score = clip(smoothed, 0, 1) × 100
+        </div>
+        <p>If the model file is missing, the layer returns <code>ml_score = 0</code> and the system
+        keeps scoring with rules + context. Degradation is explicit, never a crash.</p>
+
+        <h3>Inside the trained artifact</h3>
+        <p>The production model is a serialized XGBClassifier whose own hyperparameters tell the
+        imbalance story:</p>
+        <table class="data-table">
+          <thead>
+            <tr><th>Hyperparameter</th><th>Value</th><th>What it means</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">n_estimators</td><td class="weight">500</td><td>boosted trees in the ensemble</td></tr>
+            <tr><td class="mono">max_depth</td><td class="weight">6</td><td>interaction depth kept shallow against overfitting</td></tr>
+            <tr><td class="mono">learning_rate</td><td class="weight">0.1</td><td>conservative step size per tree</td></tr>
+            <tr><td class="mono">subsample</td><td class="weight">0.8</td><td>row sampling per tree — built-in randomness</td></tr>
+            <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 99.8</td><td>one fraud example weighs like ~100 legitimate ones — the mathematical answer to class imbalance</td></tr>
+          </tbody>
+        </table>
+
+        <figure class="figure">
+          <img src="../assets/feature-importance.png" alt="Horizontal bar chart of feature importances from the trained XGBoost model: merchant risk level dominates at 0.655, followed by 5-minute velocity at 0.264 and amount at 0.081; remaining features contribute near zero." width="1440" height="810">
+          <figcaption><strong>Figure 1 — Real feature importances</strong>, extracted directly from
+          the trained <code>xgboost_paysim_v1.joblib</code>. Three features carry essentially all
+          the signal: merchant risk category (65.5%), 5-minute burst velocity (26.4%) and raw
+          amount (8.1%). The near-zero features are not mistakes: their information largely
+          overlaps with what the rule layer already expresses, so gradient boosting found little
+          marginal gain left to extract.</figcaption>
+        </figure>
+
+        <h3>Training discipline</h3>
+        <ul>
+          <li><strong>No leakage:</strong> SMOTE oversampling is applied strictly on the training split, never before it.</li>
+          <li><strong>Realistic noise injection:</strong> fraud amounts get ±15% variance, 3% of fraud merchants receive name typos, timestamps jitter ±30 min — deliberately teaching the model that fraudsters don't repeat exact patterns.</li>
+          <li><strong>Stratified splits:</strong> the ~1–5% fraud ratio is preserved across train/test.</li>
+          <li><strong>Cost-sensitive evaluation:</strong> a missed fraud (false negative) is priced at 10× a false alarm, and the decision threshold is chosen to minimize expected economic cost rather than raw accuracy.</li>
+        </ul>
+
+        <figure class="figure">
+          <img src="../assets/score-distribution.png" alt="Two overlaid histograms of ml_score values: legitimate transactions cluster around a median of 26 while fraud transactions cluster around a median of 74, with a dashed line marking the low-tier fraud threshold at 70." width="1440" height="750">
+          <figcaption><strong>Figure 2 — Real score separation.</strong> Produced by running the
+          production <code>FeatureEngine</code> plus the trained artifact over all 50k synthetic
+          transactions, then applying the exact cubic-smoothing formula used in serving. Medians:
+          <span style="color:#3b82f6">26.3 legitimate</span> vs
+          <span style="color:#ef4444">73.7 fraud</span> — a 47.5-point gap. Honest caveat: these
+          scores come from the model's own training dataset, so separation here is optimistic
+          relative to truly unseen traffic; drift monitoring (Chapter 8) exists precisely to catch
+          that gap in production.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <!-- Provenance & honesty -->
+    <section class="reveal">
+      <div class="prose">
+        <h2>Dataset provenance &amp; honest hyperparameters</h2>
+        <p><strong>Where the data comes from.</strong> The current artifact trains on the repository&rsquo;s
+        synthetic generator (50k transactions, ~5% fraud rate) with a documented mapping path to PaySim
+        when that file is present. There is no dataset versioning yet (no DVC-style pinning); the CSV in
+        <code>data/</code> acts as the de-facto snapshot. A proper data card is on the roadmap.</p>
+        <p><strong>How the hyperparameters were chosen.</strong> Honestly: by hand. 500 trees, depth 6,
+        learning rate 0.1 plus L1/L2 regularization follow defaults-plus-judgment for tabular problems,
+        and the saved artifact&rsquo;s <code>scale_pos_weight &asymp; 99.8</code> reflects its training
+        run&rsquo;s imbalance. No grid search or Optuna study backs them yet &mdash; a randomized search is
+        queued as roadmap work, and the next chapter shows why even perfect parameters cannot rescue
+        unrealistic data.</p>
+        <p><strong>Reproduce it:</strong> <code>scripts/train_xgboost_aligned.py</code> (full documented
+        pipeline), <code>notebooks/01-paysim-fraud-detection.ipynb</code> (exploration).</p>
+      </div>
+    </section>
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-02-rule-engine.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">02 · The Rule Engine &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-04-model-evaluation.html"><span class="pager-label">Next chapter</span><span class="pager-title">04 · Model Evaluation &rarr;</span></a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

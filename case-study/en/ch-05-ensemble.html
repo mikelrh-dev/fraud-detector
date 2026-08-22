@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>05 Ensemble - Fraud Detector Case Study</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo"><span class="accent">Fraud</span> Detector</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      <ul class="nav-links">
+        <li><a href="index.html">00 Home</a></li>
+        <li><a href="ch-01-arquitectura.html">01 Architecture</a></li>
+        <li><a href="ch-02-rule-engine.html">02 Rules</a></li>
+        <li><a href="ch-03-xgboost.html">03 ML</a></li>
+        <li><a href="ch-04-model-evaluation.html">04 Evaluation</a></li>
+        <li><a href="ch-05-ensemble.html" class="active">05 Ensemble</a></li>
+        <li><a href="ch-06-shap.html">06 SHAP</a></li>
+        <li><a href="ch-07-network-signals.html">07 Networks</a></li>
+        <li><a href="ch-08-drift.html">08 Drift</a></li>
+        <li><a href="ch-09-reliability.html">09 Streams</a></li>
+        <li><a href="ch-10-security.html">10 Security</a></li>
+        <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
+      </ul>
+      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <header class="chapter-header">
+        <span class="chapter-num">Chapter 05</span>
+      <h1>Ensemble and Dynamic Thresholds</h1>
+      <p class="chapter-subtitle">Risk policy as configuration: dynamic thresholds and the human review band.</p>
+    </header>
+
+    <section class="reveal">
+      <div class="prose">
+        <p>A fixed cutoff would be wrong: blocking every $50 transaction above score 45 would drown
+        analysts in false positives, while waiting for score 70 on a $60,000 transfer would be
+        negligent. The decision threshold therefore scales inversely with amount:</p>
+
+        <table class="threshold-table">
+          <thead>
+            <tr><th>Amount Tier</th><th>Fraud Threshold</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="tier-label">$0 – $1,000</td><td class="tier-threshold">≥ 70</td></tr>
+            <tr><td class="tier-label">$1,001 – $10,000</td><td class="tier-threshold">≥ 50</td></tr>
+            <tr><td class="tier-label">$10,001 – $50,000</td><td class="tier-threshold">≥ 45</td></tr>
+            <tr><td class="tier-label">$50,001+</td><td class="tier-threshold">≥ 40</td></tr>
+          </tbody>
+        </table>
+        <p>The intuition: the more money moves, the less certainty you demand before acting. Scores
+        between 75% of the tier threshold and the threshold itself land in a
+        <strong style="color:#eab308">review band</strong> — flagged for human analysis rather than
+        auto-blocked. This band is where the human-in-the-loop design lives: the system narrows
+        thousands of transactions down to a reviewable queue, and analysts make the final call.</p>
+        <div class="callout">
+          <span class="callout-title">Why not let ML decide alone?</span>
+          <p>The ensemble deliberately gives rules the largest weight (0.60). When an analyst asks
+          "why was this blocked?", the answer often starts with a named, weighted rule — auditable
+          logic — reinforced by model evidence. Pure-ML blocks are harder to defend and impossible
+          to tune surgically.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pager -->
+    <!-- Interactive threshold playground -->
+    <section class="reveal">
+      <h2>Try the policy</h2>
+      <div class="playground" id="threshold-playground">
+        <p class="pg-hint">Not a mockup: the bars are the real score distribution produced by the trained artifact over 50k transactions (Chapter 3). Drag the slider and watch the decision policy react.</p>
+        <div class="pg-controls">
+          <label for="pg-slider">Amount</label>
+          <input type="range" id="pg-slider" class="pg-slider" min="50" max="60000" step="50" value="2500">
+          <output class="pg-amount">$2,500</output>
+        </div>
+        <div class="pg-readout">
+          <span class="pg-chip">Tier: <strong class="pg-tier">medium</strong></span>
+          <span class="pg-chip">Fraud threshold: <strong class="pg-threshold">&ge; 50</strong></span>
+          <span class="pg-chip">Review band from <strong class="pg-band">&ge; 37.5</strong></span>
+        </div>
+        <svg class="pg-chart" viewBox="0 0 720 220" role="img" aria-label="Real score distribution of legitimate versus fraud transactions, with the fraud threshold line moving as the amount changes"></svg>
+      </div>
+    </section>
+    <nav class="pager" aria-label="Chapter pagination">
+      <a href="ch-03-xgboost.html">
+        <span class="pager-label">Previous chapter</span>
+        <span class="pager-title">03 · XGBoost on Ten Features &larr;</span>
+      </a>
+      <a class="pager-next" href="ch-06-shap.html">
+        <span class="pager-label">Next chapter</span>
+        <span class="pager-title">06 · Explainability with SHAP &rarr;</span>
+      </a>
+    </nav>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <p><strong>Fraud Detector</strong> — Technical case study</p>
+        <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
+      </div>
+      <div class="footer-col">
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
+      </div>
+    </div>
+    <p class="footer-copy">Self-hosted fonts, zero external requests. Works offline. 2026.</p>
+  </footer>
+
+  <script src="../assets/data/score-bins.js"></script>
+  <script src="../script.js"></script>
+</body>
+</html>
