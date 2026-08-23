@@ -53,9 +53,9 @@ describe("TransactionsPage", () => {
   it("renders page title and transaction rows", async () => {
     renderPage();
 
-    // Wait for data to load
+    // Wait for data to load — Merchant 0 appears in both mobile card and desktop table
     await waitFor(() => {
-      expect(screen.getByText("Merchant 0")).toBeInTheDocument();
+      expect(screen.getAllByText("Merchant 0").length).toBeGreaterThanOrEqual(1);
     });
 
     // Heading is an h1
@@ -98,10 +98,14 @@ describe("TransactionsPage", () => {
     });
 
     // Merchant 0 is a review row (risk_score 62) — score rendered live
-    const row0 = screen.getByRole("row", { name: /Merchant 0/ });
+    const merchant0Elements = screen.getAllByText("Merchant 0");
+    expect(merchant0Elements.length).toBeGreaterThanOrEqual(1);
+    // The table row has the score
+    const row0 = merchant0Elements[merchant0Elements.length - 1].closest("tr");
     expect(row0).toHaveTextContent("62.0");
     // Merchant 1 is legitimate (risk_score 15)
-    const row1 = screen.getByRole("row", { name: /Merchant 1/ });
+    const merchant1Elements = screen.getAllByText("Merchant 1");
+    const row1 = merchant1Elements[merchant1Elements.length - 1].closest("tr");
     expect(row1).toHaveTextContent("15.0");
   });
 });

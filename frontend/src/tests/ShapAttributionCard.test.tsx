@@ -36,4 +36,25 @@ describe("ShapAttributionCard", () => {
       screen.queryByText("Atribución SHAP"),
     ).not.toBeInTheDocument();
   });
+
+  it("rows have responsive stacking classes (flex-col sm:flex-row)", () => {
+    const contributions: ShapContribution[] = [
+      { feature: "amount", contribution: 35 },
+    ];
+    render(<ShapAttributionCard contributions={contributions} />);
+    const li = document.querySelector("ul li");
+    expect(li).toBeTruthy();
+    expect(li!.className).toContain("flex-col");
+    expect(li!.className).toContain("sm:flex-row");
+  });
+
+  it("label has truncate class and title attribute", () => {
+    const contributions: ShapContribution[] = [
+      { feature: "amount", contribution: 35 },
+    ];
+    render(<ShapAttributionCard contributions={contributions} />);
+    const label = screen.getByText("Monto");
+    expect(label).toHaveClass("truncate");
+    expect(label).toHaveAttribute("title", "Monto");
+  });
 });

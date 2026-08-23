@@ -46,11 +46,14 @@ export function ShapAttributionCard({
           const width =
             maxAbs > 0 ? (Math.abs(c.contribution) / maxAbs) * 100 : 0;
           return (
-            <li key={c.feature} className="flex items-center gap-3">
-              <span className="w-44 shrink-0 text-sm text-slate-300">
+            <li key={c.feature} className="flex flex-col sm:flex-row items-start sm:items-center gap-1 sm:gap-3">
+              <span
+                className="w-auto sm:w-44 max-w-full shrink-0 truncate text-sm text-slate-300"
+                title={featureLabel(c.feature)}
+              >
                 {featureLabel(c.feature)}
               </span>
-              <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden w-full sm:w-auto">
                 <div
                   className={`h-full rounded-full ${
                     isFraud ? "bg-red-500" : "bg-green-500"
@@ -58,11 +61,11 @@ export function ShapAttributionCard({
                   style={{ width: `${width}%` }}
                 />
               </div>
-              <span className="w-14 shrink-0 text-right text-sm font-mono text-slate-300">
+              <span className="w-auto sm:w-14 shrink-0 sm:text-right text-sm font-mono text-slate-300">
                 {formatContribution(c.contribution)}
               </span>
               <span
-                className={`w-24 shrink-0 text-right text-xs ${
+                className={`w-auto sm:w-24 shrink-0 sm:text-right text-xs ${
                   isFraud ? "text-red-400" : "text-green-400"
                 }`}
               >

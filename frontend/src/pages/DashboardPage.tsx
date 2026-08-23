@@ -109,7 +109,7 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 flex">
+    <div className="min-h-screen bg-slate-950 flex overflow-x-hidden">
       <Sidebar activeItem="dashboard" />
 
       {/* Main content */}

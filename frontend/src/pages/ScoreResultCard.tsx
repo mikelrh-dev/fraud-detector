@@ -92,7 +92,7 @@ function LoadingSkeleton() {
     <div className="animate-pulse">
       <div className="h-4 bg-slate-700 rounded w-1/3 mb-4" />
       <div className="h-2 bg-slate-800 rounded-full mb-6" />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[1, 2, 3].map((i) => (
           <div key={i} className="bg-slate-900 border border-slate-800 rounded-lg p-4">
             <div className="h-3 bg-slate-700 rounded w-1/2 mb-3" />

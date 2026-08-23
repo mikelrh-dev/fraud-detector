@@ -192,7 +192,7 @@ export default function TransactionDetail() {
     <div className="min-h-screen bg-slate-950">
       {/* Header */}
       <header className="bg-slate-900 border-b border-slate-800 px-6 py-3">
-        <div className="max-w-5xl mx-auto flex items-center gap-3">
+        <div className="max-w-5xl mx-auto flex items-center gap-3 flex-wrap min-w-0">
           <button
             onClick={() => navigate("/dashboard")}
             className="text-slate-400 hover:text-slate-200 transition-colors"
@@ -214,7 +214,7 @@ export default function TransactionDetail() {
           <h1 className="text-sm font-semibold text-slate-200">
             Detalle de Transacción
           </h1>
-          <span className="text-xs font-mono text-slate-500">{tx.id}</span>
+          <span className="text-xs font-mono text-slate-500 truncate min-w-0">{tx.id}</span>
           <span
             className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium border ${colorKey}`}
           >

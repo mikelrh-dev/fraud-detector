@@ -212,3 +212,46 @@ The following custom tokens are defined in `frontend/src/index.css` via the `@th
 **Normalization rules** (Stitch generated inconsistencies between the two screens):
 - Brand name → "Fraud Detector" (the second screen says "Shield Sentinel", drop it)
 - Sidebar nav → 3 items: Dashboard, Transacciones, Alertas (drop "Ajustes" and the "Nuevas Reglas" CTA from the second screen)
+
+---
+
+## Mobile
+
+Responsive retrofit. Desktop (md+ ≥ 768px) remains pixel-identical to the original design.
+
+### Breakpoints
+| Prefix | Min-width | Purpose |
+|--------|-----------|---------|
+| `sm` | 640px | SHAP stacking break, skeleton grid |
+| `md` | 768px | Sidebar visible, table mode, card list hidden |
+
+### Sidebar Drawer
+- Burger: `md:hidden fixed top-4 left-4 z-50` — only visible below md
+- Panel: `fixed inset-y-0 left-0 z-[60]` with `role="dialog"`, `aria-modal="true"`
+- Backdrop: `fixed inset-0 bg-black/60 z-[55]`
+- Escape key and backdrop click close the drawer; body scroll locked when open
+- Desktop aside: `hidden md:flex` — structurally identical to pre-mobile code
+
+### Card-List Pattern (TransactionsPage, AlertsPage)
+- Mobile cards: `md:hidden space-y-3` container, each card `data-testid="tx-card-{id}"` or `alert-card-{id}"`
+- Desktop table: `hidden md:block` wrapper around the existing `overflow-x-auto` table
+- This keeps the md+ table DOM completely unchanged
+
+### Touch Targets (≥ 40px)
+- Applied via `max-md:min-h-[40px] max-md:px-3 max-md:text-xs` on interactive elements
+- Ensures WCAG 2.5.8 compliance on viewports below 768px
+
+### Overflow Guard
+- Every page root div includes `overflow-x-hidden` to prevent horizontal scroll at 375px
+- Tables wrapped in `overflow-x-auto` for safe horizontal scroll on narrow screens
+
+### SHAP Stacking
+- Rows: `flex flex-col sm:flex-row items-start sm:items-center gap-1 sm:gap-3`
+- Labels: `w-full sm:w-44 truncate` with `title` attribute for full text on hover
+- Direction badge: `w-auto sm:w-24`
+
+### Skeleton Grid
+- ScoreResultCard skeleton: `grid grid-cols-1 sm:grid-cols-3` (stacks below 640px)
+
+### Testing Note
+- jsdom does not process Tailwind `max-md:` or `md:` media queries — tests assert className presence, not computed styles

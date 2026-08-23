@@ -51,7 +51,7 @@ export default function CreateTransactionPage() {
   };
 
   return (
-    <div className="min-h-screen bg-page-bg flex">
+    <div className="min-h-screen bg-page-bg flex overflow-x-hidden">
       <Sidebar activeItem="transactions" />
       <div className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
         <h1 className="text-lg font-bold text-text-primary mb-6">Nueva Transacción</h1>

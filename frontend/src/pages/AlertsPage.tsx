@@ -110,7 +110,7 @@ export default function AlertsPage() {
   const totalPages = Math.ceil((data?.total || 0) / 20);
 
   return (
-    <div className="min-h-screen bg-slate-950 flex">
+    <div className="min-h-screen bg-slate-950 flex overflow-x-hidden">
       <Sidebar activeItem="alerts" />
 
       {/* Main */}
@@ -148,174 +148,279 @@ export default function AlertsPage() {
             ))}
           </div>
 
-          {/* Table */}
-          <div className="bg-slate-900 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
-                    <th className="text-left p-3 font-medium">Transacción</th>
-                    <th className="text-left p-3 font-medium">Score</th>
-                    <th className="text-left p-3 font-medium">
-                      Clasificación
-                    </th>
-                    <th className="text-left p-3 font-medium">Estado</th>
-                    <th className="text-left p-3 font-medium">Fecha</th>
-                    <th className="text-right p-3 font-medium">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-500">
-                        Cargando...
-                      </td>
-                    </tr>
-                  ) : data?.items.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-500">
-                        No hay alertas
-                      </td>
-                    </tr>
-                  ) : (
-                    data?.items.map((alert) => (
-                      <tr
-                        key={alert.id}
-                        className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors"
-                      >
-                        <td className="p-3">
-                          <button
+          {/* Mobile card list */}
+          <div className="md:hidden space-y-3">
+            {isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-24 bg-slate-800 animate-pulse rounded-lg" />
+                ))}
+              </div>
+            ) : data?.items.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-slate-400">No hay alertas</p>
+              </div>
+            ) : (
+              data?.items.map((alert) => (
+                <div
+                  key={alert.id}
+                  data-testid={`alert-card-${alert.id}`}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-4"
+                >
+                  {/* Status badge */}
+                  <div className="mb-2">
+                    <span
+                      className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
+                        STATUS_COLORS[alert.status] ||
+                        "bg-slate-800 text-slate-400"
+                      }`}
+                    >
+                      {STATUS_LABELS[alert.status] || alert.status}
+                    </span>
+                  </div>
+                  {/* Description: tx link + classification */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <button
+                      onClick={() =>
+                        navigate(`/transactions/${alert.transaction_id}`)
+                      }
+                      className="font-mono text-xs text-slate-400 underline"
+                    >
+                      {alert.transaction_id.slice(0, 8)}...
+                    </button>
+                    <span
+                      className={`text-xs font-medium ${
+                        CLASSIFICATION_COLORS[alert.classification] ||
+                        "text-slate-400"
+                      }`}
+                    >
+                      {CLASSIFICATION_LABELS[alert.classification] ||
+                        alert.classification}
+                    </span>
+                  </div>
+                  {/* Timestamp */}
+                  <p className="text-xs text-slate-500 mb-3">
+                    {new Date(alert.created_at).toLocaleDateString("es-AR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                  {/* Action buttons row — touch target via max-md */}
+                  <div className="flex gap-2">
+                    {(alert.status === "open" ||
+                      alert.status === "reviewed") && (
+                      <>
+                        {alert.status === "open" && (
+                          <>
+                            <ActionButton
+                              label="Revisar"
+                              onClick={() =>
+                                openActionDialog(alert.id, "review")
+                              }
+                              color="blue"
+                            />
+                            <ActionButton
+                              label="Falso Pos."
+                              onClick={() =>
+                                openActionDialog(
+                                  alert.id,
+                                  "false_positive",
+                                )
+                              }
+                              color="green"
+                            />
+                          </>
+                        )}
+                        {alert.status === "reviewed" && (
+                          <ActionButton
+                            label="Revertir"
                             onClick={() =>
-                              navigate(`/transactions/${alert.transaction_id}`)
+                              openActionDialog(alert.id, "revert")
                             }
-                            className="font-mono text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
-                          >
-                            {alert.transaction_id.slice(0, 8)}...
-                          </button>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{
-                                  width: `${Math.min(alert.score, 100)}%`,
-                                  backgroundColor:
-                                    alert.score > 70
-                                      ? "#ef4444"
-                                      : alert.score > 40
-                                        ? "#f59e0b"
-                                        : "#22c55e",
-                                }}
-                              />
-                            </div>
-                            <span className="text-xs text-slate-400 w-5">
-                              {alert.score.toFixed(0)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`text-xs font-medium ${
-                              CLASSIFICATION_COLORS[
-                                alert.classification
-                              ] || "text-slate-400"
-                            }`}
-                          >
-                            {CLASSIFICATION_LABELS[alert.classification] ||
-                              alert.classification}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
-                              STATUS_COLORS[alert.status] ||
-                              "bg-slate-800 text-slate-400"
-                            }`}
-                          >
-                            {STATUS_LABELS[alert.status] || alert.status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-xs text-slate-400">
-                          {new Date(alert.created_at).toLocaleDateString(
-                            "es-AR",
-                            {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}
-                        </td>
-                        <td className="p-3 text-right">
-                          {(alert.status === "open" ||
-                            alert.status === "reviewed") && (
-                            <div className="flex gap-1 justify-end">
-                              {alert.status === "open" && (
-                                <>
-                                  <ActionButton
-                                    label="Revisar"
-                                    onClick={() =>
-                                      openActionDialog(alert.id, "review")
-                                    }
-                                    color="blue"
-                                  />
-                                  <ActionButton
-                                    label="Falso Pos."
-                                    onClick={() =>
-                                      openActionDialog(
-                                        alert.id,
-                                        "false_positive",
-                                      )
-                                    }
-                                    color="green"
-                                  />
-                                </>
-                              )}
-                              {alert.status === "reviewed" && (
-                                <ActionButton
-                                  label="Revertir"
-                                  onClick={() =>
-                                    openActionDialog(alert.id, "revert")
-                                  }
-                                  color="yellow"
-                                />
-                              )}
-                            </div>
-                          )}
+                            color="yellow"
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <div className="bg-slate-900 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
+                      <th className="text-left p-3 font-medium">Transacción</th>
+                      <th className="text-left p-3 font-medium">Score</th>
+                      <th className="text-left p-3 font-medium">
+                        Clasificación
+                      </th>
+                      <th className="text-left p-3 font-medium">Estado</th>
+                      <th className="text-left p-3 font-medium">Fecha</th>
+                      <th className="text-right p-3 font-medium">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-500">
+                          Cargando...
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between p-3 border-t border-slate-800">
-                <span className="text-xs text-slate-500">
-                  Pág. {page} de {totalPages}
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                    className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Anterior
-                  </button>
-                  <button
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={page >= totalPages}
-                    className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Siguiente
-                  </button>
-                </div>
+                    ) : data?.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-500">
+                          No hay alertas
+                        </td>
+                      </tr>
+                    ) : (
+                      data?.items.map((alert) => (
+                        <tr
+                          key={alert.id}
+                          className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors"
+                        >
+                          <td className="p-3">
+                            <button
+                              onClick={() =>
+                                navigate(`/transactions/${alert.transaction_id}`)
+                              }
+                              className="font-mono text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+                            >
+                              {alert.transaction_id.slice(0, 8)}...
+                            </button>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${Math.min(alert.score, 100)}%`,
+                                    backgroundColor:
+                                      alert.score > 70
+                                        ? "#ef4444"
+                                        : alert.score > 40
+                                          ? "#f59e0b"
+                                          : "#22c55e",
+                                  }}
+                                />
+                              </div>
+                              <span className="text-xs text-slate-400 w-5">
+                                {alert.score.toFixed(0)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`text-xs font-medium ${
+                                CLASSIFICATION_COLORS[
+                                  alert.classification
+                                ] || "text-slate-400"
+                              }`}
+                            >
+                              {CLASSIFICATION_LABELS[alert.classification] ||
+                                alert.classification}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
+                                STATUS_COLORS[alert.status] ||
+                                "bg-slate-800 text-slate-400"
+                              }`}
+                            >
+                              {STATUS_LABELS[alert.status] || alert.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-xs text-slate-400">
+                            {new Date(alert.created_at).toLocaleDateString(
+                              "es-AR",
+                              {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              },
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            {(alert.status === "open" ||
+                              alert.status === "reviewed") && (
+                              <div className="flex gap-1 justify-end">
+                                {alert.status === "open" && (
+                                  <>
+                                    <ActionButton
+                                      label="Revisar"
+                                      onClick={() =>
+                                        openActionDialog(alert.id, "review")
+                                      }
+                                      color="blue"
+                                    />
+                                    <ActionButton
+                                      label="Falso Pos."
+                                      onClick={() =>
+                                        openActionDialog(
+                                          alert.id,
+                                          "false_positive",
+                                        )
+                                      }
+                                      color="green"
+                                    />
+                                  </>
+                                )}
+                                {alert.status === "reviewed" && (
+                                  <ActionButton
+                                    label="Revertir"
+                                    onClick={() =>
+                                      openActionDialog(alert.id, "revert")
+                                    }
+                                    color="yellow"
+                                  />
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-            )}
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between p-3 border-t border-slate-800">
+                  <span className="text-xs text-slate-500">
+                    Pág. {page} de {totalPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page <= 1}
+                      className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() => setPage((p) => p + 1)}
+                      disabled={page >= totalPages}
+                      className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </main>
@@ -391,7 +496,7 @@ function ActionButton({
         e.stopPropagation();
         onClick();
       }}
-      className={`text-[11px] px-2 py-1 rounded border ${colors[color]} transition-colors`}
+      className={`max-md:min-h-[40px] max-md:px-3 max-md:text-xs text-[11px] px-2 py-1 rounded border ${colors[color]} transition-colors`}
     >
       {label}
     </button>

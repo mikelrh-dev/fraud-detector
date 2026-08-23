@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 
@@ -70,6 +71,7 @@ export function Sidebar({ activeItem }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
+  const [open, setOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -82,8 +84,30 @@ export function Sidebar({ activeItem }: SidebarProps) {
     return false;
   };
 
-  return (
-    <aside className="w-sidebar-width bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 min-h-screen">
+  // Escape key closes drawer
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open]);
+
+  // Body scroll lock when drawer is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  const sidebarContent = (
+    <>
       {/* Brand */}
       <div className="p-4 border-b border-slate-800">
         <div className="flex items-center gap-2">
@@ -100,13 +124,55 @@ export function Sidebar({ activeItem }: SidebarProps) {
             icon={item.icon}
             label={item.label}
             isActive={isActive(item.key)}
-            onClick={() => navigate(item.path)}
+            onClick={() => {
+              navigate(item.path);
+              setOpen(false);
+            }}
           />
         ))}
       </nav>
 
       {/* User info */}
       <UserSection user={user} onLogout={handleLogout} />
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-sidebar-width bg-slate-900 border-r border-slate-800 flex-col flex-shrink-0 min-h-screen">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile burger button */}
+      <button
+        onClick={() => setOpen(true)}
+        className="md:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+        aria-expanded={open}
+        aria-label="Abrir menú de navegación"
+      >
+        <span className="material-symbols-outlined text-xl">menu</span>
+      </button>
+
+      {/* Mobile drawer */}
+      {open && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 z-[55]"
+            onClick={() => setOpen(false)}
+          />
+          {/* Drawer panel */}
+          <aside
+            className="fixed inset-y-0 left-0 z-[60] w-[224px] bg-slate-900 border-r border-slate-800 flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menú de navegación"
+          >
+            {sidebarContent}
+          </aside>
+        </>
+      )}
+    </>
   );
 }

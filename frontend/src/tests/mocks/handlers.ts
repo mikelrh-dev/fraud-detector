@@ -125,4 +125,19 @@ export const handlers = [
       model_status: "active",
     });
   }),
+
+  http.get("*/api/v1/alerts", () => {
+    const items = Array.from({ length: 5 }, (_, i) => ({
+      id: `alert-${i}`,
+      transaction_id: `tx-alert-${i}`,
+      status: i % 3 === 0 ? "open" : i % 3 === 1 ? "reviewed" : "resolved",
+      score: 45 + i * 15,
+      threshold: 40,
+      classification: i % 3 === 0 ? "fraud" : i % 3 === 1 ? "review" : "legitimate",
+      reviewed_by: null,
+      reviewed_at: null,
+      created_at: new Date().toISOString(),
+    }));
+    return HttpResponse.json({ items, total: 5, page: 1, page_size: 20 });
+  }),
 ];

@@ -45,7 +45,7 @@ export default function TransactionsPage() {
   const totalPages = data ? Math.ceil(data.total / data.page_size) : 0;
 
   return (
-    <div className="min-h-screen bg-page-bg flex">
+    <div className="min-h-screen bg-page-bg flex overflow-x-hidden">
       <Sidebar activeItem="transactions" />
       <div className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
         {/* Header */}
@@ -130,72 +130,114 @@ export default function TransactionsPage() {
           </div>
         ) : (
           <>
-            {/* Table */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800">
-                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Comercio</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Monto</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Moneda</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Estado</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Score</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Clasificación</th>
-                    <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Fecha</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data?.items.map((tx: Transaction) => (
-                    <tr
-                      key={tx.id}
-                      onClick={() => navigate(`/transactions/${tx.id}`)}
-                      className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer transition-colors"
-                    >
-                      <td className="px-4 py-3 text-slate-200">{tx.merchant_name}</td>
-                      <td className="px-4 py-3 text-slate-200">${tx.amount.toFixed(2)}</td>
-                      <td className="px-4 py-3 text-slate-400">{tx.currency}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            tx.status === "approved"
-                              ? "bg-status-approved/10 text-status-approved"
-                              : tx.status === "flagged"
-                                ? "bg-status-flagged/10 text-status-flagged"
-                                : tx.status === "blocked"
-                                  ? "bg-status-blocked/10 text-status-blocked"
-                                  : "bg-slate-800 text-slate-400"
-                          }`}
-                        >
-                          {tx.status === "approved"
-                            ? "Legítimo"
-                            : tx.status === "flagged"
-                              ? "Revisión"
-                              : tx.status === "blocked"
-                                ? "Fraude"
-                                : tx.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">
+            {/* Mobile card list */}
+            <div className="md:hidden space-y-3">
+              {data?.items.map((tx: Transaction) => (
+                <div
+                  key={tx.id}
+                  data-testid={`tx-card-${tx.id}`}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-4"
+                  onClick={() => navigate(`/transactions/${tx.id}`)}
+                >
+                  {/* Header row: merchant + amount */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-200 truncate">{tx.merchant_name}</span>
+                    <span className="text-sm font-bold text-slate-100">${tx.amount.toFixed(2)}</span>
+                  </div>
+                  {/* Footer row: date + badge + score */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400">
+                      {new Date(tx.created_at).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      })}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {tx.classification ? (
+                        <ClassificationBadge classification={tx.classification} />
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                      <span className="text-xs text-slate-300">
                         {tx.risk_score !== null ? tx.risk_score.toFixed(1) : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {tx.classification ? (
-                          <ClassificationBadge classification={tx.classification} />
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 text-xs">
-                        {new Date(tx.created_at).toLocaleDateString("es-AR", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                        })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden md:block">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800">
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Comercio</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Monto</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Moneda</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Estado</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Score</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Clasificación</th>
+                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Fecha</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data?.items.map((tx: Transaction) => (
+                        <tr
+                          key={tx.id}
+                          onClick={() => navigate(`/transactions/${tx.id}`)}
+                          className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer transition-colors"
+                        >
+                          <td className="px-4 py-3 text-slate-200">{tx.merchant_name}</td>
+                          <td className="px-4 py-3 text-slate-200">${tx.amount.toFixed(2)}</td>
+                          <td className="px-4 py-3 text-slate-400">{tx.currency}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                tx.status === "approved"
+                                  ? "bg-status-approved/10 text-status-approved"
+                                  : tx.status === "flagged"
+                                    ? "bg-status-flagged/10 text-status-flagged"
+                                    : tx.status === "blocked"
+                                      ? "bg-status-blocked/10 text-status-blocked"
+                                      : "bg-slate-800 text-slate-400"
+                              }`}
+                            >
+                              {tx.status === "approved"
+                                ? "Legítimo"
+                                : tx.status === "flagged"
+                                  ? "Revisión"
+                                  : tx.status === "blocked"
+                                    ? "Fraude"
+                                    : tx.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">
+                            {tx.risk_score !== null ? tx.risk_score.toFixed(1) : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            {tx.classification ? (
+                              <ClassificationBadge classification={tx.classification} />
+                            ) : (
+                              <span className="text-slate-500">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 text-xs">
+                            {new Date(tx.created_at).toLocaleDateString("es-AR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
 
             {/* Pagination */}
