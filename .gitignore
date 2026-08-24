@@ -62,3 +62,5 @@ mejoras_portfolio_fraud_detector.zip
 
 # Personal knowledge base (InterviewTTS digital twin) - contains private data
 wiki/
+# Local Pi runtime state
+.atl/
