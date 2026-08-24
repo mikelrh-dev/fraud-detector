@@ -18,10 +18,18 @@ from src.schemas.auth import (
 )
 
 
+class InvalidRegistrationRoleError(ValueError):
+    """Raised when a registration attempts to obtain a privileged role.
+
+    Defense-in-depth for R1-001: self-service registration must never be
+    able to persist a user with any role other than ``analyst``, even if
+    request-schema validation is bypassed or drifts.
+    """
+
+
 class CredentialError(Exception):
     """Raised when login credentials are invalid."""
 
-    pass
 
 
 class AuthService:
@@ -40,9 +48,20 @@ class AuthService:
 
 async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
     """Register a new user. Raises ValueError if email already exists.
-    
+
     Email is stored in lowercase to ensure case-insensitive uniqueness.
+
+    Raises InvalidRegistrationRoleError if the requested role is not
+    ``analyst`` (self-service registration cannot grant privileges).
     """
+    # R1-001 defense-in-depth: independent of schema validation, reject
+    # any attempt to self-register with a privileged role.
+    requested_role = getattr(request, "role", "analyst")
+    if requested_role != UserRole.ANALYST.value:
+        raise InvalidRegistrationRoleError(
+            f"El registro público no permite el rol '{requested_role}'"
+        )
+
     email_lower = request.email.lower()
     # Check for existing user by email (case-insensitive)
     result = await db.execute(
@@ -66,9 +85,9 @@ async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
 
 
 async def login(db: AsyncSession, request: LoginRequest) -> TokenResponse:
-    """Authenticate a user and return JWT tokens.
+    """Authenticate a user via email and return JWT tokens.
 
-    Login is now email-based (case-insensitive). 
+    Login is now email-based (case-insensitive).
     Raises CredentialError if credentials are invalid.
     """
     email_lower = request.email.lower()
