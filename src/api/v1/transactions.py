@@ -160,15 +160,22 @@ async def create_and_score_transaction(
         )
 
     # 1. Create the transaction
-    txn = await create_transaction(
-        db=db,
-        amount=payload.amount,
-        currency=payload.currency,
-        merchant_name=payload.merchant_name,
-        merchant_category=payload.merchant_category,
-        card_last4=payload.card_last4,
-        user_id=payload.user_id,
-    )
+    try:
+        txn = await create_transaction(
+            db=db,
+            amount=payload.amount,
+            currency=payload.currency,
+            merchant_name=payload.merchant_name,
+            merchant_category=payload.merchant_category,
+            card_last4=payload.card_last4,
+            user_id=payload.user_id,
+        )
+    except Exception:
+        logger.exception("Failed to create transaction")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal error processing request",
+        )
 
     # 2. Velocity counters (Redis ZSET with PG fallback)
     await velocity_store.record_transaction(payload.user_id, txn.id, txn.created_at)
@@ -454,7 +461,14 @@ async def get_transaction_endpoint(
     current_user: dict = Depends(get_current_user),
 ) -> TransactionResponse:
     """Get a single transaction by ID."""
-    txn = await get_transaction(db, transaction_id)
+    try:
+        txn = await get_transaction(db, transaction_id)
+    except Exception:
+        logger.exception("Failed to get transaction %s", transaction_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal error processing request",
+        )
     if txn is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -517,7 +531,14 @@ async def get_embedding_analysis(
     Returns spoofing detection results if available (may return 404 if
     the worker hasn't processed the transaction yet).
     """
-    txn = await get_transaction(db, transaction_id)
+    try:
+        txn = await get_transaction(db, transaction_id)
+    except Exception:
+        logger.exception("Failed to get transaction %s for embedding", transaction_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal error processing request",
+        )
     if txn is None or (
         not _is_admin(current_user) and str(txn.user_id) != current_user["user_id"]
     ):
@@ -542,12 +563,12 @@ async def get_embedding_analysis(
 
         result = json.loads(result_json)
         return result
-    except Exception as exc:
-        logger.exception("Failed to retrieve embedding result: %s", exc)
+    except Exception:
+        logger.exception("Failed to retrieve embedding result for %s", transaction_id)
         return {
             "transaction_id": str(transaction_id),
             "status": "error",
-            "message": str(exc),
+            "message": "Failed to retrieve embedding result",
         }
 
 
@@ -565,11 +586,11 @@ async def get_graph_stats(
             "status": "ok",
             "graph": stats,
         }
-    except Exception as exc:
-        logger.exception("Failed to retrieve graph stats: %s", exc)
+    except Exception:
+        logger.exception("Failed to retrieve graph stats")
         return {
             "status": "error",
-            "message": str(exc),
+            "message": "Failed to retrieve graph stats",
         }
 
 
@@ -596,14 +617,14 @@ async def get_user_graph_features(
             "user_id": user_id,
             "graph_features": features,
         }
-    except Exception as exc:
+    except Exception:
         logger.exception(
-            "Failed to retrieve graph features for user %s: %s", user_id, exc
+            "Failed to retrieve graph features for user %s", user_id
         )
         return {
             "user_id": user_id,
             "status": "error",
-            "message": str(exc),
+            "message": "Failed to retrieve graph features",
         }
 
 

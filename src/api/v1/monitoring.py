@@ -174,13 +174,13 @@ async def get_drift_status(
             else 0,
         }
 
-    except Exception as exc:
-        logger.error("Failed to evaluate drift status: %s", exc)
+    except Exception:
+        logger.error("Failed to evaluate drift status", exc_info=True)
         return {
             "drift_detected": False,
             "features_drifted": [],
             "drift_share": 0.0,
-            "error": str(exc),
+            "error": "Failed to evaluate drift",
             "message": "Failed to evaluate drift",
         }
 
