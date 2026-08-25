@@ -9,6 +9,7 @@ import {
 } from "../api/alerts";
 import { Sidebar } from "../components/Sidebar";
 import { AlertStatusBadge } from "../components/AlertStatusBadge";
+import { BellLineArt, EmptyState } from "../components/EmptyState";
 import { RiskMeter } from "../components/RiskMeter";
 import { NUMERIC_CELL } from "../lib/ui";
 
@@ -148,9 +149,19 @@ export default function AlertsPage() {
                 ))}
               </div>
             ) : data?.items.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-sm text-slate-400">No hay alertas</p>
-              </div>
+              <EmptyState
+                icon={<BellLineArt />}
+                title="No hay alertas"
+                hint="Las alertas aparecen cuando una transacción supera los umbrales de riesgo."
+                action={
+                  <button
+                    onClick={() => navigate("/transactions")}
+                    className="max-md:inline-flex max-md:min-h-[40px] max-md:items-center max-md:px-3 text-sm text-status-info hover:underline"
+                  >
+                    Ver transacciones
+                  </button>
+                }
+              />
             ) : (
               data?.items.map((alert) => (
                 <div
@@ -261,8 +272,13 @@ export default function AlertsPage() {
                       </tr>
                     ) : data?.items.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-500">
-                          No hay alertas
+                        <td colSpan={6}>
+                          <EmptyState
+                            icon={<BellLineArt />}
+                            title="No hay alertas"
+                            hint="Las alertas aparecen cuando una transacción supera los umbrales de riesgo."
+                            compact
+                          />
                         </td>
                       </tr>
                     ) : (

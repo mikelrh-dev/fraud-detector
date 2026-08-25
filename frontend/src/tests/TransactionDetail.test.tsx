@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -157,5 +158,66 @@ describe("TransactionDetail", () => {
     expect(
       screen.queryByTestId("shap-attribution"),
     ).not.toBeInTheDocument();
+  });
+
+  const completedReport = {
+    transaction_id: "test-uuid",
+    report_text: "## Resumen\n- Monto elevado\nTexto final.",
+    model_name: "llama3",
+    status: "completed",
+    generation_time_ms: 120,
+    created_at: new Date().toISOString(),
+    error_detail: null,
+  };
+
+  function useCompletedReport() {
+    server.use(
+      http.get("*/api/v1/transactions/:id/report", () =>
+        HttpResponse.json(completedReport),
+      ),
+    );
+  }
+
+  it("renders a completed report with light markdown and a copy button", async () => {
+    useCompletedReport();
+    renderDetail();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Copiar reporte" }),
+      ).toBeInTheDocument();
+    });
+    // Light markdown: '## ' line becomes a heading block
+    expect(screen.getByText("Resumen")).toBeInTheDocument();
+    // '- ' line becomes a list item
+    expect(screen.getByText("Monto elevado")).toBeInTheDocument();
+    // Plain lines stay paragraphs
+    expect(screen.getByText("Texto final.")).toBeInTheDocument();
+    // Model metadata still shown
+    expect(screen.getByText(/Modelo: llama3/)).toBeInTheDocument();
+  });
+
+  it("copies the report text to the clipboard and flips to Copiado", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    useCompletedReport();
+    renderDetail();
+
+    const button = await screen.findByRole("button", {
+      name: "Copiar reporte",
+    });
+    await userEvent.click(button);
+
+    expect(writeText).toHaveBeenCalledWith(
+      "## Resumen\n- Monto elevado\nTexto final.",
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Copiado" }),
+      ).toBeInTheDocument();
+    });
   });
 });

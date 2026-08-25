@@ -161,11 +161,24 @@ All score bars render through **`<RiskMeter value={n} />`** (`src/components/Ris
 - Source-of-truth note: backend classification is dynamic (amount-based thresholds), so these bands are the agreed UI display convention
 
 ### Score Gauge (ensemble risk score, 0-100)
-- Track: `slate-800`
-- Fill: linear gradient `green-500` → `yellow-500` → `red-500`
-- Marker: white vertical bar, subtle glow
-- Height: 12px, full radius
-- Score: 32px / 700 displayed above the bar in white
+
+Signature 270° dial rendered by `<ScoreGauge>` inside `ScoreResultCard`:
+
+- **Arc math is a pure module**: `src/lib/gauge.ts` exports `GAUGE_SWEEP_DEG`
+  (270), `GAUGE_START_ANGLE_DEG` (135, bottom-left), `totalArcLength(r)`,
+  `scoreToDashOffset(score, arcLength)` (clamps 0–100, monotonic decreasing)
+  and `thresholdToPosition(t)` / `polarToPoint(...)` for tick placement. The
+  gap always sits at the bottom: the arc covers [135°, 360°] ∪ [0°, 45°].
+- Track: full 270° arc in `slate-800`; progress arc takes the score's tone
+  via `riskTone()` (`stroke-risk-clean/warn/critical`) — same banding as
+  RiskMeter. Zero inline hex.
+- Threshold ticks at 45 / 60 (`RISK_THRESHOLDS`, the shared display
+  convention) rendered as small radial segments crossing the arc band.
+- Center readout: score in `font-mono tabular-nums text-3xl` + muted "/100"
+  + `<ClassificationBadge>` below.
+- Animation: `stroke-dashoffset` transition, 600ms
+  `cubic-bezier(0.16,1,0.3,1)`; disabled under `prefers-reduced-motion`.
+  Exposes `role="meter"` semantics like RiskMeter.
 
 ---
 
@@ -184,9 +197,12 @@ All score bars render through **`<RiskMeter value={n} />`** (`src/components/Ris
 
 - Hover transitions: 150ms ease-out
 - No bounce or playful animations
-- Loading: subtle pulse (`slate-700` ↔ `slate-800`) on skeleton placeholders
-- Score gauge fill: 400ms ease-out on first render
-- Metric count-up: `useCountUp(target, { duration: 800 })` hook (`src/hooks/useCountUp.ts`) — requestAnimationFrame-driven, easeOutCubic, animates the real fetched value only (no invented deltas). **Respects `prefers-reduced-motion`**: jumps straight to the target.
+- Loading: subtle pulse (`slate-700` ↔ `slate-800`) on skeleton placeholders;
+  shimmer sweep (`.animate-shimmer`) for composed chart-area skeletons
+- Score gauge arc: 600ms `cubic-bezier(0.16,1,0.3,1)` on `stroke-dashoffset`
+  (mount + value changes); SHAP bars grow from 0 with the same timing —
+  both disabled under `prefers-reduced-motion`
+- Metric count-up: `useCountUp(target, { duration: 800 })` hook (`src/hooks/useCountUp.ts`) — requestAnimationFrame-driven, easeOutCubic, animates the real fetched value only (no invented deltas). **Gating contract**: callers must pass a real number — mount the animated child only when `value !== null` (see `AnimatedMetricValue` in DashboardPage), so no rAF churn runs toward a fabricated 0 while loading. **Respects `prefers-reduced-motion`**: jumps straight to the target.
 
 ---
 
@@ -285,10 +301,55 @@ Responsive retrofit. Desktop (md+ ≥ 768px) remains pixel-identical to the orig
 - Every page root div includes `overflow-x-hidden` to prevent horizontal scroll at 375px
 - Tables wrapped in `overflow-x-auto` for safe horizontal scroll on narrow screens
 
-### SHAP Stacking
-- Rows: `flex flex-col sm:flex-row items-start sm:items-center gap-1 sm:gap-3`
-- Labels: `w-full sm:w-44 truncate` with `title` attribute for full text on hover
-- Direction badge: `w-auto sm:w-24`
+### SHAP Attribution (diverging bars)
+
+`<ShapAttributionCard>` renders one diverging bar per feature around a
+central zero axis. **Reading guide** (semantics pinned by tests, do not change):
+
+- **Right of the axis = positive contribution → pushes the ML score toward
+  fraud → red (`risk-critical` token).**
+- **Left of the axis = negative contribution → pushes toward legitimate →
+  green (`risk-clean` token).**
+- Bar length is normalized against the largest |contribution| in the set
+  (each side spans half the track, so full scale reaches its edge).
+- The sign→direction mapping lives in `lib/shap.ts::contributionDirection`
+  (`>= 0` → fraud). Direction text ("Hacia fraude" / "Hacia legítimo") and
+  the signed mono value stay right-aligned.
+- Bars animate width from 0 on mount (600ms, same easing as the gauge);
+  reduced-motion renders final width immediately.
+- Mobile stacking (pinned): rows keep
+  `flex flex-col sm:flex-row items-start sm:items-center gap-1 sm:gap-3`;
+  labels `sm:w-44 truncate` with `title` attribute; direction badge
+  `w-auto sm:w-24`.
+
+### Empty States
+
+Composed empty states render through **`<EmptyState>`**
+(`src/components/EmptyState.tsx`) — never hand-roll a centered "no data"
+block. One shared component serves BOTH mobile card views and desktop table
+cells (use `compact` inside `<td>`):
+
+- Props: `icon` (slot — caller supplies inline SVG line-art ~64px),
+  `title` (`text-slate-300`), optional one-line `hint` (`text-slate-500`),
+  optional `action` CTA slot.
+- Built-in line-art glyphs: `ReceiptLineArt` (transactions) and
+  `BellLineArt` (alerts) — stroke-only SVGs inheriting `currentColor`.
+- Consumers: TransactionsPage, AlertsPage (mobile + desktop), TransactionTable.
+
+### Loading States
+
+Two tiers:
+
+1. **Skeleton pulse** (`.animate-pulse`) — existing per-card skeletons
+   (e.g. ScoreResultCard's `grid grid-cols-1 sm:grid-cols-3` block).
+2. **Shimmer sweep** (`.animate-shimmer`, Phase 2) — composed chart-area
+   placeholders: rounded `h-[200px]` blocks with a gradient highlight
+   sweeping via `translateX`. The gradient derives from
+   `var(--color-text-muted)` through `color-mix` — no hex in the utility.
+   Apply `pointer-events-none`; disabled under `prefers-reduced-motion`.
+
+Report entrance: `.animate-report-in` fades/slides the completed LLM report
+in once on mount; reduced-motion disables it.
 
 ### Skeleton Grid
 - ScoreResultCard skeleton: `grid grid-cols-1 sm:grid-cols-3` (stacks below 640px)

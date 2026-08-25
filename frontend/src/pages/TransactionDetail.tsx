@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Check, Copy } from "@phosphor-icons/react";
 import { getTransaction } from "../api/transactions";
 import type { ScoreResponse, Transaction } from "../api/transactions";
 import apiClient from "../api/client";
+import { parseReportLines, type ReportBlock } from "../lib/report-format";
 import { ScoreResultCard } from "./ScoreResultCard";
 import { ShapAttributionCard } from "../components/ShapAttributionCard";
 
@@ -103,6 +105,98 @@ function buildScoreResponse(tx: Transaction): ScoreResponse {
     fired_rules: [],
     created_at: tx.created_at,
   };
+}
+
+/**
+ * Copy-to-clipboard button for the LLM report. Swaps Copy → Check for two
+ * seconds on success; degrades silently when the clipboard API is missing.
+ */
+function CopyReportButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) return;
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (permissions / insecure context): no-op.
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label={copied ? "Copiado" : "Copiar reporte"}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 max-md:min-h-[40px]"
+    >
+      {copied ? (
+        <Check size={16} weight="regular" className="text-risk-clean" />
+      ) : (
+        <Copy size={16} weight="regular" />
+      )}
+    </button>
+  );
+}
+
+/** Light-markdown renderer for the completed report body. */
+function ReportBody({ text }: { text: string }) {
+  const blocks: ReportBlock[] = parseReportLines(text);
+  return (
+    <div
+      data-testid="report-body"
+      className="animate-report-in space-y-2 bg-slate-800 rounded-lg p-4"
+    >
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          return block.level === 2 ? (
+            <p
+              key={index}
+              className="text-base font-semibold text-slate-100 whitespace-pre-wrap"
+            >
+              {block.text}
+            </p>
+          ) : (
+            <p
+              key={index}
+              className="text-sm font-semibold text-slate-200 whitespace-pre-wrap"
+            >
+              {block.text}
+            </p>
+          );
+        }
+        if (block.type === "list") {
+          return (
+            <ul key={index} className="list-disc space-y-1 pl-5">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex} className="text-sm text-slate-300">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p
+            key={index}
+            className="text-sm leading-relaxed whitespace-pre-wrap text-slate-300 font-sans"
+          >
+            {block.text}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function TransactionDetail() {
@@ -268,9 +362,16 @@ export default function TransactionDetail() {
 
         {/* LLM Report */}
         <section className="bg-slate-900 rounded-lg border border-slate-800 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-4">
-            Reporte LLM
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-slate-300">
+              Reporte LLM
+            </h2>
+            {report !== null &&
+              report.status === "completed" &&
+              report.report_text && (
+                <CopyReportButton text={report.report_text} />
+              )}
+          </div>
 
           {reportLoading ? (
             <div className="text-sm text-slate-500">Cargando reporte...</div>
@@ -313,20 +414,24 @@ export default function TransactionDetail() {
               )}
             </div>
           ) : (
-            <div>
-              {report.model_name && (
-                <p className="text-xs text-slate-500 mb-2">
-                  Modelo: {report.model_name}
-                  {report.generation_time_ms != null &&
-                    ` · ${report.generation_time_ms}ms`}
-                </p>
-              )}
-              <div className="bg-slate-800 rounded-lg p-4">
-                <pre className="text-sm text-slate-300 whitespace-pre-wrap font-sans leading-relaxed">
-                  {report.report_text || "Sin contenido"}
-                </pre>
+              <div>
+                {report.model_name && (
+                  <p className="text-xs text-slate-500 mb-2">
+                    Modelo: {report.model_name}
+                    {report.generation_time_ms != null &&
+                      ` · ${report.generation_time_ms}ms`}
+                  </p>
+                )}
+                {report.report_text ? (
+                  <ReportBody text={report.report_text} />
+                ) : (
+                  <div className="bg-slate-800 rounded-lg p-4">
+                    <p className="text-sm text-slate-300 font-sans">
+                      Sin contenido
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
           )}
         </section>
       </main>

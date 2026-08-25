@@ -57,4 +57,41 @@ describe("ShapAttributionCard", () => {
     expect(label).toHaveClass("truncate");
     expect(label).toHaveAttribute("title", "Monto");
   });
+
+  it("diverging layout: positive contributions extend RIGHT of the zero axis", () => {
+    const contributions: ShapContribution[] = [
+      { feature: "amount", contribution: 35 },
+    ];
+    render(<ShapAttributionCard contributions={contributions} />);
+    const bar = document.querySelector('[data-testid="shap-bar"]');
+    expect(bar).toBeTruthy();
+    // Right of center: anchored at the horizontal midpoint
+    expect(bar!.className).toContain("left-1/2");
+    // Fraud semantics stay red-family (token)
+    expect(bar!.className).toContain("bg-risk-critical");
+  });
+
+  it("diverging layout: negative contributions extend LEFT of the zero axis", () => {
+    const contributions: ShapContribution[] = [
+      { feature: "merchant_risk_level", contribution: -5 },
+    ];
+    render(<ShapAttributionCard contributions={contributions} />);
+    const bar = document.querySelector('[data-testid="shap-bar"]');
+    expect(bar).toBeTruthy();
+    // Left of center: anchored at the horizontal midpoint from the right edge
+    expect(bar!.className).toContain("right-1/2");
+    // Legitimate semantics stay green-family (token)
+    expect(bar!.className).toContain("bg-risk-clean");
+  });
+
+  it("renders one central zero axis per feature row", () => {
+    const contributions: ShapContribution[] = [
+      { feature: "amount", contribution: 35 },
+      { feature: "merchant_risk_level", contribution: -5 },
+    ];
+    render(<ShapAttributionCard contributions={contributions} />);
+    expect(
+      document.querySelectorAll('[data-testid="shap-zero-axis"]'),
+    ).toHaveLength(2);
+  });
 });

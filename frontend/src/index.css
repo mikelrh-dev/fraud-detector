@@ -48,6 +48,65 @@ body {
   min-height: 100vh;
 }
 
+/* Shimmer sweep for composed loading skeletons (DESIGN.md — Motion).
+   The highlight gradient derives from the muted-text @theme token via
+   color-mix; no hardcoded hex lives here. */
+@keyframes shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.animate-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-text-muted) 10%, transparent),
+    transparent
+  );
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer::after {
+    animation: none;
+    display: none;
+  }
+}
+
+/* One-shot entrance for the completed LLM report (fade + slide up).
+   Runs once on mount; disabled for reduced-motion users. */
+@keyframes report-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-report-in {
+  animation: report-in 300ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-report-in {
+    animation: none;
+  }
+}
+
 /* Custom scrollbar for dark theme */
 ::-webkit-scrollbar {
   width: 8px;

@@ -1,4 +1,5 @@
 import type { Transaction } from "../api/transactions";
+import { EmptyState, ReceiptLineArt } from "./EmptyState";
 import { RiskMeter } from "./RiskMeter";
 import {
   NUMERIC_CELL,
@@ -155,8 +156,13 @@ export default function TransactionTable({
               </tr>
             ) : transactions.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-slate-500">
-                  No se encontraron transacciones
+                <td colSpan={7}>
+                  <EmptyState
+                    icon={<ReceiptLineArt />}
+                    title="No se encontraron transacciones"
+                    hint="Ajusta los filtros activos o crea una nueva transacción."
+                    compact
+                  />
                 </td>
               </tr>
             ) : (
@@ -181,7 +187,7 @@ export default function TransactionTable({
                     <td className="px-4 py-3 text-slate-300">{tx.merchant_name}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <RiskMeter value={tx.risk_score || 0} />
+                        <RiskMeter value={tx.risk_score} />
                         <span className={`text-xs text-slate-400 w-6 ${NUMERIC_CELL}`}>
                           {tx.risk_score ?? "—"}
                         </span>

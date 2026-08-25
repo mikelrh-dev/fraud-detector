@@ -5,6 +5,18 @@ import { render } from "@testing-library/react";
 import { RiskMeter } from "../components/RiskMeter";
 
 describe("RiskMeter", () => {
+  it("renders nothing when value is null", () => {
+    const { container } = render(<RiskMeter value={null} />);
+    expect(container.querySelector('[data-testid="risk-meter"]')).toBeNull();
+    expect(container.textContent).toBe("");
+  });
+
+  it("renders nothing when value is undefined", () => {
+    const { container } = render(<RiskMeter value={undefined} />);
+    expect(container.querySelector('[data-testid="risk-meter"]')).toBeNull();
+    expect(container.textContent).toBe("");
+  });
+
   it("clamps values above 100 to a full-width fill", () => {
     const { getByTestId } = render(<RiskMeter value={150} />);
     const fill = getByTestId("risk-meter-fill");

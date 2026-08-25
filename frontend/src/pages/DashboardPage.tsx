@@ -48,7 +48,7 @@ export default function DashboardPage() {
   });
 
   // Recent transactions list (first page for histogram + trend)
-  const { data: recentData } = useQuery({
+  const { data: recentData, isLoading: recentLoading } = useQuery({
     queryKey: ["transactions", { page: 1, page_size: 100 }],
     queryFn: () => listTransactions({ page: 1, page_size: 100 }),
   });
@@ -156,10 +156,27 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* Charts row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ScoreHistogram scores={scores} />
-            <ScoreTrendChart data={dailyAverages} />
+          {/* Charts row — composed shimmer skeleton while data loads */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" aria-busy={recentLoading}>
+            {recentLoading ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  data-testid="chart-skeleton"
+                  className="pointer-events-none h-[200px] rounded-xl border border-slate-800 bg-slate-900 animate-shimmer"
+                />
+                <div
+                  aria-hidden="true"
+                  data-testid="chart-skeleton"
+                  className="pointer-events-none h-[200px] rounded-xl border border-slate-800 bg-slate-900 animate-shimmer"
+                />
+              </>
+            ) : (
+              <>
+                <ScoreHistogram scores={scores} />
+                <ScoreTrendChart data={dailyAverages} />
+              </>
+            )}
           </div>
 
           {/* Transaction table */}
@@ -217,7 +234,6 @@ function MetricCard({
   tone: MetricTone;
   highlight?: string;
 }) {
-  const animated = useCountUp(value ?? 0);
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
       <div className="flex items-center justify-between mb-1">
@@ -229,8 +245,28 @@ function MetricCard({
         </span>
       </div>
       <p className={`text-2xl font-bold ${highlight || "text-slate-100"}`}>
-        {value === null ? "—" : format(animated)}
+        {value === null ? (
+          "—"
+        ) : (
+          <AnimatedMetricValue value={value} format={format} />
+        )}
       </p>
     </div>
   );
+}
+
+/**
+ * Isolated so useCountUp only mounts once a real value exists — while data
+ * is loading (null) there is zero requestAnimationFrame churn animating
+ * toward a fabricated 0.
+ */
+function AnimatedMetricValue({
+  value,
+  format,
+}: {
+  value: number;
+  format: (n: number) => string;
+}) {
+  const animated = useCountUp(value);
+  return <>{format(animated)}</>;
 }

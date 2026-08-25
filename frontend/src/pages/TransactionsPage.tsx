@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, Link } from "react-router-dom";
 import { listTransactions } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
+import { EmptyState, ReceiptLineArt } from "../components/EmptyState";
 import { Sidebar } from "../components/Sidebar";
 import type { Transaction } from "../api/transactions";
 import { formatScore } from "../lib/score";
@@ -124,16 +125,19 @@ export default function TransactionsPage() {
             <p className="text-sm text-red-400">Error al cargar transacciones</p>
           </div>
         ) : data && data.items.length === 0 ? (
-          <div className="text-center py-12">
-            <span className="material-symbols-outlined text-4xl text-slate-600 mb-3">receipt_long</span>
-            <p className="text-sm text-slate-400">No hay transacciones</p>
-            <Link
-              to="/transactions/new"
-              className="inline-block mt-3 text-sm text-status-info hover:underline"
-            >
-              Crear primera transacción
-            </Link>
-          </div>
+          <EmptyState
+            icon={<ReceiptLineArt />}
+            title="No hay transacciones"
+            hint="Registra una transacción para comenzar a monitorear su riesgo."
+            action={
+              <Link
+                to="/transactions/new"
+                className="max-md:inline-flex max-md:min-h-[40px] max-md:items-center max-md:px-3 text-sm text-status-info hover:underline"
+              >
+                Crear primera transacción
+              </Link>
+            }
+          />
         ) : (
           <>
             {/* Mobile card list */}
