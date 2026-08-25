@@ -57,7 +57,8 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("analyst");
+  // Self-service registration is always analyst — the API rejects any other
+  // role (audit R1-001), so no role selector is rendered.
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -85,9 +86,7 @@ export default function RegisterPage() {
     }
 
     if (password.length < PASSWORD_MIN) {
-      setError(
-        `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`,
-      );
+      setError(`La contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`);
       return;
     }
 
@@ -98,7 +97,7 @@ export default function RegisterPage() {
         username: username.trim(),
         email,
         password,
-        role,
+        role: "analyst",
       });
       setSuccess(true);
     } catch (err: unknown) {
@@ -137,12 +136,8 @@ export default function RegisterPage() {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-slate-100">
-            Fraud Detector
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Crear cuenta
-          </p>
+          <h1 className="text-xl font-bold text-slate-100">Fraud Detector</h1>
+          <p className="text-sm text-slate-500 mt-1">Crear cuenta</p>
         </div>
 
         {/* Card */}
@@ -236,24 +231,6 @@ export default function RegisterPage() {
                     </p>
                   </div>
                 )}
-              </div>
-
-              <div>
-                <label
-                  htmlFor="role"
-                  className="block text-sm font-medium text-slate-400 mb-1"
-                >
-                  Rol
-                </label>
-                <select
-                  id="role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/60 transition-colors"
-                >
-                  <option value="analyst">Analista</option>
-                  <option value="admin">Administrador</option>
-                </select>
               </div>
 
               {error && (
