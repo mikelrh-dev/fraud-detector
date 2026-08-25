@@ -136,3 +136,78 @@ async def test_fresh_pel_entry_with_low_idle_time_is_not_claimed():
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+
+
+class TestFailureSemantics:
+    """R4-005: processing failures must NOT be ACKed as success."""
+
+    @pytest.mark.asyncio
+    async def test_process_message_propagates_errors(self):
+        """detect_spoofing raising must surface instead of being swallowed."""
+        with patch(
+            "src.workers.embedding_worker.MerchantEmbeddingService"
+        ) as service_cls:
+            service_cls.return_value.detect_spoofing.side_effect = RuntimeError("db down")
+            worker = EmbeddingWorker()
+
+            with pytest.raises(RuntimeError):
+                await worker.process_message(
+                    {"transaction_id": "t1", "merchant_name": "X"}
+                )
+
+    @pytest.mark.asyncio
+    async def test_failing_message_stays_pending_unacked(self):
+        """A failing message must remain unACKed so recovery can retry it."""
+        with patch(
+            "src.workers.embedding_worker.MerchantEmbeddingService"
+        ) as service_cls, patch(
+            "src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()
+        ), patch(
+            "src.workers.embedding_worker.recover_pending_messages",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02
+        ):
+            service_cls.return_value.detect_spoofing.side_effect = RuntimeError("db down")
+            redis_mock = AsyncMock()
+            redis_mock.xreadgroup = idle_xreadgroup()
+            worker = EmbeddingWorker()
+            worker.redis_client = redis_mock
+
+            task = asyncio.create_task(worker.process_queue())
+            await _wait_for(
+                lambda: service_cls.return_value.detect_spoofing.call_count > 0,
+                timeout=2.0,
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        redis_mock.xack.assert_not_awaited()
+
+
+class TestEmbeddingMainRedisUrl:
+    """R4-007 sibling: entry points honor settings.redis_url."""
+
+    @pytest.mark.asyncio
+    async def test_embedding_main_uses_settings_url(self):
+        from src.core.config import settings
+        from src.workers import embedding_worker
+
+        stub_client = AsyncMock()
+
+        async def fake_from_url(url):
+            assert url == settings.redis_url
+            return stub_client
+
+        async def fake_run(self):
+            pass
+
+        async def fake_connect(self):
+            self.redis_client = stub_client
+
+        with patch.object(embedding_worker.redis, "from_url", fake_from_url), patch.object(
+            embedding_worker.EmbeddingWorker, "run", fake_run
+        ):
+            await embedding_worker.main()

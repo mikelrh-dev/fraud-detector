@@ -35,6 +35,12 @@ GROUP_NAME = "shap-workers"
 CONSUMER_NAME = "shap-worker-1"
 MAX_RETRIES = 3
 RECOVERY_INTERVAL = 60  # Check for stuck messages every 60 seconds
+BACKOFF_CAP_SECONDS = 60  # Upper bound for retry backoff (R4-004)
+
+
+def _backoff_delay(retry_count: int) -> int:
+    """Exponential backoff before re-enqueueing a failed message."""
+    return min(2**retry_count, BACKOFF_CAP_SECONDS)
 
 
 async def process_shap_message(
@@ -202,8 +208,9 @@ async def _process_message_with_retry(
                     retry_count,
                 )
             else:
-                # Retry: increment counter and re-enqueue
+                # Retry: increment counter, back off, then re-enqueue (R4-004)
                 message_data["retry_count"] = retry_count + 1
+                await asyncio.sleep(_backoff_delay(retry_count))
                 await redis_client.xadd(
                     STREAM_NAME,
                     {"data": json.dumps(message_data)},
@@ -248,6 +255,16 @@ async def _recovery_loop(redis_client: redis.Redis) -> None:
 
                 if recovered:
                     logger.info("Recovered %d stuck messages", len(recovered))
+                    # R4-003: route claimed entries through the retry pipeline
+                    # instead of dropping them back into the PEL forever.
+                    shap_service = ShapService()
+                    for claimed_id, claimed_fields in recovered:
+                        await _process_message_with_retry(
+                            redis_client,
+                            claimed_id,
+                            claimed_fields,
+                            shap_service,
+                        )
 
         except asyncio.CancelledError:
             break
@@ -257,7 +274,9 @@ async def _recovery_loop(redis_client: redis.Redis) -> None:
 
 async def main() -> None:
     """Entry point."""
-    redis_client = await redis.from_url("redis://localhost:6379/0")
+    from src.core.config import settings
+
+    redis_client = await redis.from_url(settings.redis_url)
 
     try:
         await worker_loop(redis_client)

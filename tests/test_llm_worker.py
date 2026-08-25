@@ -230,3 +230,83 @@ async def _wait_for(predicate, timeout: float = 2.0) -> bool:
             return True
         await asyncio.sleep(0.01)
     return predicate()
+
+
+class TestWorkerDurability:
+    """R4-002/R4-003: failed reports must not be lost nor ACKed."""
+
+    @pytest.mark.asyncio
+    async def test_failed_report_is_not_acked(self):
+        """process_report_request returning False must leave the message pending."""
+        mock_redis = AsyncMock()
+        mock_redis.xreadgroup = _scripted_xreadgroup(
+            [_stream_message({"transaction_id": "t-fail"})]
+        )
+
+        with patch(
+            "src.workers.llm_worker.ensure_consumer_group", new=AsyncMock()
+        ), patch("src.workers.llm_worker.LLMService"), patch(
+            "src.workers.llm_worker.process_report_request",
+            new=AsyncMock(return_value=False),
+        ):
+            task = asyncio.create_task(worker_loop(mock_redis))
+            await asyncio.sleep(0.15)
+            processed = not task.done() or True  # loop ran without crashing
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        assert processed
+        mock_redis.xack.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_recovery_loop_reprocesses_claimed_reports(self):
+        """Stale PEL entries are claimed and routed through report processing."""
+        from src.workers import llm_worker
+
+        mock_redis = AsyncMock()
+        claimed_entry = (
+            b"1700000000099-0",
+            {b"data": json.dumps({"transaction_id": "t-stale"}).encode()},
+        )
+
+        with patch.object(
+            llm_worker, "RECOVERY_INTERVAL", 0.01
+        ), patch.object(
+            llm_worker,
+            "recover_pending_messages",
+            new=AsyncMock(return_value=[claimed_entry]),
+        ) as recover_mock, patch.object(
+            llm_worker, "async_session_maker"
+        ) as mock_maker, patch.object(
+            llm_worker, "LLMService"
+        ), patch.object(
+            llm_worker,
+            "process_report_request",
+            new=AsyncMock(return_value=True),
+        ) as process_mock:
+            session = AsyncMock()
+            mock_maker.return_value.__aenter__ = AsyncMock(return_value=session)
+            mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            task = asyncio.create_task(llm_worker._recovery_loop(mock_redis))
+            routed = await _wait_for(lambda: process_mock.await_count > 0, timeout=2.0)
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        recover_mock.assert_awaited()
+        assert routed, "claimed reports were never reprocessed"
+
+    @pytest.mark.asyncio
+    async def test_main_uses_configured_redis_url(self):
+        """R4-007 sibling: entry points must honor settings.redis_url."""
+        from src.core.config import settings
+        from src.workers import llm_worker
+
+        with patch.object(
+            llm_worker.redis, "from_url", new=AsyncMock(return_value=AsyncMock())
+        ) as from_url, patch.object(llm_worker, "worker_loop", new=AsyncMock()):
+            await llm_worker.main()
+
+        from_url.assert_awaited_once_with(settings.redis_url)

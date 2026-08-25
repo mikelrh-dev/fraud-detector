@@ -16,6 +16,7 @@ import redis.asyncio as redis
 
 from src.core.config import settings
 from src.core.database import async_session_maker
+from src.core.stream_dlq import recover_pending_messages, send_to_dlq
 from src.core.stream_publisher import ensure_consumer_group
 from src.models.llm_report import LLMReport, LLMReportStatus
 from src.services.audit import AuditService
@@ -26,6 +27,16 @@ logger = logging.getLogger(__name__)
 STREAM_NAME = "fraud:llm"
 GROUP_NAME = "llm-workers"
 CONSUMER_NAME = "llm-worker-1"
+MAX_RETRIES = 3
+RECOVERY_INTERVAL = 60
+BACKOFF_CAP_SECONDS = 60
+
+
+def _backoff_delay(retry_count: int) -> int:
+    """Exponential backoff before re-enqueueing a failed report."""
+    return min(2**retry_count, BACKOFF_CAP_SECONDS)
+
+
 MAX_RETRIES = 3
 
 
@@ -106,6 +117,16 @@ async def worker_loop(redis_client: redis.Redis) -> None:
 
     logger.info("LLM worker started: stream=%s, group=%s", STREAM_NAME, GROUP_NAME)
 
+    recovery_task = asyncio.create_task(_recovery_loop(redis_client))
+
+    try:
+        await _consume_loop(redis_client, llm_service)
+    finally:
+        recovery_task.cancel()
+
+
+async def _consume_loop(redis_client: redis.Redis, llm_service: LLMService) -> None:
+    """Consume new messages from the stream until cancelled."""
     while True:
         try:
             # XREADGROUP: blocking read from consumer group
@@ -141,7 +162,9 @@ async def worker_loop(redis_client: redis.Redis) -> None:
                             await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
                             logger.debug("LLM message ACKed: %s", message_id)
                         else:
-                            logger.warning("LLM message will retry: %s", message_id)
+                            await _handle_failed_report(
+                                redis_client, message_id, message_data
+                            )
 
                     except Exception as exc:
                         logger.error("Error processing LLM message: %s", exc)
@@ -161,6 +184,87 @@ async def main() -> None:
         logger.info("LLM worker stopped by user")
     finally:
         await redis_client.close()
+
+
+async def _handle_failed_report(
+    redis_client: redis.Redis,
+    message_id,
+    message_data: dict,
+) -> None:
+    """Retry with backoff, or DLQ once retries are exhausted (R4-002)."""
+    retry_count = message_data.get("retry_count", 0)
+
+    if retry_count >= MAX_RETRIES:
+        dlq_message_id = (
+            message_id.decode("utf-8")
+            if isinstance(message_id, bytes)
+            else str(message_id)
+        )
+        await send_to_dlq(
+            redis_client,
+            STREAM_NAME,
+            dlq_message_id,
+            GROUP_NAME,
+            CONSUMER_NAME,
+            f"Max retries ({MAX_RETRIES}) exceeded",
+            message_data,
+        )
+        await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+        logger.warning(
+            "LLM message sent to DLQ: %s (retries: %d)", message_id, retry_count
+        )
+        return
+
+    message_data["retry_count"] = retry_count + 1
+    await asyncio.sleep(_backoff_delay(retry_count))
+    await redis_client.xadd(
+        STREAM_NAME,
+        {"data": json.dumps(message_data)},
+        maxlen=100000,
+        approximate=True,
+    )
+    await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+    logger.info(
+        "LLM message re-queued for retry: %s (attempt %d/%d)",
+        message_id,
+        retry_count + 1,
+        MAX_RETRIES,
+    )
+
+
+async def _recovery_loop(redis_client: redis.Redis) -> None:
+    """Claim stale PEL entries and reprocess them (R4-003)."""
+    llm_service = LLMService()
+
+    while True:
+        try:
+            await asyncio.sleep(RECOVERY_INTERVAL)
+
+            recovered = await recover_pending_messages(
+                redis_client,
+                STREAM_NAME,
+                GROUP_NAME,
+                CONSUMER_NAME,
+            )
+
+            for claimed_id, fields in recovered:
+                logger.info("Reprocessing stale LLM message: %s", claimed_id)
+                data_json = fields.get(b"data", b"{}").decode("utf-8")
+                message_data = json.loads(data_json)
+
+                async with async_session_maker() as db:
+                    success = await process_report_request(
+                        message_data, db, llm_service
+                    )
+
+                if success:
+                    await redis_client.xack(STREAM_NAME, GROUP_NAME, claimed_id)
+                    logger.debug("Recovered LLM message ACKed: %s", claimed_id)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.error("Error in LLM recovery loop: %s", exc)
 
 
 if __name__ == "__main__":

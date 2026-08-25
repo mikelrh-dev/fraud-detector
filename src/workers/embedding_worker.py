@@ -131,49 +131,48 @@ class EmbeddingWorker:
 
         Args:
             message: Dict with transaction data
+
+        Raises:
+            Exception: any processing failure propagates to the caller so
+                the message stays pending (unACKed) and can be recovered
+                later (R4-005 - failures must not be ACKed as success).
         """
-        try:
-            transaction_id = message.get("transaction_id")
-            merchant_name = message.get("merchant_name")
+        transaction_id = message.get("transaction_id")
+        merchant_name = message.get("merchant_name")
 
-            if not merchant_name:
-                logger.warning(
-                    "Received message without merchant_name: %s", transaction_id
-                )
-                return
+        if not merchant_name:
+            logger.warning("Received message without merchant_name: %s", transaction_id)
+            return
 
-            # Perform spoofing detection
-            is_spoofed, matched_merchant, similarity = (
-                self.embedding_service.detect_spoofing(merchant_name)
+        # Perform spoofing detection (R4-005: errors propagate, no swallow)
+        is_spoofed, matched_merchant, similarity = (
+            self.embedding_service.detect_spoofing(merchant_name)
+        )
+
+        # Store result in Redis (for API retrieval)
+        if self.redis_client:
+            result = {
+                "transaction_id": transaction_id,
+                "merchant_name": merchant_name,
+                "is_spoofed": is_spoofed,
+                "matched_merchant": matched_merchant,
+                "similarity_score": similarity,
+                "processed_at": datetime.now(tz=timezone.utc).isoformat(),
+            }
+
+            result_key = f"embedding_result:{transaction_id}"
+            await self.redis_client.setex(
+                result_key,
+                3600,  # 1 hour TTL
+                json.dumps(result),
             )
 
-            # Store result in Redis (for API retrieval)
-            if self.redis_client:
-                result = {
-                    "transaction_id": transaction_id,
-                    "merchant_name": merchant_name,
-                    "is_spoofed": is_spoofed,
-                    "matched_merchant": matched_merchant,
-                    "similarity_score": similarity,
-                    "processed_at": datetime.now(tz=timezone.utc).isoformat(),
-                }
-
-                result_key = f"embedding_result:{transaction_id}"
-                await self.redis_client.setex(
-                    result_key,
-                    3600,  # 1 hour TTL
-                    json.dumps(result),
-                )
-
-            logger.info(
-                "Embedding processed: transaction=%s, spoofed=%s, similarity=%.2f",
-                transaction_id,
-                is_spoofed,
-                similarity,
-            )
-
-        except Exception as exc:
-            logger.error("Error processing embedding message: %s", exc)
+        logger.info(
+            "Embedding processed: transaction=%s, spoofed=%s, similarity=%.2f",
+            transaction_id,
+            is_spoofed,
+            similarity,
+        )
 
     async def _recovery_loop(self) -> None:
         """Periodically recover stale pending messages via XAUTOCLAIM.

@@ -17,6 +17,7 @@ from src.models.shap_attribution import ShapAttribution
 from src.services.shap_service import ShapContribution, ShapService, ShapUnavailableError
 from src.workers.shap_worker import (
     _process_message_with_retry,
+    _recovery_loop,
     process_shap_message,
     worker_loop,
 )
@@ -279,3 +280,67 @@ async def _wait_for(predicate, timeout: float = 2.0) -> bool:
             return True
         await asyncio.sleep(0.01)
     return predicate()
+
+
+class TestRecoveryReprocessing:
+    """R4-003: recovery must REPROCESS claimed messages, not just log them."""
+
+    @pytest.mark.asyncio
+    async def test_recovery_routes_claimed_entries_through_retry_helper(self):
+        mock_redis = AsyncMock()
+        claimed_entry = (b"1700000000099-0", {b"data": json.dumps(_message()).encode()})
+
+        with patch(
+            "src.workers.shap_worker.RECOVERY_INTERVAL", 0.01
+        ), patch(
+            "src.workers.shap_worker.get_consumer_group_status",
+            new=AsyncMock(return_value={"pending_count": 3}),
+        ), patch(
+            "src.workers.shap_worker.recover_pending_messages",
+            new=AsyncMock(return_value=[claimed_entry]),
+        ) as recover_mock, patch(
+            "src.workers.shap_worker._process_message_with_retry",
+            new=AsyncMock(),
+        ) as retry_helper:
+            task = asyncio.create_task(_recovery_loop(mock_redis))
+            routed = await _wait_for(lambda: retry_helper.await_count > 0, timeout=2.0)
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        recover_mock.assert_awaited()
+        assert routed, "claimed entries were never reprocessed"
+        args = retry_helper.await_args.args
+        assert args[1] == b"1700000000099-0"
+        assert args[2] == {b"data": json.dumps(_message()).encode()}
+
+
+class TestRetryBackoff:
+    """R4-004: re-enqueue must apply exponential backoff."""
+
+    def test_backoff_delay_grows_exponentially(self):
+        from src.workers.shap_worker import _backoff_delay
+
+        assert _backoff_delay(0) == 1
+        assert _backoff_delay(1) == 2
+        assert _backoff_delay(2) == 4
+        assert _backoff_delay(10) <= 60  # capped
+
+    @pytest.mark.asyncio
+    async def test_reenqueue_sleeps_before_xadd(self):
+        mock_redis = AsyncMock()
+        fields = {b"data": json.dumps(_message(retry_count=1)).encode()}
+        mock_service = MagicMock(spec=ShapService)
+        mock_service.explain.side_effect = RuntimeError("boom")
+
+        with patch("src.workers.shap_worker.async_session_maker") as mock_maker, patch(
+            "src.workers.shap_worker.asyncio.sleep", new=AsyncMock()
+        ) as sleep_mock:
+            mock_maker.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await _process_message_with_retry(
+                mock_redis, b"1700000000000-9", fields, mock_service
+            )
+
+        sleep_mock.assert_awaited_once_with(2)  # 2 ** retry_count(1)
