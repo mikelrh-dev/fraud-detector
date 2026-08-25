@@ -32,9 +32,10 @@ def _get_client_ip(request: Request) -> str:
     """Extract client IP from request.
 
     Uses ``request.client.host`` by default (spoof-proof).  When
-    ``settings.trust_proxy_headers`` is ``True``, the right-most entry
-    of ``X-Forwarded-For`` is honored — only safe behind a trusted proxy
-    that overwrites the header.
+    ``settings.trust_proxy_headers`` is ``True``, the left-most entry
+    of ``X-Forwarded-For`` is honored (the original client as recorded
+    by the trusted proxy) — only safe behind a proxy that overwrites
+    the header.
     """
     if settings.trust_proxy_headers:
         forwarded = request.headers.get("X-Forwarded-For")
@@ -96,7 +97,7 @@ async def check_rate_limit(
             await redis.expire(redis_key, int(window) + 1)  # type: ignore[misc]
 
         if count > max_req:
-            retry_after = int(window - (time.time() % window))
+            retry_after = max(1, int(window - (time.time() % window)))
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded. Try again in {retry_after} seconds.",
