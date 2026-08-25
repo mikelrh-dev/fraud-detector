@@ -71,7 +71,7 @@ jobs:
           DB_HOST: "127.0.0.1"
           DB_PORT: "5432"
           REDIS_URL: redis://localhost:6379/0
-        run: pytest tests/ -v --cov=src --cov-report=xml --cov-fail-under=73
+        run: pytest tests/ -v --cov=src --cov-report=xml --cov-fail-under=80
 
   frontend-lint-test:
     name: Frontend Lint + Test

@@ -19,7 +19,7 @@ CI_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
 # Honest measured baseline after audit-wave1-blockers Phases 1-3 landed
 # (documented in openspec/changes/audit-wave1-blockers/notes.md).
 # Interim value <80: wave 4 (test debt) is expected to raise this toward 80.
-COVERAGE_FLOOR = 73
+COVERAGE_FLOOR = 80
 
 
 def _pytest_run_commands() -> list[str]:
