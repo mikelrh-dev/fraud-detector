@@ -1,5 +1,6 @@
 """Shared pytest fixtures for all test modules."""
 
+from collections import defaultdict
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -34,10 +35,22 @@ def mock_redis() -> AsyncMock:
     ``pipeline()`` returns a mock pipeline whose ``execute`` defaults to
     ``[0, 0, 0]`` (trim ok, zero 5min counts, zero 1h counts) so the
     velocity path is inert unless a test seeds it.
+
+    ``incr()`` behaves like real Redis: increments and returns the new
+    count per key, so the rate limiter tests work correctly.
     """
     redis = AsyncMock()
     redis.exists = AsyncMock(return_value=0)
     redis.setex = AsyncMock()
+
+    # Simulate real Redis INCR: per-key counter that increments on each call.
+    _incr_counters: dict[str, int] = defaultdict(int)
+
+    async def _fake_incr(key: str) -> int:
+        _incr_counters[key] += 1
+        return _incr_counters[key]
+
+    redis.incr = AsyncMock(side_effect=_fake_incr)
     redis.zadd = AsyncMock(return_value=1)
     redis.expire = AsyncMock(return_value=True)
     redis.zremrangebyscore = AsyncMock(return_value=0)

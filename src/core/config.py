@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     # Frontend
     frontend_url: str = "http://localhost:3000"
 
+    # Proxy
+    # Trust X-Forwarded-For / X-Real-IP headers for client identity.
+    # Enable ONLY behind a trusted reverse proxy (nginx, ALB, Cloudflare).
+    # When False (default), request.client.host is used directly — spoof-proof.
+    trust_proxy_headers: bool = False
+
     @property
     def database_url(self) -> str:
         """Build async database URL."""

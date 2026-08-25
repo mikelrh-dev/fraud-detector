@@ -1,17 +1,23 @@
-"""In-memory rate limiter — tracks requests per IP + endpoint window.
+"""Redis-backed rate limiter — fixed-window counters per IP + endpoint.
 
-Simple dict-based implementation that avoids external dependencies.
-Windows reset every `window_seconds`. Designed for FastAPI dependency injection.
+Uses Redis INCR + EXPIRE for cross-process, crash-safe counters.
+Fails open (allows request) if Redis is unavailable — documented choice
+matching the best-effort pattern used elsewhere in this codebase.
+
+Designed for FastAPI dependency injection.
 """
 
+import logging
 import time
-from collections import defaultdict
 from collections.abc import Callable
 
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
+from redis.asyncio import Redis
 
-# (ip, path_prefix) → list of timestamps
-_request_log: dict[tuple[str, str], list[float]] = defaultdict(list)
+from src.core.config import settings
+from src.core.dependencies import get_redis
+
+logger = logging.getLogger(__name__)
 
 # Rate limits: (path_prefix, max_requests, window_seconds)
 RATE_LIMITS: dict[str, tuple[int, float]] = {
@@ -23,11 +29,18 @@ RATE_LIMITS: dict[str, tuple[int, float]] = {
 
 
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP from request headers or direct connection."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    # Use host as fallback when client is not directly available
+    """Extract client IP from request.
+
+    Uses ``request.client.host`` by default (spoof-proof).  When
+    ``settings.trust_proxy_headers`` is ``True``, the right-most entry
+    of ``X-Forwarded-For`` is honored — only safe behind a trusted proxy
+    that overwrites the header.
+    """
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+
     client = getattr(request, "client", None)
     if client is not None:
         host = getattr(client, "host", None)
@@ -36,20 +49,25 @@ def _get_client_ip(request: Request) -> str:
     return "unknown"
 
 
-def _cleanup(window_seconds: float) -> None:
-    """Remove expired timestamps from all logs."""
-    now = time.time()
-    cutoff = now - window_seconds
-    for key in list(_request_log.keys()):
-        _request_log[key] = [t for t in _request_log[key] if t > cutoff]
-        if not _request_log[key]:
-            del _request_log[key]
+def _window_bucket(window_seconds: float) -> str:
+    """Return a string bucket key for the current time window."""
+    return str(int(time.time() // window_seconds))
 
 
-def check_rate_limit(request: Request) -> None:
+async def check_rate_limit(
+    request: Request,
+    redis: Redis = Depends(get_redis),
+) -> None:
     """FastAPI dependency — checks rate limit for the request path.
 
+    Uses Redis INCR + EXPIRE for a fixed-window counter keyed by
+    ``(client_ip, path_prefix, window_bucket)``.  The first hit in a
+    window sets the TTL; subsequent hits increment the counter.
+
+    Redis is injected via FastAPI DI so test fixtures can override it.
+
     Raises 429 Too Many Requests if the limit is exceeded.
+    Fails open on Redis errors (logger.warning).
     """
     path = request.url.path
     client_ip = _get_client_ip(request)
@@ -68,22 +86,30 @@ def check_rate_limit(request: Request) -> None:
     if limit_key is None:
         return  # no rate limit configured for this path
 
-    now = time.time()
-    log_key = (client_ip, limit_key)
+    bucket = _window_bucket(window)
+    redis_key = f"ratelimit:{client_ip}:{limit_key}:{bucket}"
 
-    # Clean expired entries for this key
-    _request_log[log_key] = [t for t in _request_log[log_key] if t > now - window]
+    try:
+        count = await redis.incr(redis_key)  # type: ignore[misc]
+        if count == 1:
+            # First request in this window — set TTL.
+            await redis.expire(redis_key, int(window) + 1)  # type: ignore[misc]
 
-    if len(_request_log[log_key]) >= max_req:
-        retry_after = int(window - (now - _request_log[log_key][0]))
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit exceeded. Try again in {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
+        if count > max_req:
+            retry_after = int(window - (time.time() % window))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded. Try again in {retry_after} seconds.",
+                headers={"Retry-After": str(retry_after)},
+            )
+    except HTTPException:
+        raise  # re-raise 429 — not a Redis error
+    except Exception:
+        logger.warning(
+            "Redis unavailable for rate limiting on %s — failing open",
+            path,
+            exc_info=True,
         )
-
-    _request_log[log_key].append(now)
-    _cleanup(window)
 
 
 def rate_limit_middleware(
@@ -92,11 +118,20 @@ def rate_limit_middleware(
 ) -> Callable[[Request], None]:
     """Factory for rate-limit dependencies with custom limits.
 
-    Usage:
+    Uses in-memory counters (per-process) — suitable for single-worker
+    dev servers or endpoints that need isolated limits.
+
+    Usage::
+
         @router.post("/endpoint")
-        async def handler(request: Request, _: None = Depends(rate_limit_middleware(30, 60))):
+        async def handler(
+            request: Request,
+            _: None = Depends(rate_limit_middleware(30, 60)),
+        ):
             ...
     """
+    from collections import defaultdict
+
     _custom_log: dict[tuple[str, str], list[float]] = defaultdict(list)
 
     def dependency(request: Request) -> None:
@@ -105,7 +140,9 @@ def rate_limit_middleware(
         now = time.time()
         log_key = (client_ip, path)
 
-        _custom_log[log_key] = [t for t in _custom_log[log_key] if t > now - window_seconds]
+        _custom_log[log_key] = [
+            t for t in _custom_log[log_key] if t > now - window_seconds
+        ]
 
         if len(_custom_log[log_key]) >= max_requests:
             retry_after = int(window_seconds - (now - _custom_log[log_key][0]))
