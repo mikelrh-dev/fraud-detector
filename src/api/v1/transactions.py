@@ -13,8 +13,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
@@ -181,19 +182,33 @@ async def create_and_score_transaction(
     await velocity_store.record_transaction(payload.user_id, txn.id, txn.created_at)
     velocity_counts = await velocity_store.get_counts(payload.user_id, db)
 
-    # 2.5. User history via column-only query (CV-004): one trip to PG
-    # for distinct cards and recent amounts, instead of pulling full
-    # entities into Python and aggregating in numpy.
-    history_rows = (
-        await db.execute(
-            select(Transaction.card_last4, Transaction.amount).where(
-                Transaction.user_id == payload.user_id,
-                Transaction.deleted_at.is_(None),
-            )
-        )
-    ).all()
-    known_cards = sorted({row[0] for row in history_rows if row[0]})
-    amounts = [row[1] for row in history_rows]
+    # 2.5. User history via SQL aggregates (CV-004): push known_cards
+    # (DISTINCT) and avg_amount to the database.  std_amount is computed
+    # Python-side because SQLite (test runner) lacks func.stddev — this
+    # keeps the test suite portable while still reducing data transfer.
+    base_filter = (
+        Transaction.user_id == payload.user_id,
+        Transaction.deleted_at.is_(None),
+    )
+
+    # Known cards: SELECT DISTINCT card_last4 (portable, no ORM entities).
+    cards_result = await db.execute(
+        select(Transaction.card_last4).where(*base_filter).distinct()
+    )
+    known_cards = sorted(cards_result.scalars().all())
+
+    # Average amount: SELECT AVG(amount) (portable via func.avg).
+    avg_result = await db.execute(
+        select(func.avg(Transaction.amount)).where(*base_filter)
+    )
+    avg_amount = float(avg_result.scalars().one() or 0.0)
+
+    # Std amount: fetch only the amount column (no entities) and compute
+    # std Python-side for SQLite portability.
+    amounts_result = await db.execute(
+        select(Transaction.amount).where(*base_filter)
+    )
+    amounts = [float(a) for a in amounts_result.scalars().all()]
 
     # 3. Graph features (async, network I/O)
     graph_features = await _graph_service.get_graph_features(str(payload.user_id))
@@ -209,7 +224,9 @@ async def create_and_score_transaction(
         "timestamp": now.isoformat(),
         "country": "AR",  # simulate home country for demo purposes
     }
-    user_history = _scoring_service.compute_user_history_stats(amounts) | {
+    user_history = {
+        "avg_amount": avg_amount,
+        "std_amount": float(np.std(amounts)) if len(amounts) > 1 else 0.0,
         "tx_count_last_5min": velocity_counts["5min"],
         "tx_count_last_1h": velocity_counts["1h"],
     }

@@ -487,7 +487,8 @@ class TestCreateTransactionVelocity:
         auth_headers: dict,
     ):
         """2 txns in 5min / 7 in 1h: the pipeline must be asked both windows
-        (FD-VEL-002) and Query A is gone — only Query B touches Postgres."""
+        (FD-VEL-002) and Query A is gone — only aggregate queries touch Postgres."""
+        # 3 aggregate queries: DISTINCT cards, AVG(amount), SELECT amount
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
         pipe_read = _velocity_pipe(0, 2, 7)
         mock_redis.pipeline.side_effect = [
@@ -506,8 +507,8 @@ class TestCreateTransactionVelocity:
         mins = [call.args[1] for call in pipe_read.zcount.call_args_list]
         assert mins[0] != mins[1]
         assert all(call.args[2] == "+inf" for call in pipe_read.zcount.call_args_list)
-        # Exactly one Postgres query (Query B — known cards / amount stats); no 5-min scan
-        assert mock_db.execute.call_count == 1
+        # Exactly three Postgres queries (DISTINCT cards, AVG, SELECT amount) — no full-entity scan
+        assert mock_db.execute.call_count == 3
 
     async def test_redis_down_falls_back_to_postgres(
         self,
@@ -528,15 +529,17 @@ class TestCreateTransactionVelocity:
         ]
         pg_result = MagicMock()
         pg_result.scalars.return_value = pg_scalar
-        # fallback query first, then Query B
-        mock_db.execute = AsyncMock(side_effect=[pg_result, _empty_scalars_result()])
+        # fallback query + 3 aggregate queries (DISTINCT cards, AVG, amounts)
+        mock_db.execute = AsyncMock(
+            side_effect=[pg_result, _empty_scalars_result(), _empty_scalars_result(), _empty_scalars_result()]
+        )
 
         response = await test_client.post(
             "/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers
         )
 
         assert response.status_code == 201
-        assert mock_db.execute.call_count == 2  # _pg_counts + Query B
+        assert mock_db.execute.call_count == 4  # _pg_counts + cards + avg + amounts
         assert any("redis" in r.message.lower() for r in caplog.records)
 
 
