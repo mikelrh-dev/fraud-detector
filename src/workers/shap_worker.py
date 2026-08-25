@@ -19,7 +19,11 @@ import redis.asyncio as redis
 from sqlalchemy import delete
 
 from src.core.database import async_session_maker
-from src.core.stream_dlq import send_to_dlq, recover_pending_messages, get_consumer_group_status
+from src.core.stream_dlq import (
+    get_consumer_group_status,
+    recover_pending_messages,
+    send_to_dlq,
+)
 from src.core.stream_publisher import ensure_consumer_group
 from src.models.shap_attribution import ShapAttribution
 from src.services.shap_service import ShapService, ShapUnavailableError
@@ -66,11 +70,11 @@ async def process_shap_message(
             )
 
             # Insert new attributions (top 5)
-            for rank, (feature, contribution) in enumerate(contributions[:5], 1):
+            for rank, contrib in enumerate(contributions[:5], 1):
                 attr = ShapAttribution(
                     transaction_id=transaction_id,
-                    feature=feature,
-                    contribution=float(contribution),
+                    feature=contrib.feature,
+                    contribution=float(contrib.contribution),
                     rank=rank,
                 )
                 session.add(attr)
@@ -103,7 +107,7 @@ async def process_shap_message(
 
 async def worker_loop(redis_client: redis.Redis) -> None:
     """Main worker loop — consume from stream with consumer group.
-    
+
     Features:
     - Processes new messages from XREADGROUP
     - Recovers stuck messages via XAUTOCLAIM every 60s
@@ -113,11 +117,9 @@ async def worker_loop(redis_client: redis.Redis) -> None:
     shap_service = ShapService()
 
     logger.info("SHAP worker started: stream=%s, group=%s", STREAM_NAME, GROUP_NAME)
-    
+
     # Task to recover pending messages periodically
-    recovery_task = asyncio.create_task(
-        _recovery_loop(redis_client)
-    )
+    recovery_task = asyncio.create_task(_recovery_loop(redis_client))
 
     try:
         while True:
@@ -135,7 +137,7 @@ async def worker_loop(redis_client: redis.Redis) -> None:
                     continue
 
                 # Process each message
-                for stream_name, msg_list in messages:
+                for _stream_name, msg_list in messages:
                     for message_id, fields in msg_list:
                         await _process_message_with_retry(
                             redis_client,
@@ -147,7 +149,7 @@ async def worker_loop(redis_client: redis.Redis) -> None:
             except Exception as exc:
                 logger.error("Error in SHAP worker loop: %s", exc)
                 await asyncio.sleep(1)  # Backoff
-    
+
     finally:
         recovery_task.cancel()
         await redis_client.close()
@@ -164,7 +166,7 @@ async def _process_message_with_retry(
         # Decode message
         data_json = fields.get(b"data", b"{}").decode("utf-8")
         message_data = json.loads(data_json)
-        
+
         retry_count = message_data.get("retry_count", 0)
         transaction_id = message_data.get("transaction_id", "unknown")
 
@@ -180,16 +182,25 @@ async def _process_message_with_retry(
             # Failure: check retry count
             if retry_count >= MAX_RETRIES:
                 # Max retries exceeded: send to DLQ
+                dlq_message_id = (
+                    message_id.decode("utf-8")
+                    if isinstance(message_id, bytes)
+                    else str(message_id)
+                )
                 await send_to_dlq(
                     redis_client,
                     STREAM_NAME,
-                    message_id,
+                    dlq_message_id,
                     GROUP_NAME,
                     CONSUMER_NAME,
                     f"Max retries ({MAX_RETRIES}) exceeded",
                     message_data,
                 )
-                logger.warning("SHAP message sent to DLQ: %s (retries: %d)", transaction_id, retry_count)
+                logger.warning(
+                    "SHAP message sent to DLQ: %s (retries: %d)",
+                    transaction_id,
+                    retry_count,
+                )
             else:
                 # Retry: increment counter and re-enqueue
                 message_data["retry_count"] = retry_count + 1
@@ -200,8 +211,12 @@ async def _process_message_with_retry(
                     approximate=True,
                 )
                 await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
-                logger.info("SHAP message re-queued for retry: %s (attempt %d/%d)", 
-                           transaction_id, retry_count + 1, MAX_RETRIES)
+                logger.info(
+                    "SHAP message re-queued for retry: %s (attempt %d/%d)",
+                    transaction_id,
+                    retry_count + 1,
+                    MAX_RETRIES,
+                )
 
     except Exception as exc:
         logger.error("Error processing SHAP message: %s", exc)
@@ -212,12 +227,17 @@ async def _recovery_loop(redis_client: redis.Redis) -> None:
     while True:
         try:
             await asyncio.sleep(RECOVERY_INTERVAL)
-            
+
             # Get status
-            status = await get_consumer_group_status(redis_client, STREAM_NAME, GROUP_NAME)
+            status = await get_consumer_group_status(
+                redis_client, STREAM_NAME, GROUP_NAME
+            )
             if status.get("pending_count", 0) > 0:
-                logger.info("Found %d pending messages, attempting recovery", status["pending_count"])
-                
+                logger.info(
+                    "Found %d pending messages, attempting recovery",
+                    status["pending_count"],
+                )
+
                 # Recover stuck messages
                 recovered = await recover_pending_messages(
                     redis_client,
@@ -225,10 +245,10 @@ async def _recovery_loop(redis_client: redis.Redis) -> None:
                     GROUP_NAME,
                     CONSUMER_NAME,
                 )
-                
+
                 if recovered:
                     logger.info("Recovered %d stuck messages", len(recovered))
-            
+
         except asyncio.CancelledError:
             break
         except Exception as exc:

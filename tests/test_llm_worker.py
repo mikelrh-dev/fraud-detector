@@ -5,29 +5,64 @@ Tests for the async Redis consumer that generates LLM reports for
 fraudulent transactions.
 """
 
+import asyncio
 import json
 from datetime import datetime, timezone
+from contextlib import suppress
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.models.llm_report import LLMReport, LLMReportStatus
-from src.workers.llm_worker import process_report_request, run_worker
+from src.workers.llm_worker import process_report_request, worker_loop
+
+STREAM = b"fraud:reports"
+
+
+def _scripted_xreadgroup(batches, delay=0.05):
+    """xreadgroup stand-in: returns scripted batches, then suspends.
+
+    A plain AsyncMock returning [] completes without yielding to the event
+    loop, starving sibling tasks (same gotcha as the embedding worker tests).
+    """
+    calls = {"n": 0}
+
+    async def readgroup(*args, **kwargs):
+        n = calls["n"]
+        calls["n"] += 1
+        if n < len(batches):
+            await asyncio.sleep(0)
+            return batches[n]
+        await asyncio.sleep(delay)
+        return []
+
+    return readgroup
+
+
+def _stream_message(payload: dict, message_id=b"1700000000000-0") -> list:
+    return [(b"fraud:reports", [(message_id, {b"data": json.dumps(payload).encode()})])]
 
 
 class TestProcessReportRequest:
-    """Processing a single report request from the queue."""
+    """process_report_request: generate → persist → audit for one message."""
 
-    @pytest.mark.asyncio
-    async def test_process_request_success(self):
-        """Process a valid report request successfully."""
-        mock_db = AsyncMock()
-        mock_llm_service = AsyncMock()
-        mock_llm_service.generate_report.return_value = (
-            "Análisis completo: transacción sospechosa."
-        )
+    @pytest.fixture(autouse=True)
+    def _patched_persistence(self):
+        """Patch the internal session factory and audit service."""
+        with patch(
+            "src.workers.llm_worker.async_session_maker"
+        ) as mock_maker, patch("src.workers.llm_worker.AuditService") as audit_cls:
+            session = AsyncMock()
+            mock_maker.return_value.__aenter__ = AsyncMock(return_value=session)
+            mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+            audit_cls.return_value.create_entry = AsyncMock()
+            self.session = session
+            self.audit_create = audit_cls.return_value.create_entry
+            yield
 
-        message = {
+    @staticmethod
+    def _message() -> dict:
+        return {
             "transaction_id": "123e4567-e89b-12d3-a456-426614174000",
             "score_breakdown": {
                 "rule_score": 60.0,
@@ -36,238 +71,162 @@ class TestProcessReportRequest:
                 "fired_rules": ["high_amount"],
                 "threshold": 70.0,
             },
-            "transaction": {"amount": 15000.0, "merchant_name": "Test Store"},
         }
 
+    @pytest.mark.asyncio
+    async def test_process_request_success(self):
+        """A valid report request persists a COMPLETED report."""
+        mock_llm_service = AsyncMock()
+        mock_llm_service.generate_report.return_value = (
+            "Análisis completo: transacción sospechosa."
+        )
+        mock_db = AsyncMock()
+
         result = await process_report_request(
-            message=message,
-            db=mock_db,
-            llm_service=mock_llm_service,
+            message=self._message(), db=mock_db, llm_service=mock_llm_service
         )
 
         assert result is True
-        # Should have created an LLMReport + AuditEntry
-        assert mock_db.add.call_count >= 1
-        added_report = mock_db.add.call_args_list[0][0][0]
-        assert isinstance(added_report, LLMReport)
-        assert added_report.status == LLMReportStatus.COMPLETED
-        assert added_report.report_text == "Análisis completo: transacción sospechosa."
-        mock_db.flush.assert_called()
+        added = [c[0][0] for c in self.session.add.call_args_list]
+        reports = [r for r in added if isinstance(r, LLMReport)]
+        assert reports, "an LLMReport must be persisted"
+        assert reports[0].status == LLMReportStatus.COMPLETED
+        assert (
+            reports[0].report_text == "Análisis completo: transacción sospechosa."
+        )
 
     @pytest.mark.asyncio
-    async def test_process_request_persists_to_db(self):
-        """Processed report should be persisted and flushed to DB."""
-        mock_db = AsyncMock()
+    async def test_process_request_creates_audit_entry(self):
+        """Successful processing writes an audit trail entry."""
         mock_llm_service = AsyncMock()
         mock_llm_service.generate_report.return_value = (
             "Reporte generado correctamente."
         )
 
-        message = {
-            "transaction_id": "123e4567-e89b-12d3-a456-426614174000",
-            "score_breakdown": {
-                "rule_score": 50.0,
-                "ml_score": 70.0,
-                "ensemble_score": 60.0,
-                "fired_rules": [],
-                "threshold": 70.0,
-            },
-        }
-
         result = await process_report_request(
-            message=message,
-            db=mock_db,
-            llm_service=mock_llm_service,
+            message=self._message(), db=AsyncMock(), llm_service=mock_llm_service
         )
 
         assert result is True
-        assert mock_db.add.call_count >= 1
-        mock_db.flush.assert_called()
+        self.audit_create.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_llm_failure_marks_report_as_failed(self):
-        """When LLM service fails, the report should be marked as failed."""
-        mock_db = AsyncMock()
+    async def test_error_prefixed_report_marked_failed(self):
+        """An 'Error:' report text is persisted as FAILED but still consumed."""
         mock_llm_service = AsyncMock()
         mock_llm_service.generate_report.return_value = (
             "Error: No se pudo conectar con el servicio Ollama."
         )
 
-        message = {
-            "transaction_id": "123e4567-e89b-12d3-a456-426614174000",
-            "score_breakdown": {
-                "rule_score": 60.0,
-                "ml_score": 80.0,
-                "ensemble_score": 72.0,
-                "fired_rules": ["high_amount"],
-                "threshold": 70.0,
-            },
-        }
-
         result = await process_report_request(
-            message=message,
-            db=mock_db,
-            llm_service=mock_llm_service,
+            message=self._message(), db=AsyncMock(), llm_service=mock_llm_service
         )
 
-        # Should still return True (message processed, no re-enqueue needed)
         assert result is True
-        assert mock_db.add.call_count >= 1
-        added_report = mock_db.add.call_args_list[0][0][0]
-        assert added_report.status == LLMReportStatus.FAILED
-        assert added_report.report_text is not None
-        assert "Error" in added_report.report_text
+        added = [c[0][0] for c in self.session.add.call_args_list]
+        reports = [r for r in added if isinstance(r, LLMReport)]
+        assert reports and reports[0].status == LLMReportStatus.FAILED
+        assert "Error" in reports[0].report_text
 
     @pytest.mark.asyncio
-    async def test_retry_count_incremented_on_retry(self):
-        """When the worker needs to retry, retry_count should be incremented."""
-        mock_db = AsyncMock()
+    async def test_llm_exception_returns_false_for_retry(self):
+        """An exception from the LLM service signals retry (returns False)."""
         mock_llm_service = AsyncMock()
-        # Simulate an exception from LLM service
         mock_llm_service.generate_report.side_effect = Exception("Connection error")
 
-        message = {
-            "transaction_id": "123e4567-e89b-12d3-a456-426614174000",
-            "score_breakdown": {
-                "rule_score": 60.0,
-                "ml_score": 80.0,
-                "ensemble_score": 72.0,
-                "fired_rules": ["high_amount"],
-                "threshold": 70.0,
-            },
-            "retry_count": 0,
-        }
-
-        # Should return False to indicate re-enqueue is needed
         result = await process_report_request(
-            message=message,
-            db=mock_db,
-            llm_service=mock_llm_service,
+            message=self._message(), db=AsyncMock(), llm_service=mock_llm_service
         )
 
-        # Returns False to signal re-enqueue
         assert result is False
 
-    @pytest.mark.asyncio
-    async def test_max_retries_exhausted(self):
-        """When max retries reached, the report should persist as failed."""
-        mock_db = AsyncMock()
-        mock_llm_service = AsyncMock()
-        mock_llm_service.generate_report.side_effect = Exception("Still failing")
 
-        message = {
-            "transaction_id": "123e4567-e89b-12d3-a456-426614174000",
-            "score_breakdown": {
-                "rule_score": 60.0,
-                "ml_score": 80.0,
-                "ensemble_score": 72.0,
-                "fired_rules": ["high_amount"],
-                "threshold": 70.0,
-            },
-            "retry_count": 3,  # Already at max
-        }
+class TestWorkerLoop:
+    """worker_loop consumes the fraud:reports stream via consumer groups."""
 
-        result = await process_report_request(
-            message=message,
-            db=mock_db,
-            llm_service=mock_llm_service,
-        )
-
-        # Should return True (processed, no re-enqueue) with failed status
-        assert result is True
-        assert mock_db.add.call_count >= 1
-        added_report = mock_db.add.call_args_list[0][0][0]
-        assert added_report.status == LLMReportStatus.FAILED
-
-
-class TestRunWorker:
-    """Worker loop — consuming messages from Redis queue."""
+    async def _run(self, batches, redis_client):
+        task = asyncio.create_task(worker_loop(redis_client))
+        return task
 
     @pytest.mark.asyncio
-    async def test_worker_processes_one_message(self):
-        """Worker should process a message from the queue."""
-        message = {
-            "transaction_id": "123e4567-e89b-12d3-a456-426614174000",
-            "score_breakdown": {
-                "rule_score": 60.0,
-                "ml_score": 80.0,
-                "ensemble_score": 72.0,
-                "fired_rules": ["high_amount"],
-                "threshold": 70.0,
-            },
-        }
-
+    async def test_worker_acks_processed_message(self):
+        """A successfully processed report must be ACKed."""
         mock_redis = AsyncMock()
-        # First call returns a message, second call returns None (exit loop)
-        mock_redis.brpop = AsyncMock(
-            side_effect=[
-                ("fraud:reports", json.dumps(message)),
-                None,  # No more messages
-            ]
+        mock_redis.xreadgroup = _scripted_xreadgroup(
+            [_stream_message({"transaction_id": "t1", "report_request": True})]
         )
 
-        mock_db = AsyncMock()
-        mock_llm_service = AsyncMock()
-        mock_llm_service.generate_report.return_value = (
-            "Análisis completo."
-        )
+        with patch(
+            "src.workers.llm_worker.ensure_consumer_group", new=AsyncMock()
+        ), patch(
+            "src.workers.llm_worker.LLMService"
+        ) as _, patch(
+            "src.workers.llm_worker.async_session_maker"
+        ) as mock_maker, patch(
+            "src.workers.llm_worker.process_report_request",
+            new=AsyncMock(return_value=True),
+        ):
+            mock_maker.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.workers.llm_worker.async_session_maker") as mock_session_maker:
-            mock_session_maker.return_value = mock_db
+            task = await self._run(None, mock_redis)
+            await _wait_for(lambda: mock_redis.xack.await_count > 0, timeout=2.0)
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
-            await run_worker(
-                redis_client=mock_redis,
-                llm_service=mock_llm_service,
-                max_iterations=1,  # Stop after 1 iteration
-            )
-
-        # Should have popped from the queue
-        mock_redis.brpop.assert_called()
-        assert mock_db.add.call_count >= 1
-        mock_db.flush.assert_called()
+        assert mock_redis.xack.await_count >= 1
 
     @pytest.mark.asyncio
-    async def test_worker_handles_empty_queue(self):
-        """Worker should exit gracefully when queue is empty."""
+    async def test_worker_survives_empty_queue(self):
+        """Empty reads must keep the loop alive without errors."""
         mock_redis = AsyncMock()
-        mock_redis.brpop = AsyncMock(return_value=None)
+        mock_redis.xreadgroup = _scripted_xreadgroup([])
 
-        mock_llm_service = AsyncMock()
+        with patch(
+            "src.workers.llm_worker.ensure_consumer_group", new=AsyncMock()
+        ), patch("src.workers.llm_worker.LLMService"), patch(
+            "src.workers.llm_worker.process_report_request", new=AsyncMock()
+        ):
+            task = await self._run(None, mock_redis)
+            await asyncio.sleep(0.15)
+            alive = not task.done()
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
-        with patch("src.workers.llm_worker.async_session_maker") as mock_session_maker:
-            mock_session_maker.return_value = AsyncMock()
-
-            await run_worker(
-                redis_client=mock_redis,
-                llm_service=mock_llm_service,
-                max_iterations=1,
-            )
-
-        # Should have exited gracefully
-        mock_redis.brpop.assert_called_once()
+        assert alive, f"worker_loop exited early: {task.exception()!r}"
 
     @pytest.mark.asyncio
-    async def test_worker_handles_malformed_json(self):
-        """Worker should handle malformed JSON without crashing."""
+    async def test_worker_skips_malformed_payload_without_crash(self):
+        """Malformed JSON must not crash the loop nor ACK anything."""
         mock_redis = AsyncMock()
-        mock_redis.brpop = AsyncMock(
-            side_effect=[
-                ("fraud:reports", "this is not valid json"),
-                None,
-            ]
+        mock_redis.xreadgroup = _scripted_xreadgroup(
+            [(b"fraud:reports", [(b"1700000000000-1", {b"data": b"not-json{)"})])]
         )
 
-        mock_db = AsyncMock()
-        mock_llm_service = AsyncMock()
+        processed = AsyncMock()
+        with patch(
+            "src.workers.llm_worker.ensure_consumer_group", new=AsyncMock()
+        ), patch("src.workers.llm_worker.LLMService"), patch(
+            "src.workers.llm_worker.process_report_request", new=processed
+        ):
+            task = await self._run(None, mock_redis)
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
-        with patch("src.workers.llm_worker.async_session_maker") as mock_session_maker:
-            mock_session_maker.return_value = mock_db
+        processed.assert_not_awaited()
+        mock_redis.xack.assert_not_awaited()
 
-            await run_worker(
-                redis_client=mock_redis,
-                llm_service=mock_llm_service,
-                max_iterations=1,
-            )
 
-        # Worker should not crash
-        mock_redis.brpop.assert_called()
+async def _wait_for(predicate, timeout: float = 2.0) -> bool:
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        await asyncio.sleep(0.01)
+    return predicate()
