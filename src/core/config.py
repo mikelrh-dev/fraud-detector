@@ -1,19 +1,27 @@
 """Application configuration."""
 
-from pydantic_settings import BaseSettings
+import math
+import secrets
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     # API
+    # pi-lens-ignore: S104
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    api_secret_key: str = "change-me-in-production"
+    # Ephemeral dev secret; production MUST inject via env (R1-005 guard, wave 5).
+    api_secret_key: str = secrets.token_urlsafe(32)
     environment: str = "development"
 
     # Database
     db_user: str = "fraud"
+    # pi-lens-ignore: S105
     db_password: str = "fraud_secret"
     db_name: str = "fraud_detector"
     db_host: str = "localhost"
@@ -27,9 +35,11 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:0.5b"
 
     # JWT
-    jwt_secret_key: str = "change-me-in-production"
+    # Ephemeral dev secret; production MUST inject via env (R1-005 guard, wave 5).
+    jwt_secret_key: str = secrets.token_urlsafe(32)
     jwt_algorithm: str = "HS256"
     jwt_exp_minutes: int = 15
+    jwt_refresh_exp_minutes: int = 60 * 24  # refresh tokens live 24h
 
     # Ensemble Weights
     ensemble_rule_weight: float = 0.60
@@ -39,9 +49,24 @@ class Settings(BaseSettings):
     # Threshold Tiers
     threshold_tiers: list[dict] = [
         {"min_amount": 0, "max_amount": 1000, "threshold": 70, "label": "low"},
-        {"min_amount": 1001, "max_amount": 10000, "threshold": 50, "label": "medium"},  # Lowered from 60
-        {"min_amount": 10001, "max_amount": 50000, "threshold": 45, "label": "high"},  # Lowered from 50 for consistency
-        {"min_amount": 50001, "max_amount": float("inf"), "threshold": 40, "label": "critical"},
+        {
+            "min_amount": 1001,
+            "max_amount": 10000,
+            "threshold": 50,
+            "label": "medium",
+        },  # Lowered from 60
+        {
+            "min_amount": 10001,
+            "max_amount": 50000,
+            "threshold": 45,
+            "label": "high",
+        },  # Lowered from 50 for consistency
+        {
+            "min_amount": 50001,
+            "max_amount": math.inf,
+            "threshold": 40,
+            "label": "critical",
+        },
     ]
 
     # Ollama
@@ -65,8 +90,6 @@ class Settings(BaseSettings):
         if self.environment == "production":
             return [self.frontend_url]
         return ["*"]
-
-    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

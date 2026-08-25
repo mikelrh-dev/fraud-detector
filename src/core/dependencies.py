@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import async_session_maker
 from src.core.redis import get_redis as _get_redis
-from src.core.security import decode_access_token
+from src.core.security import decode_access_token, is_token_blacklisted
 from src.services.velocity_store import VelocityStore
 
 _security_scheme = HTTPBearer(auto_error=False)
@@ -36,14 +36,19 @@ def get_velocity_store() -> VelocityStore:
     return VelocityStore()
 
 
-def get_current_user(
+async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_security_scheme),
+    redis_client: Redis = Depends(get_redis),
 ) -> dict:
     """Extract and validate the current user from the JWT in the Authorization header.
 
+    Also enforces token revocation: a JTI present in the Redis blacklist
+    (written on logout) is rejected (R1-002).
+
     Returns a dict with user_id and role on success.
-    Raises HTTPException 401 if the token is missing, invalid, or expired.
+    Raises HTTPException 401 if the token is missing, invalid, expired,
+    or revoked.
     """
     if credentials is None:
         raise HTTPException(
@@ -54,13 +59,30 @@ def get_current_user(
 
     try:
         payload = decode_access_token(credentials.credentials)
-        return {"user_id": payload["sub"], "role": payload["role"]}
-    except Exception:
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    jti = payload.get("jti")
+    if jti is None:
+        # Tokens without a JTI cannot be revoked; refuse them outright.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if await is_token_blacklisted(redis_client, jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return {"user_id": payload["sub"], "role": payload["role"]}
 
 
 def require_role(required_role: str) -> Callable[[dict], dict]:

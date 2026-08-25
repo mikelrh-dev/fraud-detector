@@ -44,7 +44,9 @@ class MerchantEmbeddingService:
         try:
             self.model = SentenceTransformer(model_name)
             self.model_name = model_name
-            logger.info("MerchantEmbeddingService initialized with model: %s", model_name)
+            logger.info(
+                "MerchantEmbeddingService initialized with model: %s", model_name
+            )
         except Exception as exc:
             logger.error("Failed to load embedding model: %s", exc)
             self.model = None
@@ -141,7 +143,9 @@ class MerchantEmbeddingService:
             return is_spoofed, best_match, float(max_similarity)
 
         except Exception as exc:
-            logger.error("Error during spoofing detection for '%s': %s", merchant_name, exc)
+            logger.error(
+                "Error during spoofing detection for '%s': %s", merchant_name, exc
+            )
             return False, None, None
 
     def add_trusted_merchant(self, merchant_key: str, merchant_name: str) -> None:

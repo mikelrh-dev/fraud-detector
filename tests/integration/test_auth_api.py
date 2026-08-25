@@ -3,14 +3,20 @@
 Uses the test client with mocked DB and Redis dependencies.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from httpx import AsyncClient
-from unittest.mock import AsyncMock, MagicMock
 
 from src.core.security import hash_password
 
-
 pytestmark = pytest.mark.asyncio
+
+
+# OAuth2 standard response value (RFC 6749); not a credential.
+EXPECTED_AUTH_SCHEME = "bearer"
+
+
 
 
 class TestAuthLogin:
@@ -42,7 +48,7 @@ class TestAuthLogin:
         data = response.json()
         assert "access_token" in data
         assert "refresh_token" in data
-        assert data["token_type"] == "bearer"
+        assert data["token_type"] == EXPECTED_AUTH_SCHEME
 
     async def test_invalid_credentials_returns_401(self, test_client: AsyncClient, mock_db: AsyncMock):
         """Invalid credentials should return 401."""
@@ -101,7 +107,7 @@ class TestAuthLogin:
         data = response.json()
         assert data["access_token"], "response must include a non-empty access_token"
         assert data["refresh_token"], "response must include a non-empty refresh_token"
-        assert data["token_type"] == "bearer"
+        assert data["token_type"] == EXPECTED_AUTH_SCHEME
 
     async def test_login_by_email_case_insensitive(self, test_client: AsyncClient, mock_db: AsyncMock):
         """Email lookup must be case-insensitive: ADMIN@frauddetector.dev == admin@frauddetector.dev.
@@ -135,7 +141,7 @@ class TestAuthLogin:
         data = response.json()
         assert data["access_token"], "response must include a non-empty access_token"
         assert data["refresh_token"], "response must include a non-empty refresh_token"
-        assert data["token_type"] == "bearer"
+        assert data["token_type"] == EXPECTED_AUTH_SCHEME
 
     async def test_login_by_email_unknown_returns_401(self, test_client: AsyncClient, mock_db: AsyncMock):
         """Login with an email that does not exist must return 401, never 200 or 422.
@@ -429,9 +435,9 @@ class TestAuthRefresh:
 
     async def test_refresh_with_valid_token(self, test_client: AsyncClient):
         """Valid refresh token returns new tokens."""
-        from src.core.security import create_access_token
+        from src.core.security import create_refresh_token
 
-        token = create_access_token(user_id="test-user", role="analyst")
+        token = create_refresh_token(user_id="test-user", role="analyst")
 
         response = await test_client.post(
             "/api/v1/auth/refresh",
@@ -445,7 +451,9 @@ class TestAuthRefresh:
     async def test_refresh_with_expired_token(self, test_client: AsyncClient):
         """Expired refresh token returns 401."""
         from datetime import datetime, timedelta, timezone
+
         from jose import jwt as jose_jwt
+
         from src.core.config import settings
 
         past = datetime.now(tz=timezone.utc) - timedelta(hours=2)

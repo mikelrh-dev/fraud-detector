@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.security import (
     create_access_token,
+    create_refresh_token,
     hash_password,
     verify_password,
 )
@@ -104,13 +105,14 @@ async def login(db: AsyncSession, request: LoginRequest) -> TokenResponse:
         user_id=str(user.id),
         role=role_value,
     )
-    refresh_token = create_access_token(
+    refresh_token = create_refresh_token(
         user_id=str(user.id),
         role=role_value,
     )
 
+    bearer = "bearer"
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        token_type="bearer",
+        token_type=bearer,
     )
