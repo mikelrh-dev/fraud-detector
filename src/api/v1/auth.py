@@ -144,7 +144,9 @@ async def logout_endpoint(
 
     try:
         payload = decode_access_token(token)
-        jti = payload["jti"]  # always present since R1-002; missing jti is rejected by get_current_user anyway
+        jti = payload[
+            "jti"
+        ]  # always present since R1-002; missing jti is rejected by get_current_user anyway
         exp = payload.get("exp", 900)
         ttl = max(exp - int(time.time()), 60)
         await blacklist_token(redis_client, jti, ttl)

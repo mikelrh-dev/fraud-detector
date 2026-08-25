@@ -1,13 +1,7 @@
-"""Embedding Worker — Asynchronous merchant spoofing detection with Redis Streams.
+"""Embedding Worker - Async merchant spoofing detection with Redis Streams.
 
-Processes transactions from Redis Streams (fraud:embeddings) and performs
-merchant spoofing analysis using sentence embeddings.
-
-Features:
-- Consumer group: "embedding-workers"
-- Stream: "fraud:embeddings"
-- Automatic recovery of stuck messages (XAUTOCLAIM)
-- Dead-letter queue for failed messages
+Processing failures (R4-005) propagate to the caller so messages stay
+unACKed in the PEL for the XAUTOCLAIM recovery loop to reprocess.
 """
 
 import asyncio
