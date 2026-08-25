@@ -129,17 +129,13 @@ docker compose exec api alembic upgrade head
 ### 4.2 Crear usuario admin (opcional, para testing)
 ```bash
 docker compose exec api python scripts/create_admin.py
-# O directamente:
-python create_admin_user.py
-
-# Output:
-# Admin user created: admin / admin_secret_password
+# Prints a ready-to-run SQL INSERT statement
 ```
 
 ### 4.3 Generar datos de test (opcional, para testing)
 ```bash
-docker compose exec api python generate_test_data.py
-# Genera 50 transacciones de ejemplo
+python scripts/generate_synthetic_data.py
+# Genera 50k transacciones sinteticas (~5% fraude)
 ```
 
 ---
