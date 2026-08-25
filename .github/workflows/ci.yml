@@ -40,16 +40,18 @@ jobs:
           POSTGRES_USER: fraud
           POSTGRES_PASSWORD: fraud
           POSTGRES_DB: fraud_detector
-        ports: [5432:5432]
+        ports:
+          - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U fraud"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "pg_isready -U fraud" --health-interval 10s
+          --health-timeout 5s --health-retries 5
       redis:
         image: redis:7-alpine
-        ports: [6379:6379]
-        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s
+          --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -63,9 +65,13 @@ jobs:
           pip install pytest pytest-asyncio pytest-cov httpx
       - name: Run tests
         env:
-          DATABASE_URL: postgresql+asyncpg://fraud:fraud@localhost:5432/fraud_detector
+          DB_USER: fraud
+          DB_PASSWORD: fraud
+          DB_NAME: fraud_detector
+          DB_HOST: "127.0.0.1"
+          DB_PORT: "5432"
           REDIS_URL: redis://localhost:6379/0
-        run: pytest tests/ -v --cov=src --cov-report=xml
+        run: pytest tests/ -v --cov=src --cov-report=xml --cov-fail-under=74
 
   frontend-lint-test:
     name: Frontend Lint + Test
@@ -117,4 +123,6 @@ jobs:
       - name: Build backend image
         run: docker build -t fraud-detector-api -f Dockerfile .
       - name: Build frontend image
-        run: docker build -t fraud-detector-frontend -f frontend/Dockerfile ./frontend
+        run: >-
+          docker build -t fraud-detector-frontend
+          -f frontend/Dockerfile ./frontend
