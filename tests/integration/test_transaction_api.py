@@ -22,7 +22,9 @@ pytestmark = pytest.mark.asyncio
 
 
 def _make_mock_transaction(**overrides) -> MagicMock:
-    """Helper to create a mock Transaction with sensible defaults."""
+    """Build a mock Transaction; defaults match the conftest analyst user
+    (R1-003) so owner-scoped reads succeed under auth_headers.
+    """
     txn = MagicMock(spec=Transaction)
     txn.id = overrides.get("id", uuid4())
     txn.amount = overrides.get("amount", 100.0)
@@ -603,9 +605,7 @@ class TestCreateTransactionShapEnqueue:
 
         assert response.status_code == 201
         shap_calls = [
-            call
-            for call in publish_mock.call_args_list
-            if call.args[0] == "fraud:shap"
+            call for call in publish_mock.call_args_list if call.args[0] == "fraud:shap"
         ]
         assert len(shap_calls) == 1
         message = shap_calls[0].args[1]

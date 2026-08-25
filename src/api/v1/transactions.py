@@ -1,11 +1,17 @@
-"""Transaction endpoints — CRUD with fraud scoring pipeline."""
+"""Transaction endpoints - CRUD with fraud scoring pipeline.
 
+The fraud scoring pipeline (rule engine -> feature engine -> ML model ->
+ensemble) lives in ``src.services.scoring_service.ScoringService``; this
+module orchestrates I/O around it. Ownership model (R1-003): analysts see
+only their own transactions; admins see everything. Foreign objects are
+reported as 404 to avoid leaking existence.
+"""
+
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-
-import numpy as np
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -13,8 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
 from src.core.config import settings
+from src.core.dependencies import (
+    get_current_user,
+    get_db,
+    get_velocity_store,
+    require_role,
+)
 from src.core.redis import get_redis
-from src.core.dependencies import get_current_user, get_db, get_velocity_store, require_role
 from src.core.stream_publisher import publish_event
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
@@ -34,6 +45,7 @@ from src.services.feature_engine import FeatureEngine
 from src.services.graph_service import FraudGraphService
 from src.services.ml_model import MLModelService
 from src.services.rule_engine import RuleEngine
+from src.services.scoring_service import ScoringService
 from src.services.shap_service import ShapService
 from src.services.transaction import (
     create_transaction,
@@ -77,9 +89,11 @@ def _to_float(value: object) -> float:
         return 0.0
 
 
-def _determine_friction_level(score: float, classification: str) -> tuple[str, str | None]:
+def _determine_friction_level(
+    score: float, classification: str
+) -> tuple[str, str | None]:
     """Determine dynamic friction level and action based on risk score and classification.
-    
+
     Returns:
         (friction_level, action) tuple where:
         - friction_level: "allow" | "challenge" | "block"
@@ -88,7 +102,7 @@ def _determine_friction_level(score: float, classification: str) -> tuple[str, s
     if classification == "fraud":
         # Fraud: automatic block
         return "block", "block_transaction"
-    
+
     if classification == "review":
         # Grey zone: challenge user
         # In production, this would be configurable (3D Secure, SMS, biometric)
@@ -98,9 +112,10 @@ def _determine_friction_level(score: float, classification: str) -> tuple[str, s
         else:
             # Lower risk in review zone: SMS is sufficient
             return "challenge", "request_sms"
-    
+
     # Legitimate: no friction
     return "allow", None
+
 
 _rule_engine = RuleEngine()
 _ensemble_scorer = EnsembleScorer()
@@ -109,6 +124,16 @@ _ml_service = MLModelService()
 _feature_engine = FeatureEngine()
 _shap_service = ShapService()
 _graph_service = FraudGraphService()
+# CV-001: scoring pipeline lives in a service. It holds the same component
+# instances the tests monkeypatch (transactions_api._feature_engine etc.),
+# so existing test contracts are preserved while the orchestration logic
+# moves out of the endpoint.
+_scoring_service = ScoringService(
+    rule_engine=_rule_engine,
+    feature_engine=_feature_engine,
+    ml_service=_ml_service,
+    ensemble_scorer=_ensemble_scorer,
+)
 
 # Load ML model at startup (synchronous, runs once)
 _ml_service.load_model()
@@ -145,26 +170,28 @@ async def create_and_score_transaction(
         user_id=payload.user_id,
     )
 
-    # 2. Build context for rule engine
-    # Record the txn in the velocity store (Redis ZSET), then read real
-    # 5min/1h counts. This replaces the per-request 5-minute Postgres scan
-    # (Query A); counters fall back to Postgres when Redis is unavailable.
+    # 2. Velocity counters (Redis ZSET with PG fallback)
     await velocity_store.record_transaction(payload.user_id, txn.id, txn.created_at)
     velocity_counts = await velocity_store.get_counts(payload.user_id, db)
 
-    # All user's non-deleted transactions for known cards
-    all_user_query = select(Transaction).where(
-        Transaction.user_id == payload.user_id,
-        Transaction.deleted_at.is_(None),
-    )
-    all_user_result = await db.execute(all_user_query)
-    all_user_txns = list(all_user_result.scalars().all())
-    known_cards = list({t.card_last4 for t in all_user_txns if t.card_last4})
+    # 2.5. User history via column-only query (CV-004): one trip to PG
+    # for distinct cards and recent amounts, instead of pulling full
+    # entities into Python and aggregating in numpy.
+    history_rows = (
+        await db.execute(
+            select(Transaction.card_last4, Transaction.amount).where(
+                Transaction.user_id == payload.user_id,
+                Transaction.deleted_at.is_(None),
+            )
+        )
+    ).all()
+    known_cards = sorted({row[0] for row in history_rows if row[0]})
+    amounts = [row[1] for row in history_rows]
 
-    # 3. Get graph features (fraud network analysis) — async
+    # 3. Graph features (async, network I/O)
     graph_features = await _graph_service.get_graph_features(str(payload.user_id))
 
-    # 3.5. Rule engine evaluation with timestamp and context
+    # 4. Build scoring inputs
     now = datetime.now(tz=timezone.utc)
     tx_data: dict[str, Any] = {
         "amount": payload.amount,
@@ -175,32 +202,33 @@ async def create_and_score_transaction(
         "timestamp": now.isoformat(),
         "country": "AR",  # simulate home country for demo purposes
     }
-    context: dict[str, Any] = {
-        "recent_transactions": velocity_counts["5min"],
-        "known_cards": known_cards,
-        "merchant_blacklist": ["crypto exchange pro", "online gambling", "money transfer now"],
-        "home_country": "AR",
-        "graph_features": graph_features,  # Add graph context for rules
-    }
-    rule_score, fired_rules = _rule_engine.evaluate(tx_data, context)
-
-    # 4. ML scoring via XGBoost
-    user_history = {
-        "avg_amount": _to_float(np.mean([_to_float(t.amount) for t in all_user_txns])) if all_user_txns else 0.0,
-        "std_amount": _to_float(np.std([_to_float(t.amount) for t in all_user_txns])) if len(all_user_txns) > 1 else 0.0,
+    user_history = _scoring_service.compute_user_history_stats(amounts) | {
         "tx_count_last_5min": velocity_counts["5min"],
         "tx_count_last_1h": velocity_counts["1h"],
     }
-    features = _feature_engine.transform(tx_data, user_history=user_history)
-    ml_score = _ml_service.predict(features)
+    context: dict[str, Any] = {
+        "recent_transactions": velocity_counts["5min"],
+        "known_cards": known_cards,
+        "merchant_blacklist": [
+            "crypto exchange pro",
+            "online gambling",
+            "money transfer now",
+        ],
+        "home_country": "AR",
+        "graph_features": graph_features,
+    }
 
-    # 5. Ensemble scoring
-    threshold = _ensemble_scorer.get_threshold(payload.amount)
-    ensemble_score = _ensemble_scorer.combine(
-        rule_score=rule_score,
-        ml_score=ml_score,
+    # 5. Scoring pipeline (CV-001 in service; CV-002 in worker thread
+    # to keep the event loop free during CPU-bound rule/ML/ensemble work)
+    score = await asyncio.to_thread(
+        _scoring_service.compute_scores, tx_data, context, user_history
     )
-    classification = _ensemble_scorer.classify(ensemble_score, threshold)
+    rule_score, fired_rules = score.rule_score, score.fired_rules
+    features = score.features
+    ml_score = score.ml_score
+    threshold = score.threshold
+    ensemble_score = score.ensemble_score
+    classification = score.classification
 
     # 6. Persist the score
     fraud_score = FraudScore(
@@ -264,24 +292,27 @@ async def create_and_score_transaction(
 
     # 10. Publish LLM report event to Redis Stream (best-effort, non-blocking)
     try:
-        await publish_event("fraud:llm", {
-            "transaction_id": str(txn.id),
-            "score_breakdown": {
-                "rule_score": rule_score,
-                "ml_score": ml_score,
-                "ensemble_score": ensemble_score,
-                "threshold": threshold,
-                "classification": classification,
-                "fired_rules": fired_rules,
+        await publish_event(
+            "fraud:llm",
+            {
+                "transaction_id": str(txn.id),
+                "score_breakdown": {
+                    "rule_score": rule_score,
+                    "ml_score": ml_score,
+                    "ensemble_score": ensemble_score,
+                    "threshold": threshold,
+                    "classification": classification,
+                    "fired_rules": fired_rules,
+                },
+                "transaction": {
+                    "id": str(txn.id),
+                    "amount": payload.amount,
+                    "currency": payload.currency,
+                    "merchant_name": payload.merchant_name,
+                    "merchant_category": payload.merchant_category,
+                },
             },
-            "transaction": {
-                "id": str(txn.id),
-                "amount": payload.amount,
-                "currency": payload.currency,
-                "merchant_name": payload.merchant_name,
-                "merchant_category": payload.merchant_category,
-            },
-        })
+        )
     except Exception:
         logger.exception("Failed to publish LLM event")
 
@@ -289,22 +320,28 @@ async def create_and_score_transaction(
     # Snapshots the EXACT feature vector used for scoring
     if classification in ("fraud", "review"):
         try:
-            await publish_event("fraud:shap", {
-                "transaction_id": str(txn.id),
-                "classification": classification,
-                "features": features.tolist(),
-                "feature_names": _feature_engine.get_feature_names(),
-                "model_fingerprint": _shap_service.model_fingerprint(),
-            })
+            await publish_event(
+                "fraud:shap",
+                {
+                    "transaction_id": str(txn.id),
+                    "classification": classification,
+                    "features": features.tolist(),
+                    "feature_names": _feature_engine.get_feature_names(),
+                    "model_fingerprint": _shap_service.model_fingerprint(),
+                },
+            )
         except Exception:
             logger.exception("Failed to publish SHAP event")
 
     # 12. Publish merchant embedding event for spoofing detection (best-effort)
     try:
-        await publish_event("fraud:embeddings", {
-            "transaction_id": str(txn.id),
-            "merchant_name": payload.merchant_name,
-        })
+        await publish_event(
+            "fraud:embeddings",
+            {
+                "transaction_id": str(txn.id),
+                "merchant_name": payload.merchant_name,
+            },
+        )
     except Exception:
         logger.exception("Failed to publish embedding event")
 
@@ -444,6 +481,7 @@ async def get_transaction_endpoint(
         )
         rows = list(shap_result.scalars().all())
         if rows:
+            assert breakdown is not None  # narrowed by `if score is not None`
             breakdown.shap_contributions = [
                 ShapContribution(feature=row.feature, contribution=row.contribution)
                 for row in rows
@@ -466,14 +504,16 @@ async def get_transaction_endpoint(
     )
 
 
-@router.get("/{transaction_id}/embedding", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get(
+    "/{transaction_id}/embedding", response_model=dict, status_code=status.HTTP_200_OK
+)
 async def get_embedding_analysis(
     transaction_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Get merchant embedding analysis results for a transaction.
-    
+
     Returns spoofing detection results if available (may return 404 if
     the worker hasn't processed the transaction yet).
     """
@@ -490,15 +530,16 @@ async def get_embedding_analysis(
     try:
         result_key = f"embedding_result:{transaction_id}"
         result_json = await redis.get(result_key)
-        
+
         if not result_json:
             return {
                 "transaction_id": str(transaction_id),
                 "status": "pending",
                 "message": "Embedding analysis not yet completed",
             }
-        
+
         import json
+
         result = json.loads(result_json)
         return result
     except Exception as exc:
@@ -515,7 +556,7 @@ async def get_graph_stats(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Get fraud network graph statistics.
-    
+
     Returns overall graph metrics: nodes, edges, density, known fraudsters.
     """
     try:
@@ -532,13 +573,15 @@ async def get_graph_stats(
         }
 
 
-@router.get("/{user_id}/graph-features", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get(
+    "/{user_id}/graph-features", response_model=dict, status_code=status.HTTP_200_OK
+)
 async def get_user_graph_features(
     user_id: str,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Get fraud network features for a specific user.
-    
+
     Returns: is_near_fraud, degree_centrality, shortest_path_to_fraud, connected_fraudsters.
     """
     own_id = str(_current_user_uuid(current_user))
@@ -554,7 +597,9 @@ async def get_user_graph_features(
             "graph_features": features,
         }
     except Exception as exc:
-        logger.exception("Failed to retrieve graph features for user %s: %s", user_id, exc)
+        logger.exception(
+            "Failed to retrieve graph features for user %s: %s", user_id, exc
+        )
         return {
             "user_id": user_id,
             "status": "error",
