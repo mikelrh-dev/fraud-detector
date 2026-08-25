@@ -11,6 +11,26 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    def _check_production_secrets(self) -> None:
+        """R1-005: production must inject secrets explicitly via env.
+
+        Dev defaults are ephemeral random values; in production they would
+        silently differ between workers and rotate on every restart.
+        """
+        if self.environment != "production":
+            return
+        injected = {"jwt_secret_key", "api_secret_key"} & self.model_fields_set
+        missing = {"jwt_secret_key", "api_secret_key"} - injected
+        if missing:
+            raise ValueError(
+                "Production environment requires explicit env injection of: "
+                + ", ".join(sorted(missing))
+            )
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._check_production_secrets()
+
     # API
     # pi-lens-ignore: S104
     api_host: str = "0.0.0.0"

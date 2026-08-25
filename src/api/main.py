@@ -27,12 +27,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await engine.dispose()
 
 
+_is_production = settings.environment == "production"
+
 app = FastAPI(
     title="Fraud Detector Hybrid",
     description="Sistema híbrido de detección de fraude con motor de reglas + LLM local",
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # R1-006: interactive API docs are a development convenience only.
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
     lifespan=lifespan,
 )
 
