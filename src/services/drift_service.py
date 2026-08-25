@@ -8,7 +8,6 @@ becoming obsolete and needs retraining.
 import logging
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from evidently.report import Report
 from evidently.metric_preset import DataDriftPreset

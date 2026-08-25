@@ -3,6 +3,7 @@
 These tests invoke `register_user` directly, BYPASSING the Pydantic schema,
 to prove the invariant holds regardless of schema drift.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -46,7 +47,9 @@ def _no_existing_user(mock_db) -> None:
 
 @pytest.mark.parametrize("request_factory", [_bypass_request, _namespace_request])
 @pytest.mark.parametrize("bad_role", ["admin", "superadmin", "root"])
-async def test_register_user_rejects_non_analyst_roles(request_factory, bad_role, mock_db):
+async def test_register_user_rejects_non_analyst_roles(
+    request_factory, bad_role, mock_db
+):
     """Any non-analyst role raises a domain error and persists NOTHING."""
     request = request_factory(bad_role)
     mock_db.add.reset_mock()

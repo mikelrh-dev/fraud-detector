@@ -46,10 +46,12 @@ async def test_recovery_loop_logs_exception_on_every_iteration(caplog):
     recovery_loop = getattr(worker, "_recovery_loop", None)
     assert recovery_loop is not None, "_recovery_loop is not implemented"
 
-    with patch(
-        "src.workers.embedding_worker.recover_pending_messages", new=failing_recover
-    ), patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.01), caplog.at_level(
-        logging.ERROR, logger=WORKER_LOGGER
+    with (
+        patch(
+            "src.workers.embedding_worker.recover_pending_messages", new=failing_recover
+        ),
+        patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.01),
+        caplog.at_level(logging.ERROR, logger=WORKER_LOGGER),
     ):
         task = asyncio.create_task(recovery_loop())
         ran_cycles = await _wait_for(
@@ -76,11 +78,13 @@ async def test_process_queue_shutdown_cancels_recovery_task_cleanly():
     """Cancelling process_queue must reap the recovery task — no strays, no errors."""
     recover_mock = AsyncMock(return_value=[])
 
-    with patch(
-        "src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()
-    ), patch(
-        "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
-    ), patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02):
+    with (
+        patch("src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()),
+        patch(
+            "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
+        ),
+        patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02),
+    ):
         worker = _make_worker()
 
         task = asyncio.create_task(worker.process_queue())
@@ -96,6 +100,4 @@ async def test_process_queue_shutdown_cancels_recovery_task_cleanly():
         current = asyncio.current_task()
         strays = [t for t in asyncio.all_tasks() if t is not current]
 
-    assert strays == [], (
-        f"recovery task outlived process_queue shutdown: {strays}"
-    )
+    assert strays == [], f"recovery task outlived process_queue shutdown: {strays}"

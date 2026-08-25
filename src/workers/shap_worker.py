@@ -22,7 +22,6 @@ from src.core.database import async_session_maker
 from src.core.stream_dlq import send_to_dlq, recover_pending_messages, get_consumer_group_status
 from src.core.stream_publisher import ensure_consumer_group
 from src.models.shap_attribution import ShapAttribution
-from src.services.audit import AuditService
 from src.services.shap_service import ShapService, ShapUnavailableError
 
 logger = logging.getLogger(__name__)

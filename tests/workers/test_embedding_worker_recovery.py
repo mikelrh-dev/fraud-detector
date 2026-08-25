@@ -49,14 +49,13 @@ async def test_stale_pel_entry_is_claimed_processed_and_acked():
     """Stale PEL entry: claimed → processed → result persisted → ACKed."""
     recover_mock = AsyncMock(return_value=[(STALE_MESSAGE_ID, _stale_fields())])
 
-    with patch(
-        "src.workers.embedding_worker.MerchantEmbeddingService"
-    ) as service_cls, patch(
-        "src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()
-    ), patch(
-        "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
-    ), patch(
-        "src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02
+    with (
+        patch("src.workers.embedding_worker.MerchantEmbeddingService") as service_cls,
+        patch("src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()),
+        patch(
+            "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
+        ),
+        patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02),
     ):
         service_cls.return_value.detect_spoofing.return_value = (
             False,
@@ -89,9 +88,7 @@ async def test_stale_pel_entry_is_claimed_processed_and_acked():
             assert result["is_spoofed"] is False
 
             # ...and ACKed with the exact stream/group/message coordinates.
-            redis_mock.xack.assert_any_call(
-                STREAM_NAME, GROUP_NAME, STALE_MESSAGE_ID
-            )
+            redis_mock.xack.assert_any_call(STREAM_NAME, GROUP_NAME, STALE_MESSAGE_ID)
         finally:
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -109,9 +106,11 @@ async def test_fresh_pel_entry_with_low_idle_time_is_not_claimed():
     redis_client.xreadgroup = idle_xreadgroup()
     redis_client.xautoclaim.return_value = ["0-0", []]  # nothing claimed yet
 
-    with patch("src.workers.embedding_worker.MerchantEmbeddingService"), patch(
-        "src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()
-    ), patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02):
+    with (
+        patch("src.workers.embedding_worker.MerchantEmbeddingService"),
+        patch("src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()),
+        patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02),
+    ):
         worker = EmbeddingWorker()
         worker.redis_client = redis_client
 
@@ -129,9 +128,7 @@ async def test_fresh_pel_entry_with_low_idle_time_is_not_claimed():
             assert call.kwargs.get("min_idle_time") == PENDING_TIMEOUT_MS
 
             await asyncio.sleep(0.05)
-            assert redis_client.xack.await_count == 0, (
-                "fresh message must not be ACKed"
-            )
+            assert redis_client.xack.await_count == 0, "fresh message must not be ACKed"
             assert redis_client.setex.await_count == 0, (
                 "fresh message must not be processed"
             )

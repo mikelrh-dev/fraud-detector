@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.v1.rate_limit import check_rate_limit
 from src.core.config import settings
 from src.core.dependencies import get_current_user, get_db, get_velocity_store, require_role
-from src.core.redis import enqueue
 from src.core.stream_publisher import publish_event
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore

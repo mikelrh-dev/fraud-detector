@@ -15,4 +15,3 @@ try:
     import sentence_transformers  # noqa: F401
 except Exception:
     sys.modules["sentence_transformers"] = MagicMock()
-

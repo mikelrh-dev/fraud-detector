@@ -11,7 +11,6 @@ messages still sitting in the old list-based queue (enqueued before this
 deploy) are drained into the new stream so nothing is lost mid-transition.
 """
 
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any

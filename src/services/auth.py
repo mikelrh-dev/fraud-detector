@@ -31,7 +31,6 @@ class CredentialError(Exception):
     """Raised when login credentials are invalid."""
 
 
-
 class AuthService:
     """Authentication business logic."""
 
@@ -64,9 +63,7 @@ async def register_user(db: AsyncSession, request: RegisterRequest) -> User:
 
     email_lower = request.email.lower()
     # Check for existing user by email (case-insensitive)
-    result = await db.execute(
-        select(User).where(func.lower(User.email) == email_lower)
-    )
+    result = await db.execute(select(User).where(func.lower(User.email) == email_lower))
     existing = result.scalar_one_or_none()
     if existing is not None:
         raise ValueError("Email ya registrado")  # Generic, no email echo
@@ -91,9 +88,7 @@ async def login(db: AsyncSession, request: LoginRequest) -> TokenResponse:
     Raises CredentialError if credentials are invalid.
     """
     email_lower = request.email.lower()
-    result = await db.execute(
-        select(User).where(func.lower(User.email) == email_lower)
-    )
+    result = await db.execute(select(User).where(func.lower(User.email) == email_lower))
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:
@@ -103,7 +98,7 @@ async def login(db: AsyncSession, request: LoginRequest) -> TokenResponse:
         raise CredentialError("Invalid credentials")
 
     # Handle both enum and string cases for role
-    role_value = user.role.value if hasattr(user.role, 'value') else user.role
+    role_value = user.role.value if hasattr(user.role, "value") else user.role
 
     access_token = create_access_token(
         user_id=str(user.id),

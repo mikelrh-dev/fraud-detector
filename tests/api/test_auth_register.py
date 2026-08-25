@@ -1,4 +1,5 @@
 """API tests: POST /api/v1/auth/register must never yield role=admin (R1-001)."""
+
 import pytest
 from httpx import AsyncClient
 
@@ -19,7 +20,9 @@ async def _no_existing_user(mock_db):
 class TestRegisterRejectsAdminRole:
     """Self-service registration MUST NOT permit role=admin (spec: auth)."""
 
-    async def test_register_role_admin_returns_422(self, test_client: AsyncClient, mock_db):
+    async def test_register_role_admin_returns_422(
+        self, test_client: AsyncClient, mock_db
+    ):
         """Anonymous caller sending "role":"admin" gets HTTP 422 naming `role`."""
         await _no_existing_user(mock_db)
 
@@ -39,7 +42,9 @@ class TestRegisterRejectsAdminRole:
         # Validation error must name the offending field
         assert "role" in response.text
 
-    async def test_register_role_admin_persists_nothing(self, test_client: AsyncClient, mock_db):
+    async def test_register_role_admin_persists_nothing(
+        self, test_client: AsyncClient, mock_db
+    ):
         """A rejected admin-registration request must not persist any User."""
         await _no_existing_user(mock_db)
 
@@ -61,7 +66,9 @@ class TestRegisterRejectsAdminRole:
 class TestRegisterDefaultsToAnalyst:
     """Self-service registration persists analysts (spec: auth)."""
 
-    async def test_register_without_role_defaults_analyst(self, test_client: AsyncClient, mock_db):
+    async def test_register_without_role_defaults_analyst(
+        self, test_client: AsyncClient, mock_db
+    ):
         await _no_existing_user(mock_db)
 
         response = await test_client.post(
@@ -78,7 +85,9 @@ class TestRegisterDefaultsToAnalyst:
         assert data["role"] == "analyst"
         assert "password" not in data
 
-    async def test_register_explicit_analyst_succeeds(self, test_client: AsyncClient, mock_db):
+    async def test_register_explicit_analyst_succeeds(
+        self, test_client: AsyncClient, mock_db
+    ):
         await _no_existing_user(mock_db)
 
         response = await test_client.post(

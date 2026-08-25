@@ -6,7 +6,6 @@ in a dead-letter stream for debugging and manual intervention.
 
 import json
 import logging
-from typing import Optional
 
 import redis.asyncio as redis
 

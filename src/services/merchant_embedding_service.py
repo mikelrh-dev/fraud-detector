@@ -6,7 +6,7 @@ are similar to legitimate "AMAZON".
 """
 
 import logging
-from typing import Optional
+from typing import Any, cast
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class MerchantEmbeddingService:
     """Detects merchant name spoofing using semantic embeddings.
-    
+
     Compares merchant names using sentence embeddings and cosine similarity
     to detect fraudsters who use similar-sounding names.
     """
@@ -37,7 +37,7 @@ class MerchantEmbeddingService:
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         """Initialize embedding service with a pre-trained model.
-        
+
         Args:
             model_name: HuggingFace model identifier (default: lightweight all-MiniLM-L6-v2)
         """
@@ -53,20 +53,23 @@ class MerchantEmbeddingService:
         """Check if model is loaded and ready."""
         return self.model is not None
 
-    def get_embedding(self, merchant_name: str) -> Optional[np.ndarray]:
+    def get_embedding(self, merchant_name: str) -> np.ndarray | None:
         """Get embedding vector for a merchant name.
-        
+
         Args:
             merchant_name: Name of the merchant
-            
+
         Returns:
             Embedding vector (384-dim for all-MiniLM-L6-v2) or None if failed
         """
         if not self.is_available():
             return None
+        model = self.model
+        if model is None:  # Type narrowing for the type checker.
+            return None
 
         try:
-            embedding = self.model.encode(merchant_name.lower(), convert_to_numpy=True)
+            embedding = model.encode(merchant_name.lower(), convert_to_numpy=True)
             return embedding
         except Exception as exc:
             logger.error("Failed to embed merchant name '%s': %s", merchant_name, exc)
@@ -76,13 +79,13 @@ class MerchantEmbeddingService:
         self,
         merchant_name: str,
         similarity_threshold: float = 0.85,
-    ) -> tuple[bool, Optional[str], Optional[float]]:
+    ) -> tuple[bool, str | None, float | None]:
         """Detect if merchant name is spoofing a trusted merchant.
-        
+
         Args:
             merchant_name: Name to check
             similarity_threshold: Cosine similarity threshold (0-1). Default 0.85 = high similarity
-            
+
         Returns:
             Tuple of (is_spoofed, matched_trusted_merchant, similarity_score)
             - is_spoofed: True if detected as spoofing
@@ -93,7 +96,6 @@ class MerchantEmbeddingService:
             return False, None, None
 
         try:
-            merchant_lower = merchant_name.lower()
             merchant_embedding = self.get_embedding(merchant_name)
 
             if merchant_embedding is None:
@@ -109,7 +111,10 @@ class MerchantEmbeddingService:
                     continue
 
                 # Compute cosine similarity
-                similarity = util.pytorch_cos_sim(merchant_embedding, trusted_embedding)[0][0].item()
+                similarity = util.pytorch_cos_sim(
+                    cast(Any, merchant_embedding),
+                    cast(Any, trusted_embedding),
+                )[0][0].item()
 
                 if similarity > max_similarity:
                     max_similarity = similarity
@@ -141,7 +146,7 @@ class MerchantEmbeddingService:
 
     def add_trusted_merchant(self, merchant_key: str, merchant_name: str) -> None:
         """Add a new trusted merchant to the comparison set.
-        
+
         Args:
             merchant_key: Lowercase key (e.g., "amazon")
             merchant_name: Display name (e.g., "Amazon")

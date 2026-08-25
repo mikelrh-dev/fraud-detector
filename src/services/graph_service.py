@@ -10,7 +10,6 @@ Memory-Safe: Implements pruning to prevent unbounded growth.
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import networkx as nx
 

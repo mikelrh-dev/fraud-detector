@@ -34,12 +34,13 @@ async def test_process_queue_starts_without_attribute_error():
     """process_queue() must start cleanly — no AttributeError for _recovery_loop."""
     recover_mock = AsyncMock(return_value=[])
 
-    with patch("src.workers.embedding_worker.MerchantEmbeddingService"), patch(
-        "src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()
-    ), patch(
-        "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
-    ), patch(
-        "src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02
+    with (
+        patch("src.workers.embedding_worker.MerchantEmbeddingService"),
+        patch("src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()),
+        patch(
+            "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
+        ),
+        patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02),
     ):
         worker = EmbeddingWorker()
         worker.redis_client = AsyncMock()
@@ -47,12 +48,8 @@ async def test_process_queue_starts_without_attribute_error():
 
         task = asyncio.create_task(worker.process_queue())
         try:
-            started = await _wait_for(
-                lambda: recover_mock.await_count > 0, timeout=2.0
-            )
-            assert started, (
-                "recovery pass was never scheduled/executed after startup"
-            )
+            started = await _wait_for(lambda: recover_mock.await_count > 0, timeout=2.0)
+            assert started, "recovery pass was never scheduled/executed after startup"
         finally:
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -64,12 +61,13 @@ async def test_process_queue_keeps_running_after_startup():
     """The main read loop keeps consuming while the recovery task runs alongside."""
     recover_mock = AsyncMock(return_value=[])
 
-    with patch("src.workers.embedding_worker.MerchantEmbeddingService"), patch(
-        "src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()
-    ), patch(
-        "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
-    ), patch(
-        "src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02
+    with (
+        patch("src.workers.embedding_worker.MerchantEmbeddingService"),
+        patch("src.workers.embedding_worker.ensure_consumer_group", new=AsyncMock()),
+        patch(
+            "src.workers.embedding_worker.recover_pending_messages", new=recover_mock
+        ),
+        patch("src.workers.embedding_worker.RECOVERY_INTERVAL", 0.02),
     ):
         worker = EmbeddingWorker()
         worker.redis_client = AsyncMock()
@@ -80,9 +78,7 @@ async def test_process_queue_keeps_running_after_startup():
             # Give both loops time to spin; neither may raise.
             await asyncio.sleep(0.1)
 
-            assert not task.done(), (
-                f"process_queue exited early: {task.exception()!r}"
-            )
+            assert not task.done(), f"process_queue exited early: {task.exception()!r}"
             assert recover_mock.await_count >= 1, (
                 "recovery task did not run at least one cycle"
             )

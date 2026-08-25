@@ -59,7 +59,13 @@ def scratch_db_url(tmp_path):
 
 @pytest.fixture()
 def alembic_config(scratch_db_url):
-    return Config(str(ALEMBIC_INI))
+    # Build the config without an INI file so alembic never calls
+    # fileConfig(), which reconfigures process-wide logging with
+    # disable_existing_loggers=True and breaks caplog-based assertions
+    # in any test running later in the same session.
+    cfg = Config()
+    cfg.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    return cfg
 
 
 def _app_tables(engine):

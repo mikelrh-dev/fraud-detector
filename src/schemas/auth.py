@@ -45,7 +45,9 @@ class RegisterRequest(BaseModel):
     )
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=64)  # bcrypt 72-byte limit
-    role: str = Field(default="analyst", pattern=r"^analyst$")  # self-service never grants admin (R1-001)
+    role: str = Field(
+        default="analyst", pattern=r"^analyst$"
+    )  # self-service never grants admin (R1-001)
 
     @field_validator("password")
     @classmethod
@@ -65,7 +67,9 @@ class RegisterRequest(BaseModel):
         if "username" in info.data:
             username = info.data["username"].lower()
             if username in v.lower():
-                raise ValueError("La contraseña no puede contener el nombre de usuario.")
+                raise ValueError(
+                    "La contraseña no puede contener el nombre de usuario."
+                )
 
         return v
 
