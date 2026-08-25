@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
 from src.core.config import settings
+from src.core.redis import get_redis
 from src.core.dependencies import get_current_user, get_db, get_velocity_store, require_role
 from src.core.stream_publisher import publish_event
 from src.models.fraud_alert import AlertStatus, FraudAlert
@@ -53,7 +54,27 @@ router = APIRouter(
 
 def _classification_str(value: FraudClassification | str) -> str:
     """Normalize FraudClassification to its string value."""
-    return value.value if hasattr(value, "value") else value
+    if isinstance(value, str):
+        return value
+    return value.value
+
+
+def _is_admin(current_user: dict) -> bool:
+    """True if the authenticated user has the admin role."""
+    return current_user.get("role") == "admin"
+
+
+def _current_user_uuid(current_user: dict) -> uuid.UUID:
+    """Parse the authenticated user's id from the JWT subject claim."""
+    return uuid.UUID(str(current_user["user_id"]))
+
+
+def _to_float(value: object) -> float:
+    """Total Decimal/str -> float conversion; never raises."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _determine_friction_level(score: float, classification: str) -> tuple[str, str | None]:
@@ -165,8 +186,8 @@ async def create_and_score_transaction(
 
     # 4. ML scoring via XGBoost
     user_history = {
-        "avg_amount": float(np.mean([float(t.amount) for t in all_user_txns])) if all_user_txns else 0.0,
-        "std_amount": float(np.std([float(t.amount) for t in all_user_txns])) if len(all_user_txns) > 1 else 0.0,
+        "avg_amount": _to_float(np.mean([_to_float(t.amount) for t in all_user_txns])) if all_user_txns else 0.0,
+        "std_amount": _to_float(np.std([_to_float(t.amount) for t in all_user_txns])) if len(all_user_txns) > 1 else 0.0,
         "tx_count_last_5min": velocity_counts["5min"],
         "tx_count_last_1h": velocity_counts["1h"],
     }
@@ -315,7 +336,20 @@ async def list_transactions_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> TransactionListResponse:
-    """List transactions with optional filters."""
+    """List transactions with optional filters.
+
+    Non-admin users are always scoped to their own transactions; requesting
+    another user's id is rejected outright (R1-003).
+    """
+    if not _is_admin(current_user):
+        own_id = _current_user_uuid(current_user)
+        if user_id is not None and user_id != own_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot list another user's transactions",
+            )
+        user_id = own_id
+
     skip = (page - 1) * page_size
 
     query = select(Transaction).where(Transaction.deleted_at.is_(None))
@@ -352,7 +386,7 @@ async def list_transactions_endpoint(
         items.append(
             TransactionResponse(
                 id=t.id,
-                amount=float(t.amount),
+                amount=_to_float(t.amount),
                 currency=t.currency,
                 merchant_name=t.merchant_name,
                 merchant_category=t.merchant_category,
@@ -389,14 +423,20 @@ async def get_transaction_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Transaction not found",
         )
+    if not _is_admin(current_user) and str(txn.user_id) != current_user["user_id"]:
+        # 404 (not 403) so the endpoint does not leak foreign ids' existence.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found",
+        )
     scores = await get_scores_for_transactions(db, [transaction_id])
     score = scores.get(transaction_id)
-    scoring: ScoreBreakdown | None = None
+    breakdown: ScoreBreakdown | None = None
 
-    # FRD-SHP-001: one ordered query for attribution rows — only when a score
+    # FRD-SHP-001: one ordered query for attribution rows - only when a score
     # exists (unscored transactions skip it). Null when no rows exist.
     if score is not None:
-        scoring = ScoreBreakdown.model_validate(score)
+        breakdown = ScoreBreakdown.model_validate(score)
         shap_result = await db.execute(
             select(ShapAttribution)
             .where(ShapAttribution.transaction_id == transaction_id)
@@ -404,14 +444,14 @@ async def get_transaction_endpoint(
         )
         rows = list(shap_result.scalars().all())
         if rows:
-            scoring.shap_contributions = [
+            breakdown.shap_contributions = [
                 ShapContribution(feature=row.feature, contribution=row.contribution)
                 for row in rows
             ]
 
     return TransactionResponse(
         id=txn.id,
-        amount=float(txn.amount),
+        amount=_to_float(txn.amount),
         currency=txn.currency,
         merchant_name=txn.merchant_name,
         merchant_category=txn.merchant_category,
@@ -420,7 +460,7 @@ async def get_transaction_endpoint(
         user_id=txn.user_id,
         risk_score=score.ensemble_score if score else None,
         classification=_classification_str(score.classification) if score else None,
-        scoring=scoring,
+        scoring=breakdown,
         created_at=txn.created_at,
         updated_at=txn.updated_at,
     )
@@ -437,11 +477,19 @@ async def get_embedding_analysis(
     Returns spoofing detection results if available (may return 404 if
     the worker hasn't processed the transaction yet).
     """
-    from src.core.redis import redis_client
-    
+    txn = await get_transaction(db, transaction_id)
+    if txn is None or (
+        not _is_admin(current_user) and str(txn.user_id) != current_user["user_id"]
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found",
+        )
+
+    redis = get_redis()
     try:
         result_key = f"embedding_result:{transaction_id}"
-        result_json = await redis_client.get(result_key)
+        result_json = await redis.get(result_key)
         
         if not result_json:
             return {
@@ -493,6 +541,12 @@ async def get_user_graph_features(
     
     Returns: is_near_fraud, degree_centrality, shortest_path_to_fraud, connected_fraudsters.
     """
+    own_id = str(_current_user_uuid(current_user))
+    if user_id != own_id and not _is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot view another user's graph features",
+        )
     try:
         features = await _graph_service.get_graph_features(user_id)
         return {

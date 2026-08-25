@@ -5,7 +5,7 @@ Uses the test client with mocked DB and Redis dependencies.
 
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import numpy as np
 import pytest
@@ -31,7 +31,11 @@ def _make_mock_transaction(**overrides) -> MagicMock:
     txn.merchant_category = overrides.get("merchant_category", "retail")
     txn.card_last4 = overrides.get("card_last4", "1234")
     txn.status = overrides.get("status", TransactionStatus.PENDING)
-    txn.user_id = overrides.get("user_id", uuid4())
+    # Default owner = the conftest analyst user that auth_headers authenticates,
+    # so owner-scoped reads (R1-003) succeed for same-user requests.
+    txn.user_id = overrides.get(
+        "user_id", UUID("00000000-0000-0000-0000-000000000001")
+    )
     txn.deleted_at = overrides.get("deleted_at", None)
     txn.created_at = overrides.get("created_at", "2024-01-15T12:00:00+00:00")
     txn.updated_at = overrides.get("updated_at", "2024-01-15T12:00:00+00:00")
