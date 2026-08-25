@@ -267,7 +267,10 @@ animation.
 - **No shadow animation** — animating box-shadow repaints every frame; cards
   shift borders instead (colors are cheap).
 - **No layout-property animations** — only `transform` and `opacity` (plus
-  legacy color hovers). No top/left/width/height, no scroll listeners.
+  legacy color hovers). No top/left/height, no scroll listeners. Two sanctioned
+  exceptions, both reduced-motion-guarded and documented in Legacy motion
+  below: the gauge arc animates `stroke-dashoffset` (SVG-native, zero layout
+  cost) and SHAP bars animate `width` inside fixed-height rows.
 - **No bounce/playful easing** — calm analyst tool, one expo-out curve.
 
 ### Legacy motion (unchanged)

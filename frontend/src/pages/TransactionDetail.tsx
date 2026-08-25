@@ -284,7 +284,7 @@ export default function TransactionDetail() {
     CLASSIFICATION_LABELS[classification] || classification;
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-slate-950 overflow-x-hidden">
       {/* Header */}
       <header className="bg-slate-900 border-b border-slate-800 px-6 py-3">
         <div className="max-w-5xl mx-auto flex items-center gap-3 flex-wrap min-w-0">

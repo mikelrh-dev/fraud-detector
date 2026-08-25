@@ -160,6 +160,9 @@ body {
   .nav-indicator {
     transition-duration: 0.01ms;
   }
+  .btn-motion {
+    transition-duration: 0.01ms;
+  }
 }
 
 /* One-shot entrance for the completed LLM report — legacy class name kept
