@@ -11,6 +11,7 @@ Features:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ from datetime import datetime, timezone
 import redis.asyncio as redis
 
 from src.core.config import settings
-from src.core.stream_dlq import recover_pending_messages, get_consumer_group_status
+from src.core.stream_dlq import recover_pending_messages
 from src.core.stream_publisher import ensure_consumer_group
 from src.services.merchant_embedding_service import MerchantEmbeddingService
 
@@ -62,6 +63,9 @@ class EmbeddingWorker:
         """
         if not self.redis_client:
             await self.connect()
+        redis_client = self.redis_client
+        if redis_client is None:  # Defensive: connect() raises on failure.
+            raise RuntimeError("Embedding worker Redis client is not connected")
 
         # Ensure consumer group exists
         await ensure_consumer_group(STREAM_NAME, GROUP_NAME)
@@ -72,7 +76,7 @@ class EmbeddingWorker:
             GROUP_NAME,
             CONSUMER_NAME,
         )
-        
+
         # Start recovery task
         recovery_task = asyncio.create_task(self._recovery_loop())
 
@@ -80,7 +84,7 @@ class EmbeddingWorker:
             while True:
                 try:
                     # XREADGROUP: blocking read from consumer group
-                    messages = await self.redis_client.xreadgroup(
+                    messages = await redis_client.xreadgroup(
                         GROUP_NAME,
                         CONSUMER_NAME,
                         {STREAM_NAME: ">"},  # ">" means new messages only
@@ -92,7 +96,7 @@ class EmbeddingWorker:
                         continue
 
                     # Process each message
-                    for stream_name, msg_list in messages:
+                    for _stream_name, msg_list in messages:
                         for message_id, fields in msg_list:
                             try:
                                 # Decode message
@@ -103,18 +107,24 @@ class EmbeddingWorker:
                                 await self.process_message(message_data)
 
                                 # ACK if success
-                                await self.redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+                                await redis_client.xack(
+                                    STREAM_NAME, GROUP_NAME, message_id
+                                )
                                 logger.debug("Embedding message ACKed: %s", message_id)
 
                             except Exception as exc:
-                                logger.error("Error processing embedding message: %s", exc)
+                                logger.error(
+                                    "Error processing embedding message: %s", exc
+                                )
 
                 except Exception as exc:
                     logger.error("Error in embedding worker loop: %s", exc)
                     await asyncio.sleep(1)  # Backoff
-        
+
         finally:
             recovery_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await recovery_task
 
     async def process_message(self, message: dict) -> None:
         """Process a single embedding task.
@@ -127,12 +137,14 @@ class EmbeddingWorker:
             merchant_name = message.get("merchant_name")
 
             if not merchant_name:
-                logger.warning("Received message without merchant_name: %s", transaction_id)
+                logger.warning(
+                    "Received message without merchant_name: %s", transaction_id
+                )
                 return
 
             # Perform spoofing detection
-            is_spoofed, matched_merchant, similarity = self.embedding_service.detect_spoofing(
-                merchant_name
+            is_spoofed, matched_merchant, similarity = (
+                self.embedding_service.detect_spoofing(merchant_name)
             )
 
             # Store result in Redis (for API retrieval)
@@ -162,6 +174,51 @@ class EmbeddingWorker:
 
         except Exception as exc:
             logger.error("Error processing embedding message: %s", exc)
+
+    async def _recovery_loop(self) -> None:
+        """Periodically recover stale pending messages via XAUTOCLAIM.
+
+        Claims PEL entries idle for more than ``PENDING_TIMEOUT_MS`` from other
+        consumers in the group, reprocesses them through ``process_message``,
+        and ACKs them on success. Exceptions are logged per iteration and never
+        crash the loop; cancellation propagates cleanly.
+        """
+        redis_client = self.redis_client
+        if redis_client is None:
+            raise RuntimeError("Embedding worker Redis client is not connected")
+
+        while True:
+            try:
+                claimed = await recover_pending_messages(
+                    redis_client,
+                    STREAM_NAME,
+                    GROUP_NAME,
+                    CONSUMER_NAME,
+                )
+
+                for message_id, fields in claimed:
+                    try:
+                        data_json = fields.get(b"data", b"{}").decode("utf-8")
+                        message_data = json.loads(data_json)
+
+                        await self.process_message(message_data)
+                        await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+                        logger.debug(
+                            "Recovered embedding message ACKed: %s", message_id
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Error recovering embedding message %s: %s",
+                            message_id,
+                            exc,
+                        )
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Error in embedding recovery loop: %s", exc)
+
+            await asyncio.sleep(RECOVERY_INTERVAL)
 
     async def run(self) -> None:
         """Run the worker (entry point)."""
