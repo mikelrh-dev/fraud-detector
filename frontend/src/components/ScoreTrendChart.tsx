@@ -7,6 +7,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { THEME } from "../lib/chart-theme";
 
 interface DailyAverage {
   date: string;
@@ -38,37 +39,31 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
       </h3>
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <CartesianGrid strokeDasharray="3 3" stroke={THEME.grid} />
           <XAxis
             dataKey="date"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            axisLine={{ stroke: "#334155" }}
+            tick={{ fill: THEME.axis.tick, fontSize: 11 }}
+            axisLine={{ stroke: THEME.axis.line }}
             tickLine={false}
           />
           <YAxis
             domain={[0, 100]}
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            axisLine={{ stroke: "#334155" }}
+            tick={{ fill: THEME.axis.tick, fontSize: 11 }}
+            axisLine={{ stroke: THEME.axis.line }}
             tickLine={false}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "#1e293b",
-              border: "1px solid #334155",
-              borderRadius: "8px",
-              color: "#e2e8f0",
-              fontSize: "13px",
-            }}
+            contentStyle={{ ...THEME.tooltip }}
             labelFormatter={(label: string) => `Fecha: ${label}`}
             formatter={(value: number) => [`${value.toFixed(1)}`, "Score Promedio"]}
           />
           <Line
             type="monotone"
             dataKey="avgScore"
-            stroke="#f59e0b"
+            stroke={THEME.risk.warn}
             strokeWidth={2}
-            dot={{ fill: "#f59e0b", r: 3 }}
-            activeDot={{ r: 5, fill: "#f59e0b" }}
+            dot={{ fill: THEME.risk.warn, r: 3 }}
+            activeDot={{ r: 5, fill: THEME.risk.warn }}
             name="Score Promedio"
           />
         </LineChart>

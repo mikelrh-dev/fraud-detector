@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { THEME } from "../lib/chart-theme";
 
 interface HistogramBucket {
   range: string;
@@ -28,10 +29,10 @@ const BUCKETS = [
 ];
 
 function getBucketColor(label: string): string {
-  // legitimate (green) for low scores, review (amber) for mid, fraud (red) for high
-  if (label === "0-20" || label === "21-40") return "#22c55e";
-  if (label === "41-60" || label === "61-80") return "#f59e0b";
-  return "#ef4444";
+  // legitimate (clean) for low scores, review (warn) for mid, fraud (critical) for high
+  if (label === "0-20" || label === "21-40") return THEME.risk.clean;
+  if (label === "41-60" || label === "61-80") return THEME.risk.warn;
+  return THEME.risk.critical;
 }
 
 function buildBuckets(scores: number[]): HistogramBucket[] {
@@ -66,29 +67,25 @@ export default function ScoreHistogram({ scores }: ScoreHistogramProps) {
         <BarChart data={data}>
           <XAxis
             dataKey="range"
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
-            axisLine={{ stroke: "#334155" }}
+            tick={{ fill: THEME.axis.tick, fontSize: 12 }}
+            axisLine={{ stroke: THEME.axis.line }}
             tickLine={false}
           />
           <YAxis
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
-            axisLine={{ stroke: "#334155" }}
+            tick={{ fill: THEME.axis.tick, fontSize: 12 }}
+            axisLine={{ stroke: THEME.axis.line }}
             tickLine={false}
             allowDecimals={false}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "#1e293b",
-              border: "1px solid #334155",
-              borderRadius: "8px",
-              color: "#e2e8f0",
-              fontSize: "13px",
-            }}
+            contentStyle={{ ...THEME.tooltip }}
             formatter={(value: number) => [value, "Transacciones"]}
           />
           <Legend
-            wrapperStyle={{ fontSize: "12px", color: "#94a3b8" }}
-            formatter={(value: string) => <span style={{ color: "#94a3b8" }}>{value}</span>}
+            wrapperStyle={{ fontSize: "12px", color: THEME.legendText }}
+            formatter={(value: string) => (
+              <span style={{ color: THEME.legendText }}>{value}</span>
+            )}
           />
           <Bar dataKey="count" name="Transacciones" radius={[4, 4, 0, 0]}>
             {data.map((entry, index) => (
@@ -99,15 +96,15 @@ export default function ScoreHistogram({ scores }: ScoreHistogramProps) {
       </ResponsiveContainer>
       <div className="flex gap-4 mt-2 text-xs text-slate-400">
         <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded bg-[#22c55e]" />
+          <span className="w-2.5 h-2.5 rounded bg-risk-clean" />
           Legítimo (0-40)
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded bg-[#f59e0b]" />
+          <span className="w-2.5 h-2.5 rounded bg-risk-warn" />
           Revisión (41-80)
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded bg-[#ef4444]" />
+          <span className="w-2.5 h-2.5 rounded bg-risk-critical" />
           Fraude (81-100)
         </span>
       </div>

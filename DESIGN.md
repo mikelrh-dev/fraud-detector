@@ -49,8 +49,10 @@ Professional fintech dashboard for fraud detection analysts. Dark-first, data-de
 
 ## Typography
 
-- **Body / UI:** Inter (fallback `-apple-system, sans-serif`)
-- **Monospace** (IDs, card numbers, UUIDs): JetBrains Mono (fallback `ui-monospace, Menlo`)
+- **Body / UI:** Geist Variable — self-hosted via `@fontsource-variable/geist` (imported in `src/main.tsx`, before `index.css`)
+- **Monospace** (IDs, card numbers, UUIDs): JetBrains Mono — self-hosted via `@fontsource/jetbrains-mono`
+- Declared as `--font-sans` / `--font-mono` inside the `@theme` block of `frontend/src/index.css`
+- Google Fonts CDN links for Inter/JetBrains Mono were REMOVED from `index.html` (Material Symbols Outlined stays on CDN until the icon-system phase)
 
 ### Scale
 | Level | Size / Weight |
@@ -121,12 +123,20 @@ Base unit: **4px**. Common values: 4, 8, 12, 16, 24, 32, 48.
 - **Ghost:** text only, `slate-400`, hover text `slate-100`
 
 ### Badges / Pills
-- Background: semantic color at 10-15% opacity (`bg-status-XXX/10`)
-- Border: 1px solid semantic color at 40% opacity (`border-status-XXX/40`)
-- Text: full semantic color
-- Padding: 4px 12px
-- Radius: 9999px
-- Font: 12px / 500
+
+All badges render through the **`Badge` primitive** (`src/components/Badge.tsx`) — never hand-roll pill styling:
+
+- **Tone prop** (semantic, zero hardcoded hex): `clean` → `risk-clean`, `warn` → `risk-warn`, `critical` → `risk-critical`, `info` → `status-info`
+- **Background:** semantic color at 10% opacity (`bg-risk-XXX/10`)
+- **Border:** 1px solid semantic color at 30% opacity (`border-risk-XXX/30`)
+- **Text:** full semantic color (`text-risk-XXX`)
+- **Padding/radius:** `rounded-full`; sizes `md` (px-3 py-1 text-sm) and `sm` (px-2 py-0.5 text-[11px])
+- **Icon slot:** optional Material Symbols glyph via the `icon` prop
+- Consumers: `ClassificationBadge` (approved/flagged/blocked), `AlertStatusBadge` (open→warn, reviewed→info, resolved→clean)
+
+### Charts
+
+Chart colors come from **`src/lib/chart-theme.ts`** (`THEME`). Rule: **no literal hex inside chart components** — enforced by `chart-theme.test.ts`. The hex values in `THEME` must mirror the `@theme` CSS tokens in `index.css` until Tailwind exposes theme vars to JS; both sides are guarded by tests.
 
 ### Tables
 - Header: `slate-800` bg, `slate-400` text, 12px / 500
@@ -180,10 +190,17 @@ The following custom tokens are defined in `frontend/src/index.css` via the `@th
 
 ```css
 @theme {
-  --color-status-approved:    #22c55e;
-  --color-status-flagged:     #eab308;
-  --color-status-blocked:     #ef4444;
+  /* Semantic risk tones — single source for risk/status coloring */
+  --color-risk-clean:         #22c55e;  /* = green-500 */
+  --color-risk-warn:          #f59e0b;  /* = amber-500 (unifies legacy status-flagged/fraud-review drift) */
+  --color-risk-critical:      #ef4444;  /* = red-500 */
+
+  /* Legacy aliases, derived from risk-* (kept working for existing consumers) */
+  --color-status-approved:    var(--color-risk-clean);
+  --color-status-flagged:     var(--color-risk-warn);
+  --color-status-blocked:     var(--color-risk-critical);
   --color-status-info:        #3b82f6;
+
   --color-focus-ring:         #ef4444;
   --color-page-bg:            #020617;
   --color-border-subtle:      #1e293b;
@@ -196,10 +213,16 @@ The following custom tokens are defined in `frontend/src/index.css` via the `@th
   --color-action-hover:       #b91c1c;
   --spacing-sidebar-width:    224px;
   --spacing-max-content:      1280px;
+
+  /* Self-hosted fonts (fontsource imports in main.tsx) */
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 ```
 
-> ⚠ **Tailwind v3 → v4 delta**: Custom tokens are defined in CSS via `@theme`, not in JS config files. The `tailwindcss` PostCSS plugin is NOT used — the project uses `@tailwindcss/vite` instead. Spacing tokens become CSS variables (e.g., `spacing-sidebar-width` generates `var(--spacing-sidebar-width)`).
+> ⚠ **Tailwind v3 → v4 delta**: Custom tokens are defined in CSS via `@theme`, not in JS config files. The `tailwindcss` PostCSS plugin is NOT used — the project uses `@tailwindcss/vite` instead. Spacing tokens become CSS variables (e.g., `spacing-sidebar-width` generates `var(--spacing-sidebar-width)`). The default Tailwind palette (`slate-*`, etc.) is NOT re-declared — use the native utilities/vars.
+>
+> ⚠ **Badge bg pattern**: tone backgrounds use `/10` opacity and borders `/30` — e.g. `bg-risk-clean/10 border-risk-clean/30 text-risk-clean`.
 
 ---
 

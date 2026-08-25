@@ -8,18 +8,7 @@ import {
   revertBlock,
 } from "../api/alerts";
 import { Sidebar } from "../components/Sidebar";
-
-const STATUS_COLORS: Record<string, string> = {
-  open: "bg-yellow-900/30 text-yellow-400 border-yellow-600/30",
-  reviewed: "bg-blue-900/30 text-blue-400 border-blue-600/30",
-  resolved: "bg-green-900/30 text-green-400 border-green-600/30",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  open: "Abierta",
-  reviewed: "Revisada",
-  resolved: "Resuelta",
-};
+import { AlertStatusBadge } from "../components/AlertStatusBadge";
 
 const CLASSIFICATION_COLORS: Record<string, string> = {
   legitimate: "text-fraud-legitimate",
@@ -169,14 +158,7 @@ export default function AlertsPage() {
                 >
                   {/* Status badge */}
                   <div className="mb-2">
-                    <span
-                      className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
-                        STATUS_COLORS[alert.status] ||
-                        "bg-slate-800 text-slate-400"
-                      }`}
-                    >
-                      {STATUS_LABELS[alert.status] || alert.status}
-                    </span>
+                    <AlertStatusBadge status={alert.status} />
                   </div>
                   {/* Description: tx link + classification */}
                   <div className="flex items-center gap-2 mb-1">
@@ -331,14 +313,7 @@ export default function AlertsPage() {
                             </span>
                           </td>
                           <td className="p-3">
-                            <span
-                              className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
-                                STATUS_COLORS[alert.status] ||
-                                "bg-slate-800 text-slate-400"
-                              }`}
-                            >
-                              {STATUS_LABELS[alert.status] || alert.status}
-                            </span>
+                            <AlertStatusBadge status={alert.status} />
                           </td>
                           <td className="p-3 text-xs text-slate-400">
                             {new Date(alert.created_at).toLocaleDateString(
