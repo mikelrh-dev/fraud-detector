@@ -12,9 +12,10 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.dependencies import get_current_user, get_db
+from src.core.dependencies import get_current_user, get_db, require_role
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudScore
+from src.models.ml_model_run import MLModelRun
 from src.models.transaction import Transaction, TransactionStatus
 from src.schemas.monitoring import DashboardMetricsResponse
 from src.services.drift_service import DataDriftService
@@ -182,3 +183,69 @@ async def get_drift_status(
             "error": str(exc),
             "message": "Failed to evaluate drift",
         }
+
+
+@router.get(
+    "/metrics",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+)
+async def get_model_metrics(
+    limit: int = Query(20, ge=1, le=100, description="Max runs to return"),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role("analyst")),
+) -> dict[str, Any]:
+    """Recent ML model training/evaluation runs (R3-002)."""
+    result = await db.execute(
+        select(MLModelRun).order_by(MLModelRun.created_at.desc()).limit(limit)
+    )
+    runs = [
+        {
+            "id": str(run.id),
+            "model_version": run.model_version,
+            "metrics": run.metrics,
+            "status": run.status.value if hasattr(run.status, "value") else run.status,
+            "drift_detected": run.drift_detected,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+        }
+        for run in result.scalars().all()
+    ]
+    return {"runs": runs}
+
+
+@router.post(
+    "/reference-data",
+    status_code=status.HTTP_200_OK,
+)
+async def set_reference_data(
+    payload: dict[str, Any],
+    current_user: dict = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    """Upload drift-reference data (admin-only, R3-002).
+
+    Accepts ``{"data": [float, ...]}`` (flat samples) or
+    ``{"data": [[...], [...]]}`` (rows). Stored in-memory as the drift
+    baseline used by GET /monitoring/drift.
+    """
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="'data' must be a non-empty list",
+        )
+
+    if isinstance(data[0], list):
+        columns = payload.get("columns") or [
+            f"feature_{i}" for i in range(len(data[0]))
+        ]
+        reference = pd.DataFrame(data, columns=columns)
+    else:
+        reference = pd.DataFrame({"value": data})
+
+    _drift_service.set_reference_data(reference)
+    logger.info(
+        "Reference data updated by %s: %d samples", current_user["user_id"], len(data)
+    )
+    return {"status": "ok", "samples": len(data)}

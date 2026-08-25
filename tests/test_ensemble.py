@@ -77,18 +77,18 @@ class TestEnsembleThreshold:
         assert scorer.get_threshold(1000) == 70
 
     def test_medium_tier_threshold(self):
-        """Amount $1001-10000 → threshold 60."""
+        """Amount $1001-10000 -> threshold 50 (lowered from 60, R3-004)."""
         scorer = EnsembleScorer()
-        assert scorer.get_threshold(1001) == 60
-        assert scorer.get_threshold(5000) == 60
-        assert scorer.get_threshold(10000) == 60
+        assert scorer.get_threshold(1001) == 50
+        assert scorer.get_threshold(5000) == 50
+        assert scorer.get_threshold(10000) == 50
 
     def test_high_tier_threshold(self):
-        """Amount $10001-50000 → threshold 50."""
+        """Amount $10001-50000 -> threshold 45 (lowered from 50, R3-004)."""
         scorer = EnsembleScorer()
-        assert scorer.get_threshold(10001) == 50
-        assert scorer.get_threshold(25000) == 50
-        assert scorer.get_threshold(50000) == 50
+        assert scorer.get_threshold(10001) == 45
+        assert scorer.get_threshold(25000) == 45
+        assert scorer.get_threshold(50000) == 45
 
     def test_critical_tier_threshold(self):
         """Amount > $50000 → threshold 40."""

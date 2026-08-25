@@ -57,10 +57,12 @@ async def test_publish_event_propagates_redis_failures():
     client = AsyncMock()
     client.xadd.side_effect = ConnectionError("redis down")
 
-    with patch(
-        "src.core.stream_publisher.get_stream_client", return_value=client
-    ), pytest.raises(ConnectionError):
+    with (
+        patch("src.core.stream_publisher.get_stream_client", return_value=client),
+        pytest.raises(ConnectionError),
+    ):
         await publish_event("fraud:embeddings", {"x": 1})
+
 
 @pytest.mark.asyncio
 async def test_ensure_consumer_group_creates_group():

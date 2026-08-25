@@ -33,10 +33,8 @@ def _make_mock_transaction(**overrides) -> MagicMock:
     txn.status = overrides.get("status", TransactionStatus.PENDING)
     # Default owner = the conftest analyst user that auth_headers authenticates,
     # so owner-scoped reads (R1-003) succeed for same-user requests.
-    txn.user_id = overrides.get(
-        "user_id", UUID("00000000-0000-0000-0000-000000000001")
-    )
-    txn.deleted_at = overrides.get("deleted_at", None)
+    txn.user_id = overrides.get("user_id", UUID("00000000-0000-0000-0000-000000000001"))
+    txn.deleted_at = overrides.get("deleted_at")
     txn.created_at = overrides.get("created_at", "2024-01-15T12:00:00+00:00")
     txn.updated_at = overrides.get("updated_at", "2024-01-15T12:00:00+00:00")
     return txn
@@ -77,7 +75,9 @@ def _empty_scalars_result() -> MagicMock:
 class TestCreateTransaction:
     """POST /api/v1/transactions."""
 
-    async def test_create_transaction_returns_score(self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict):
+    async def test_create_transaction_returns_score(
+        self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
+    ):
         """Creating a valid transaction should return 201 with scoring breakdown."""
         # Mock the two context queries (recent + all-user) used by the scoring pipeline
         mock_scalar_result = MagicMock()
@@ -114,7 +114,9 @@ class TestCreateTransaction:
         assert isinstance(data["fired_rules"], list)
         assert data["classification"] in ("legitimate", "review", "fraud")
 
-    async def test_invalid_payload_returns_422(self, test_client: AsyncClient, auth_headers: dict):
+    async def test_invalid_payload_returns_422(
+        self, test_client: AsyncClient, auth_headers: dict
+    ):
         """Missing required fields should return 422."""
         response = await test_client.post(
             "/api/v1/transactions",
@@ -123,7 +125,9 @@ class TestCreateTransaction:
         )
         assert response.status_code == 422
 
-    async def test_negative_amount_returns_422(self, test_client: AsyncClient, auth_headers: dict):
+    async def test_negative_amount_returns_422(
+        self, test_client: AsyncClient, auth_headers: dict
+    ):
         """Negative amount should return 422."""
         response = await test_client.post(
             "/api/v1/transactions",
@@ -216,11 +220,33 @@ class TestGetTransaction:
 
         shap_scalar = MagicMock()
         shap_scalar.all.return_value = [
-            ShapAttribution(transaction_id=txn.id, feature="amount", contribution=0.80, rank=1),
-            ShapAttribution(transaction_id=txn.id, feature="tx_count_last_5min", contribution=0.45, rank=2),
-            ShapAttribution(transaction_id=txn.id, feature="amount_vs_user_avg", contribution=0.30, rank=3),
-            ShapAttribution(transaction_id=txn.id, feature="merchant_risk_level", contribution=-0.20, rank=4),
-            ShapAttribution(transaction_id=txn.id, feature="amount_round_number", contribution=0.10, rank=5),
+            ShapAttribution(
+                transaction_id=txn.id, feature="amount", contribution=0.80, rank=1
+            ),
+            ShapAttribution(
+                transaction_id=txn.id,
+                feature="tx_count_last_5min",
+                contribution=0.45,
+                rank=2,
+            ),
+            ShapAttribution(
+                transaction_id=txn.id,
+                feature="amount_vs_user_avg",
+                contribution=0.30,
+                rank=3,
+            ),
+            ShapAttribution(
+                transaction_id=txn.id,
+                feature="merchant_risk_level",
+                contribution=-0.20,
+                rank=4,
+            ),
+            ShapAttribution(
+                transaction_id=txn.id,
+                feature="amount_round_number",
+                contribution=0.10,
+                rank=5,
+            ),
         ]
         shap_result = MagicMock()
         shap_result.scalars.return_value = shap_scalar
@@ -430,7 +456,11 @@ class TestCreateTransactionVelocity:
     }
 
     async def test_velocity_count_fires_high_velocity_rule(
-        self, test_client: AsyncClient, mock_db: AsyncMock, mock_redis: AsyncMock, auth_headers: dict
+        self,
+        test_client: AsyncClient,
+        mock_db: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict,
     ):
         """Seeded 5min count of 4 must fire high_velocity (>3, self-inclusive)."""
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
@@ -440,13 +470,19 @@ class TestCreateTransactionVelocity:
             _velocity_pipe(0, 4, 4),
         ]
 
-        response = await test_client.post("/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers)
+        response = await test_client.post(
+            "/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers
+        )
 
         assert response.status_code == 201
         assert "high_velocity" in response.json()["fired_rules"]
 
     async def test_1h_count_is_distinct_from_5min_and_no_query_a(
-        self, test_client: AsyncClient, mock_db: AsyncMock, mock_redis: AsyncMock, auth_headers: dict
+        self,
+        test_client: AsyncClient,
+        mock_db: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict,
     ):
         """2 txns in 5min / 7 in 1h: the pipeline must be asked both windows
         (FD-VEL-002) and Query A is gone — only Query B touches Postgres."""
@@ -457,7 +493,9 @@ class TestCreateTransactionVelocity:
             pipe_read,
         ]
 
-        response = await test_client.post("/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers)
+        response = await test_client.post(
+            "/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers
+        )
 
         assert response.status_code == 201
         assert "high_velocity" not in response.json()["fired_rules"]
@@ -470,8 +508,12 @@ class TestCreateTransactionVelocity:
         assert mock_db.execute.call_count == 1
 
     async def test_redis_down_falls_back_to_postgres(
-        self, test_client: AsyncClient, mock_db: AsyncMock, mock_redis: AsyncMock,
-        auth_headers: dict, caplog: pytest.LogCaptureFixture,
+        self,
+        test_client: AsyncClient,
+        mock_db: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict,
+        caplog: pytest.LogCaptureFixture,
     ):
         """Redis unreachable: scoring completes via PG velocity values, HTTP 201 (FD-VEL-003)."""
         mock_redis.pipeline = MagicMock(side_effect=ConnectionError("redis down"))
@@ -487,7 +529,9 @@ class TestCreateTransactionVelocity:
         # fallback query first, then Query B
         mock_db.execute = AsyncMock(side_effect=[pg_result, _empty_scalars_result()])
 
-        response = await test_client.post("/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers)
+        response = await test_client.post(
+            "/api/v1/transactions", json=self._PAYLOAD, headers=auth_headers
+        )
 
         assert response.status_code == 201
         assert mock_db.execute.call_count == 2  # _pg_counts + Query B
@@ -532,7 +576,7 @@ class TestCreateTransactionShapEnqueue:
             lambda score, threshold: classification,
         )
         publish_mock = AsyncMock()
-        monkeypatch.setattr(transactions_api, "publish_transaction_event", publish_mock)
+        monkeypatch.setattr(transactions_api, "publish_event", publish_mock)
         return publish_mock
 
     async def _post(self, test_client: AsyncClient, auth_headers: dict):
@@ -559,8 +603,9 @@ class TestCreateTransactionShapEnqueue:
 
         assert response.status_code == 201
         shap_calls = [
-            call for call in publish_mock.call_args_list
-            if call.args[0] == "shap_attribution"
+            call
+            for call in publish_mock.call_args_list
+            if call.args[0] == "fraud:shap"
         ]
         assert len(shap_calls) == 1
         message = shap_calls[0].args[1]
@@ -586,7 +631,7 @@ class TestCreateTransactionShapEnqueue:
 
         assert response.status_code == 201
         assert not any(
-            call.args[0] == "shap_attribution" for call in publish_mock.call_args_list
+            call.args[0] == "fraud:shap" for call in publish_mock.call_args_list
         )
 
     async def test_enqueue_failure_keeps_201(
@@ -616,7 +661,7 @@ class TestCreateTransactionShapEnqueue:
         )
         monkeypatch.setattr(
             transactions_api,
-            "publish_transaction_event",
+            "publish_event",
             AsyncMock(side_effect=ConnectionError("redis down")),
         )
 

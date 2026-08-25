@@ -12,9 +12,9 @@ class TestDriftEndpoint:
     @pytest.mark.asyncio
     async def test_get_drift_report_returns_200(self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock):
         """GET /monitoring/drift should return 200 with drift report."""
-        # Mock empty fraud scores
+        # Mock empty fraud scores (endpoint reads via .scalars().all())
         mock_result = MagicMock()
-        mock_result.all.return_value = []
+        mock_result.scalars.return_value.all.return_value = []
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         response = await test_client.get(
@@ -24,9 +24,8 @@ class TestDriftEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "drift_detected" in data
-        assert "drift_score" in data
-        assert "feature_drifts" in data
-        assert "evaluated_at" in data
+        assert "features_drifted" in data
+        assert "drift_share" in data
 
     @pytest.mark.asyncio
     async def test_drift_report_requires_auth(self, test_client: AsyncClient):

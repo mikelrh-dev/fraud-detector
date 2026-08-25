@@ -6,8 +6,6 @@ the fraud scoring pipeline.
 
 from datetime import datetime, timezone
 
-import pytest
-
 from src.services.rule_engine import RuleEngine
 
 
@@ -210,7 +208,7 @@ class TestRuleEngineMultipleRules:
         score, fired = engine.evaluate(tx, context=context)
         assert "high_amount" in fired
         assert "high_velocity" in fired
-        assert score == 50  # 25 + 25
+        assert score == 60  # 35 + 25 (high_amount raised from 25, R3-005)
 
     def test_three_rules_fire(self):
         """Three rules (+ unusual_hours + off_hours_crypto) sum their weights."""
@@ -239,7 +237,6 @@ class TestRuleEngineMultipleRules:
     def test_all_six_rules_fire_capped(self):
         """All rules firing should be capped at 100."""
         engine = RuleEngine()
-        now = datetime.now(tz=timezone.utc)
         tx = {
             "amount": 100000,
             "merchant_name": "Bad Shop",

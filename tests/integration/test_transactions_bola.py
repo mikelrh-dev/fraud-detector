@@ -104,7 +104,9 @@ class TestEmbeddingAnalysisOwnership:
     async def test_analyst_gets_404_for_foreign_embedding(
         self, test_client: AsyncClient, auth_headers: dict, mock_db
     ):
-        mock_db.execute = AsyncMock(side_effect=[_db_result(scalar=_foreign_transaction())])
+        mock_db.execute = AsyncMock(
+            side_effect=[_db_result(scalar=_foreign_transaction())]
+        )
         response = await test_client.get(
             f"/api/v1/transactions/{FOREIGN_TXN_ID}/embedding", headers=auth_headers
         )
@@ -127,9 +129,7 @@ class TestGraphFeaturesOwnership:
         self, test_client: AsyncClient, auth_headers: dict
     ):
         own_id = "00000000-0000-0000-0000-000000000001"
-        with patch(
-            "src.api.v1.transactions._graph_service"
-        ) as graph_service:
+        with patch("src.api.v1.transactions._graph_service") as graph_service:
             graph_service.get_graph_features = AsyncMock(
                 return_value={"is_near_fraud": False}
             )

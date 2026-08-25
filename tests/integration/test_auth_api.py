@@ -17,12 +17,12 @@ pytestmark = pytest.mark.asyncio
 EXPECTED_AUTH_SCHEME = "bearer"
 
 
-
-
 class TestAuthLogin:
     """POST /api/v1/auth/login endpoint."""
 
-    async def test_successful_login_returns_tokens(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_successful_login_returns_tokens(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """Valid email credentials should return access and refresh tokens."""
         # Arrange: user exists in DB
         mock_result = MagicMock()
@@ -50,7 +50,9 @@ class TestAuthLogin:
         assert "refresh_token" in data
         assert data["token_type"] == EXPECTED_AUTH_SCHEME
 
-    async def test_invalid_credentials_returns_401(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_invalid_credentials_returns_401(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """Invalid credentials should return 401."""
         # Arrange: no user found
         mock_result = MagicMock()
@@ -74,7 +76,9 @@ class TestAuthLogin:
         )
         assert response.status_code == 422
 
-    async def test_login_by_email_valid_credentials(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_login_by_email_valid_credentials(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """Login with a valid email + password should return 200 with both tokens.
 
         After the email migration, POST /api/v1/auth/login with
@@ -109,7 +113,9 @@ class TestAuthLogin:
         assert data["refresh_token"], "response must include a non-empty refresh_token"
         assert data["token_type"] == EXPECTED_AUTH_SCHEME
 
-    async def test_login_by_email_case_insensitive(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_login_by_email_case_insensitive(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """Email lookup must be case-insensitive: ADMIN@frauddetector.dev == admin@frauddetector.dev.
 
         POST /api/v1/auth/login with an uppercase version of the stored email must
@@ -143,7 +149,9 @@ class TestAuthLogin:
         assert data["refresh_token"], "response must include a non-empty refresh_token"
         assert data["token_type"] == EXPECTED_AUTH_SCHEME
 
-    async def test_login_by_email_unknown_returns_401(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_login_by_email_unknown_returns_401(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """Login with an email that does not exist must return 401, never 200 or 422.
 
         POST /api/v1/auth/login with {"email": "nonexistent@test.com", "password": "x"}
@@ -165,7 +173,9 @@ class TestAuthLogin:
             f"expected 401 for unknown email, got {response.status_code}: {response.text}"
         )
 
-    async def test_login_old_username_field_still_fails(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_login_old_username_field_still_fails(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """After the email migration the legacy username field must no longer be accepted.
 
         POST /api/v1/auth/login with {"username": "admin", "password": "admin123"}
@@ -200,7 +210,9 @@ class TestAuthLogin:
 class TestAuthRegister:
     """POST /api/v1/auth/register endpoint."""
 
-    async def test_admin_can_register_user(self, test_client: AsyncClient, mock_db: AsyncMock, admin_headers: dict):
+    async def test_admin_can_register_user(
+        self, test_client: AsyncClient, mock_db: AsyncMock, admin_headers: dict
+    ):
         """Admin can register a new user."""
         # Arrange: no existing user
         mock_result = MagicMock()
@@ -225,7 +237,9 @@ class TestAuthRegister:
         assert "password" not in data
         assert data["email"] == "new@example.com"
 
-    async def test_duplicate_email_returns_409(self, test_client: AsyncClient, mock_db: AsyncMock, admin_headers: dict):
+    async def test_duplicate_email_returns_409(
+        self, test_client: AsyncClient, mock_db: AsyncMock, admin_headers: dict
+    ):
         """Duplicate email should return 409 without echoing the email address.
 
         The 409 detail MUST be generic (enumeration-safe): it must not contain
@@ -263,7 +277,9 @@ class TestAuthRegisterSecurity:
     it exactly as an unauthenticated attacker would — no admin headers.
     """
 
-    async def test_register_rate_limit_exceeded(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_register_rate_limit_exceeded(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """After N register attempts in T seconds, return 429 Too Many Requests.
 
         The register endpoint must be rate limited the same way login is
@@ -287,7 +303,9 @@ class TestAuthRegisterSecurity:
 
         # Act: fire 11 rapid requests (expected limit: 10 per minute)
         responses = [
-            await test_client.post("/api/v1/auth/register", json=payload, headers=headers)
+            await test_client.post(
+                "/api/v1/auth/register", json=payload, headers=headers
+            )
             for _ in range(11)
         ]
 
@@ -302,7 +320,9 @@ class TestAuthRegisterSecurity:
             "429 response must include a Retry-After header"
         )
 
-    async def test_register_duplicate_email_returns_generic_409(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_register_duplicate_email_returns_generic_409(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """409 for duplicate email must NOT echo the email address.
 
         Current behavior echoes it: "User with email 'test@example.com' already exists"
@@ -346,7 +366,9 @@ class TestAuthRegisterSecurity:
             f"409 detail must not echo the email address, got: {detail!r}"
         )
 
-    async def test_register_sqli_in_email_field_rejected(self, test_client: AsyncClient):
+    async def test_register_sqli_in_email_field_rejected(
+        self, test_client: AsyncClient
+    ):
         """SQLi payload in email field should be rejected with 422, never 500.
 
         The email field is validated by Pydantic EmailStr, so a malformed
@@ -369,7 +391,9 @@ class TestAuthRegisterSecurity:
             f"expected 422 for SQLi email payload, got {response.status_code}: {response.text}"
         )
 
-    async def test_register_sqli_in_username_field_rejected(self, test_client: AsyncClient, mock_db: AsyncMock):
+    async def test_register_sqli_in_username_field_rejected(
+        self, test_client: AsyncClient, mock_db: AsyncMock
+    ):
         """SQLi payload in username field should be rejected with 422, never 500.
 
         The username field currently accepts any string (only min/max length), so
@@ -403,7 +427,9 @@ class TestAuthRegisterSecurity:
 class TestAuthProtectedAccess:
     """Authenticated access to protected endpoints."""
 
-    async def test_valid_token_allows_access(self, test_client: AsyncClient, auth_headers: dict):
+    async def test_valid_token_allows_access(
+        self, test_client: AsyncClient, auth_headers: dict
+    ):
         """Valid token should allow access."""
         response = await test_client.get("/api/v1/health", headers=auth_headers)
         assert response.status_code == 200
@@ -421,7 +447,9 @@ class TestAuthProtectedAccess:
         )
         assert response.status_code == 401
 
-    async def test_analyst_cannot_delete(self, test_client: AsyncClient, auth_headers: dict):
+    async def test_analyst_cannot_delete(
+        self, test_client: AsyncClient, auth_headers: dict
+    ):
         """Analyst cannot access admin-only DELETE endpoint."""
         response = await test_client.delete(
             "/api/v1/transactions/00000000-0000-0000-0000-000000000001",
@@ -458,7 +486,12 @@ class TestAuthRefresh:
 
         past = datetime.now(tz=timezone.utc) - timedelta(hours=2)
         token = jose_jwt.encode(
-            {"sub": "test-user", "role": "analyst", "exp": past, "iat": past - timedelta(hours=1)},
+            {
+                "sub": "test-user",
+                "role": "analyst",
+                "exp": past,
+                "iat": past - timedelta(hours=1),
+            },
             settings.jwt_secret_key,
             algorithm=settings.jwt_algorithm,
         )
@@ -473,7 +506,9 @@ class TestAuthRefresh:
 class TestAuthLogout:
     """POST /api/v1/auth/logout endpoint."""
 
-    async def test_logout_returns_204(self, test_client: AsyncClient, auth_headers: dict):
+    async def test_logout_returns_204(
+        self, test_client: AsyncClient, auth_headers: dict
+    ):
         """Logout should return 204 No Content."""
         response = await test_client.post(
             "/api/v1/auth/logout",
