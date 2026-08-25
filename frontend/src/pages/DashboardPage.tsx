@@ -7,6 +7,8 @@ import apiClient from "../api/client";
 import ScoreHistogram from "../components/ScoreHistogram";
 import ScoreTrendChart, { buildDailyAverages } from "../components/ScoreTrendChart";
 import TransactionTable from "../components/TransactionTable";
+import { MotionList } from "../components/MotionList";
+import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
 import { useCountUp } from "../hooks/useCountUp";
 import type { Icon } from "@phosphor-icons/react";
@@ -115,11 +117,12 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-slate-950 flex overflow-x-hidden">
       <Sidebar activeItem="dashboard" />
 
-      {/* Main content */}
+      {/* Main content — route entrance animates once per navigation */}
       <main className="flex-1 overflow-auto p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Metric cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <PageTransition>
+          <div className="max-w-7xl mx-auto space-y-6">
+            {/* Metric cards */}
+            <MotionList className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
               label="Transacciones"
               value={metricsLoading ? null : metrics?.total_transactions ?? null}
@@ -154,10 +157,10 @@ export default function DashboardPage() {
                 (metrics?.active_alerts || 0) > 0 ? "text-yellow-400" : "text-green-400"
               }
             />
-          </div>
+            </MotionList>
 
-          {/* Charts row — composed shimmer skeleton while data loads */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" aria-busy={recentLoading}>
+            {/* Charts row — composed shimmer skeleton while data loads */}
+            <MotionList className="grid grid-cols-1 lg:grid-cols-2 gap-4" aria-busy={recentLoading}>
             {recentLoading ? (
               <>
                 <div
@@ -177,9 +180,9 @@ export default function DashboardPage() {
                 <ScoreTrendChart data={dailyAverages} />
               </>
             )}
-          </div>
+          </MotionList>
 
-          {/* Transaction table */}
+          {/* Transaction table — desktop tables never stagger (DESIGN.md non-goals) */}
           <div>
             <h2 className="text-sm font-semibold text-slate-300 mb-3">
               Últimas Transacciones
@@ -202,7 +205,8 @@ export default function DashboardPage() {
               loading={filteredLoading}
             />
           </div>
-        </div>
+          </div>
+        </PageTransition>
       </main>
     </div>
   );
@@ -235,7 +239,9 @@ function MetricCard({
   highlight?: string;
 }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+    // Hover = lift + border tint only. NO shadow animation (DESIGN.md non-goals):
+    // transform and color are cheap; box-shadow transitions are not.
+    <div className="transition-[border-color,transform] duration-150 ease-out-expo-like motion-reduce:transition-none motion-reduce:hover:translate-y-0 hover:-translate-y-[1px] hover:border-slate-700 bg-slate-900 border border-slate-800 rounded-lg p-4">
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs text-slate-500 font-medium">{label}</span>
         <span

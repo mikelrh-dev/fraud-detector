@@ -10,6 +10,8 @@ import {
 import { Sidebar } from "../components/Sidebar";
 import { AlertStatusBadge } from "../components/AlertStatusBadge";
 import { BellLineArt, EmptyState } from "../components/EmptyState";
+import { MotionList } from "../components/MotionList";
+import { PageTransition } from "../components/PageTransition";
 import { RiskMeter } from "../components/RiskMeter";
 import { NUMERIC_CELL } from "../lib/ui";
 
@@ -105,8 +107,9 @@ export default function AlertsPage() {
     <div className="min-h-screen bg-slate-950 flex overflow-x-hidden">
       <Sidebar activeItem="alerts" />
 
-      {/* Main */}
+      {/* Main — route entrance animates once per navigation */}
       <main className="flex-1 overflow-auto p-6">
+        <PageTransition>
         <div className="max-w-7xl mx-auto space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold text-slate-100">Alertas</h1>
@@ -129,7 +132,7 @@ export default function AlertsPage() {
                   setStatusFilter(f.value);
                   setPage(1);
                 }}
-                className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
+                className={`btn-motion active:scale-[0.98] text-xs px-3 py-1.5 rounded-full ${
                   statusFilter === f.value
                     ? "bg-slate-700 text-slate-200"
                     : "bg-slate-800 text-slate-400 hover:bg-slate-700"
@@ -163,7 +166,8 @@ export default function AlertsPage() {
                 }
               />
             ) : (
-              data?.items.map((alert) => (
+              <MotionList className="space-y-3">
+              {data?.items.map((alert) => (
                 <div
                   key={alert.id}
                   data-testid={`alert-card-${alert.id}`}
@@ -242,11 +246,12 @@ export default function AlertsPage() {
                     )}
                   </div>
                 </div>
-              ))
+              ))}
+              </MotionList>
             )}
           </div>
 
-          {/* Desktop table */}
+          {/* Desktop table — never staggers (DESIGN.md non-goals) */}
           <div className="hidden md:block">
             <div className="bg-slate-900 rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
@@ -403,6 +408,7 @@ export default function AlertsPage() {
             </div>
           </div>
         </div>
+        </PageTransition>
       </main>
 
       {/* Action confirmation modal */}
@@ -434,14 +440,14 @@ export default function AlertsPage() {
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setActionAlertId(null)}
-                className="px-3 py-1.5 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+                className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmAction}
                 disabled={actionMutation.isPending}
-                className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed transition-colors"
+                className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed"
               >
                 {actionMutation.isPending ? "Procesando..." : "Confirmar"}
               </button>
@@ -482,7 +488,7 @@ function ActionButton({
         e.stopPropagation();
         onClick();
       }}
-      className={`max-md:min-h-[40px] max-md:px-3 max-md:text-xs text-[11px] px-2 py-1 rounded border ${tones[tone]} transition-colors`}
+      className={`btn-motion active:scale-[0.98] max-md:min-h-[40px] max-md:px-3 max-md:text-xs text-[11px] px-2 py-1 rounded border ${tones[tone]}`}
     >
       {label}
     </button>

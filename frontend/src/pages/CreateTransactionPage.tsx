@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateTransaction } from "../hooks/useCreateTransaction";
 import { ScoreResultCard } from "./ScoreResultCard";
+import { PageTransition } from "../components/PageTransition";
 import { useAuthStore } from "../store/authStore";
 import { Sidebar } from "../components/Sidebar";
 import type { ScoreResponse } from "../api/transactions";
@@ -54,6 +55,7 @@ export default function CreateTransactionPage() {
     <div className="min-h-screen bg-page-bg flex overflow-x-hidden">
       <Sidebar activeItem="transactions" />
       <div className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
+        <PageTransition>
         <h1 className="text-lg font-bold text-text-primary mb-6">Nueva Transacción</h1>
 
         <form
@@ -152,7 +154,7 @@ export default function CreateTransactionPage() {
           <button
             type="submit"
             disabled={!isValid || mutation.isPending}
-            className="w-full bg-primary-container hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 rounded-lg transition-colors"
+            className="btn-motion active:scale-[0.98] w-full bg-primary-container hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 rounded-lg"
           >
             {mutation.isPending ? "Procesando..." : "Crear Transacción"}
           </button>
@@ -160,6 +162,7 @@ export default function CreateTransactionPage() {
 
         {/* Score Result */}
         <ScoreResultCard result={result} isLoading={mutation.isPending && result === null} />
+        </PageTransition>
       </div>
     </div>
   );

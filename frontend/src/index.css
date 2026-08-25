@@ -37,6 +37,17 @@
   /* Typography — self-hosted via @fontsource imports in main.tsx */
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Motion tokens (DESIGN.md — Motion). One easing, three durations:
+     fast 150ms = hover/press micro-feedback · base 300ms = entrances and
+     route transitions · slow 600ms = data-driven reveals (gauge arc, SHAP).
+     --ease-* lands in Tailwind's ease namespace → `ease-out-expo-like`
+     is a real utility. Durations stay plain vars consumed by hand-written
+     CSS; Tailwind bare-value durations (duration-150/300/600) cover JSX. */
+  --ease-out-expo-like: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-duration-fast: 150ms;
+  --motion-duration-base: 300ms;
+  --motion-duration-slow: 600ms;
 }
 
 :root {
@@ -78,16 +89,10 @@ body {
   animation: shimmer 1.6s ease-in-out infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-shimmer::after {
-    animation: none;
-    display: none;
-  }
-}
-
-/* One-shot entrance for the completed LLM report (fade + slide up).
-   Runs once on mount; disabled for reduced-motion users. */
-@keyframes report-in {
+/* One-shot entrance shared by route transitions and stagger reveals
+   (opacity + translateY ONLY — transform/opacity are the only properties
+   this codebase animates; see DESIGN.md — Motion). */
+@keyframes fade-slide-up {
   from {
     opacity: 0;
     transform: translateY(8px);
@@ -97,14 +102,84 @@ body {
     transform: translateY(0);
   }
 }
-.animate-report-in {
-  animation: report-in 300ms ease-out both;
+.animate-fade-slide-up {
+  animation: fade-slide-up var(--motion-duration-base) var(--ease-out-expo-like)
+    both;
 }
 
+/* Staggered reveal: direct children fade-slide-up in sequence. The delay is
+   driven by the per-child `--i` custom property, which MotionList clamps in
+   JS at MOTION_STAGGER_MAX_INDEX (8 → 480ms max accumulated delay). Children
+   without --i (e.g. static wrappers) simply get 0ms via the fallback.
+   Desktop tables deliberately do NOT use this — see DESIGN.md non-goals. */
+.motion-stagger > * {
+  animation: fade-slide-up var(--motion-duration-base)
+    var(--ease-out-expo-like) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* Sidebar active-nav indicator: a 2px accent bar that scales in from the
+   left edge of the active item. State lives entirely in the DOM via
+   [aria-current="page"] on the parent button — no JS measuring, no layout
+   animation (transform + opacity only). */
+.nav-indicator {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 16px;
+  width: 2px;
+  border-radius: 9999px;
+  background: var(--color-primary-container);
+  opacity: 0;
+  transform: translateY(-50%) scaleX(0);
+  transform-origin: left center;
+  transition:
+    transform var(--motion-duration-base) var(--ease-out-expo-like),
+    opacity var(--motion-duration-fast) ease-out;
+}
+.nav-item[aria-current="page"] .nav-indicator {
+  opacity: 1;
+  transform: translateY(-50%) scaleX(1);
+}
+
+/* Global reduced-motion guard — single kill switch for every CSS-driven
+   animation in the design system (shimmer sweep, report entrance, route
+   transition, staggered reveals). The JS-driven paths (gauge arc, count-up,
+   SHAP bars) each carry their own motion-reduce handling at the call site
+   and stay coherent with this block. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-report-in {
+  .animate-shimmer::after {
+    animation: none;
+    display: none;
+  }
+  .animate-report-in,
+  .animate-fade-slide-up,
+  .motion-stagger > * {
     animation: none;
   }
+  .nav-indicator {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* One-shot entrance for the completed LLM report — legacy class name kept
+   (TransactionDetail), now driven by the shared fade-slide-up keyframes.
+   Runs once on mount; disabled by the global reduced-motion guard above. */
+.animate-report-in {
+  animation: fade-slide-up var(--motion-duration-base) var(--ease-out-expo-like)
+    both;
+}
+
+/* Micro-interaction utility for interactive controls (buttons, pills, CTAs).
+   Extends the legacy color transition with transform ONLY — the single new
+   animated property this phase adds to controls. Pair with
+   `active:scale-[0.98]` at each call site. Under prefers-reduced-motion the
+   scale still applies but snaps instantly (no tween) — a discrete state
+   change, not animation. */
+@utility btn-motion {
+  transition-property: color, background-color, border-color, transform;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--ease-out-expo-like);
 }
 
 /* Custom scrollbar for dark theme */

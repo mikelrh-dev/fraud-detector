@@ -195,8 +195,84 @@ Signature 270° dial rendered by `<ScoreGauge>` inside `ScoreResultCard`:
 
 ## Motion
 
+CSS-first motion system (Phase 3). One easing, three durations, transform +
+opacity ONLY. No animation libraries (framer-motion/gsap) and no scroll
+listeners — ever.
+
+### Tokens (`@theme` in `frontend/src/index.css`)
+
+| Token | Value | Used for |
+|---|---|---|
+| `--ease-out-expo-like` | `cubic-bezier(0.16,1,0.3,1)` | everything (single house easing; generates the `ease-out-expo-like` Tailwind utility) |
+| `--motion-duration-fast` | 150ms | hover / press micro-feedback |
+| `--motion-duration-base` | 300ms | entrances, route transitions, stagger steps |
+| `--motion-duration-slow` | 600ms | data-driven reveals (gauge arc, SHAP bars) |
+
+### Keyframes & utilities
+
+- **`.animate-fade-slide-up`** — shared one-shot entrance: opacity 0→1 +
+  translateY(8px)→0 over 300ms. Drives route transitions; also backs the
+  legacy `.animate-report-in` class (same keyframes, kept name).
+- **`.motion-stagger > *`** — staggered reveal: direct children replay the
+  same entrance with `animation-delay: calc(var(--i) * 60ms)`.
+- **`.btn-motion`** (`@utility`) — press feedback for interactive controls:
+  transitions color/background/border + transform over fast duration. Pair
+  with `active:scale-[0.98]` at each call site.
+
+### Stagger contract — `<MotionList>` (`src/components/MotionList.tsx`)
+
+Component-driven pattern (chosen over a bare utility so the cap is enforced):
+renders children inside a `.motion-stagger` container and stamps each element
+child with an inline `--i` clamped by `clampStaggerIndex` to
+`MOTION_STAGGER_MAX_INDEX = 8` → max accumulated delay ≈ **480ms**, regardless
+of list length. Non-element children pass through untouched. Apply to mobile
+card lists, KPI grids, chart rows and chip groups — never to desktop tables.
+
+### Route transition — `<PageTransition>` (`src/components/PageTransition.tsx`)
+
+Wraps authenticated page content in a div keyed by `location.pathname`.
+Navigation swaps the key → remount → the fade-slide-up entrance replays once.
+In-page updates (filters, pagination, data refetches) never re-trigger it.
+Integrated in every Sidebar page's content area plus the standalone
+TransactionDetail. Login/Register are excluded on purpose (unauthenticated,
+full-screen centered forms).
+
+### Micro-interactions
+
+- **Buttons/pills/CTAs:** `btn-motion active:scale-[0.98]` — pressed controls
+  scale down 2% instantly-tweened; colors keep their legacy hover transitions.
+- **MetricCards:** hover lifts `-translate-y-[1px]` + border-color deepens to
+  `slate-700`. Deliberately NO box-shadow animation (see non-goals).
+- **Sidebar active item:** a 2px accent bar (`.nav-indicator`) scales in from
+  origin-left via `[aria-current="page"]` on the parent button — pure CSS,
+  zero JS measuring, transform + opacity only.
+- **Table rows:** color hover ONLY (`bg-slate-800/40`). Restraint is the rule;
+  no transforms on rows.
+
+### Reduced-motion guarantee
+
+One global guard in `index.css` kills every CSS-driven animation under
+`prefers-reduced-motion`: shimmer sweep (also `display:none`), report
+entrance, route transition and staggered reveals get `animation: none`; the
+nav indicator gets `transition-duration: 0.01ms`. JS-driven paths carry their
+own opt-outs at the call site: gauge arc (`motion-reduce:transition-none`),
+count-up hook (jumps straight to target), SHAP bars (final width immediately).
+Button press-scale snaps without tweening — a discrete state change, not
+animation.
+
+### Explicit non-goals
+
+- **No desktop-table stagger** — data-dense views re-render on every
+  pagination/sort/filter tick; re-animating rows there is churn, not polish.
+- **No shadow animation** — animating box-shadow repaints every frame; cards
+  shift borders instead (colors are cheap).
+- **No layout-property animations** — only `transform` and `opacity` (plus
+  legacy color hovers). No top/left/width/height, no scroll listeners.
+- **No bounce/playful easing** — calm analyst tool, one expo-out curve.
+
+### Legacy motion (unchanged)
+
 - Hover transitions: 150ms ease-out
-- No bounce or playful animations
 - Loading: subtle pulse (`slate-700` ↔ `slate-800`) on skeleton placeholders;
   shimmer sweep (`.animate-shimmer`) for composed chart-area skeletons
 - Score gauge arc: 600ms `cubic-bezier(0.16,1,0.3,1)` on `stroke-dashoffset`

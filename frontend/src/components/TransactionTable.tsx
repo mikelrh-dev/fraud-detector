@@ -85,7 +85,7 @@ export default function TransactionTable({
           <button
             key={cls}
             onClick={() => onFilterChange(cls === "all" ? undefined : cls)}
-            className={`text-xs px-3 py-1 rounded-full transition-colors ${
+            className={`btn-motion active:scale-[0.98] text-xs px-3 py-1 rounded-full ${
               (cls === "all" && !classificationFilter) ||
               classificationFilter === cls
                 ? "bg-slate-700 text-slate-200"

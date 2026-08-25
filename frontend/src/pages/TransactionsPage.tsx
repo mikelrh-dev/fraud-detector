@@ -4,6 +4,8 @@ import { useNavigate, Link } from "react-router-dom";
 import { listTransactions } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
 import { EmptyState, ReceiptLineArt } from "../components/EmptyState";
+import { MotionList } from "../components/MotionList";
+import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
 import type { Transaction } from "../api/transactions";
 import { formatScore } from "../lib/score";
@@ -55,12 +57,13 @@ export default function TransactionsPage() {
     <div className="min-h-screen bg-page-bg flex overflow-x-hidden">
       <Sidebar activeItem="transactions" />
       <div className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
+        <PageTransition>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-lg font-bold text-text-primary">Transacciones</h1>
           <Link
             to="/transactions/new"
-            className="inline-flex items-center gap-1.5 bg-primary-container hover:bg-action-hover text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="btn-motion active:scale-[0.98] inline-flex items-center gap-1.5 bg-primary-container hover:bg-action-hover text-white text-sm font-medium px-4 py-2 rounded-lg"
           >
             <span className="material-symbols-outlined text-base">add</span>
             Nueva Transacción
@@ -78,7 +81,7 @@ export default function TransactionsPage() {
                   setStatusFilter(pill.key);
                   setPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                className={`btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium ${
                   statusFilter === pill.key
                     ? "bg-slate-700 text-slate-200"
                     : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-300"
@@ -140,8 +143,8 @@ export default function TransactionsPage() {
           />
         ) : (
           <>
-            {/* Mobile card list */}
-            <div className="md:hidden space-y-3">
+            {/* Mobile card list — staggered reveal (md+ table never staggers) */}
+            <MotionList className="md:hidden space-y-3">
               {data?.items.map((tx: Transaction) => (
                 <div
                   key={tx.id}
@@ -176,7 +179,7 @@ export default function TransactionsPage() {
                   </div>
                 </div>
               ))}
-            </div>
+            </MotionList>
 
             {/* Desktop table */}
             <div className="hidden md:block">
@@ -260,14 +263,14 @@ export default function TransactionsPage() {
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Anterior
                   </button>
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Siguiente
                   </button>
@@ -276,6 +279,7 @@ export default function TransactionsPage() {
             )}
           </>
         )}
+        </PageTransition>
       </div>
     </div>
   );

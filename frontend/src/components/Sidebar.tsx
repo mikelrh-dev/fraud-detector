@@ -26,14 +26,18 @@ const navItems = [
 
 function NavItem({ icon, label, isActive, onClick }: NavItemProps) {
   return (
+    // aria-current drives the sliding 2px indicator (pure CSS — see
+    // .nav-indicator in index.css); no JS measuring, no layout animation.
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+      aria-current={isActive ? "page" : undefined}
+      className={`nav-item relative w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
         isActive
           ? "bg-slate-800 text-slate-200"
           : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-300"
       }`}
     >
+      <span aria-hidden="true" className="nav-indicator" />
       <span className="material-symbols-outlined text-base">{icon}</span>
       {label}
     </button>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ScoreResponse } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
+import { MotionList } from "../components/MotionList";
 import { formatScore, isMLTrained } from "../lib/score";
 import type { RiskTone } from "../lib/risk";
 import { RISK_THRESHOLDS, riskTone } from "../lib/risk";
@@ -198,7 +199,7 @@ function FiredRulesChips({ rules }: { rules: string[] }) {
   return (
     <div className="mt-4">
       <h4 className="text-xs text-slate-400 font-medium mb-2">Reglas Activadas</h4>
-      <div className="flex flex-wrap gap-2">
+      <MotionList className="flex flex-wrap gap-2">
         {rules.map((rule) => (
           <span
             key={rule}
@@ -207,7 +208,7 @@ function FiredRulesChips({ rules }: { rules: string[] }) {
             {rule}
           </span>
         ))}
-      </div>
+      </MotionList>
     </div>
   );
 }

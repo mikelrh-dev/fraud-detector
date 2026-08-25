@@ -7,6 +7,7 @@ import type { ScoreResponse, Transaction } from "../api/transactions";
 import apiClient from "../api/client";
 import { parseReportLines, type ReportBlock } from "../lib/report-format";
 import { ScoreResultCard } from "./ScoreResultCard";
+import { PageTransition } from "../components/PageTransition";
 import { ShapAttributionCard } from "../components/ShapAttributionCard";
 
 interface ReportResponse {
@@ -138,7 +139,7 @@ function CopyReportButton({ text }: { text: string }) {
       type="button"
       onClick={handleCopy}
       aria-label={copied ? "Copiado" : "Copiar reporte"}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 max-md:min-h-[40px]"
+      className="btn-motion active:scale-[0.98] inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-200 max-md:min-h-[40px]"
     >
       {copied ? (
         <Check size={16} weight="regular" className="text-risk-clean" />
@@ -318,6 +319,7 @@ export default function TransactionDetail() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-6">
+        <PageTransition>
         {/* Transaction details */}
         <section className="bg-slate-900 rounded-lg border border-slate-800 p-5">
           <h2 className="text-sm font-semibold text-slate-300 mb-4">
@@ -434,6 +436,7 @@ export default function TransactionDetail() {
               </div>
           )}
         </section>
+        </PageTransition>
       </main>
     </div>
   );
