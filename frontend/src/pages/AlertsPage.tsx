@@ -9,6 +9,8 @@ import {
 } from "../api/alerts";
 import { Sidebar } from "../components/Sidebar";
 import { AlertStatusBadge } from "../components/AlertStatusBadge";
+import { RiskMeter } from "../components/RiskMeter";
+import { NUMERIC_CELL } from "../lib/ui";
 
 const CLASSIFICATION_COLORS: Record<string, string> = {
   legitimate: "text-fraud-legitimate",
@@ -202,7 +204,7 @@ export default function AlertsPage() {
                               onClick={() =>
                                 openActionDialog(alert.id, "review")
                               }
-                              color="blue"
+                              tone="info"
                             />
                             <ActionButton
                               label="Falso Pos."
@@ -212,7 +214,7 @@ export default function AlertsPage() {
                                   "false_positive",
                                 )
                               }
-                              color="green"
+                              tone="clean"
                             />
                           </>
                         )}
@@ -222,7 +224,7 @@ export default function AlertsPage() {
                             onClick={() =>
                               openActionDialog(alert.id, "revert")
                             }
-                            color="yellow"
+                            tone="warn"
                           />
                         )}
                       </>
@@ -267,7 +269,7 @@ export default function AlertsPage() {
                       data?.items.map((alert) => (
                         <tr
                           key={alert.id}
-                          className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors"
+                          className="border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors"
                         >
                           <td className="p-3">
                             <button
@@ -281,21 +283,8 @@ export default function AlertsPage() {
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-2">
-                              <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{
-                                    width: `${Math.min(alert.score, 100)}%`,
-                                    backgroundColor:
-                                      alert.score > 70
-                                        ? "#ef4444"
-                                        : alert.score > 40
-                                          ? "#f59e0b"
-                                          : "#22c55e",
-                                  }}
-                                />
-                              </div>
-                              <span className="text-xs text-slate-400 w-5">
+                              <RiskMeter value={alert.score} widthClass="w-12" />
+                              <span className={`text-xs text-slate-400 w-5 ${NUMERIC_CELL}`}>
                                 {alert.score.toFixed(0)}
                               </span>
                             </div>
@@ -338,7 +327,7 @@ export default function AlertsPage() {
                                       onClick={() =>
                                         openActionDialog(alert.id, "review")
                                       }
-                                      color="blue"
+                                      tone="info"
                                     />
                                     <ActionButton
                                       label="Falso Pos."
@@ -348,7 +337,7 @@ export default function AlertsPage() {
                                           "false_positive",
                                         )
                                       }
-                                      color="green"
+                                      tone="clean"
                                     />
                                   </>
                                 )}
@@ -358,7 +347,7 @@ export default function AlertsPage() {
                                     onClick={() =>
                                       openActionDialog(alert.id, "revert")
                                     }
-                                    color="yellow"
+                                    tone="warn"
                                   />
                                 )}
                               </div>
@@ -448,21 +437,27 @@ export default function AlertsPage() {
   );
 }
 
+/**
+ * Action semantics → semantic token tone (no raw palette colors):
+ * info = neutral workflow step (review), clean = resolving positively
+ * (false positive), warn = undoing with caution (revert).
+ */
+type ActionTone = "info" | "clean" | "warn";
+
 function ActionButton({
   label,
   onClick,
-  color,
+  tone,
 }: {
   label: string;
   onClick: () => void;
-  color: "blue" | "green" | "yellow";
+  tone: ActionTone;
 }) {
-  const colors = {
-    blue: "bg-blue-900/30 text-blue-400 hover:bg-blue-800/40 border-blue-700/30",
-    green:
-      "bg-green-900/30 text-green-400 hover:bg-green-800/40 border-green-700/30",
-    yellow:
-      "bg-yellow-900/30 text-yellow-400 hover:bg-yellow-800/40 border-yellow-700/30",
+  const tones: Record<ActionTone, string> = {
+    info: "bg-status-info/10 text-status-info hover:bg-status-info/20 border-status-info/30",
+    clean:
+      "bg-risk-clean/10 text-risk-clean hover:bg-risk-clean/20 border-risk-clean/30",
+    warn: "bg-risk-warn/10 text-risk-warn hover:bg-risk-warn/20 border-risk-warn/30",
   };
 
   return (
@@ -471,7 +466,7 @@ function ActionButton({
         e.stopPropagation();
         onClick();
       }}
-      className={`max-md:min-h-[40px] max-md:px-3 max-md:text-xs text-[11px] px-2 py-1 rounded border ${colors[color]} transition-colors`}
+      className={`max-md:min-h-[40px] max-md:px-3 max-md:text-xs text-[11px] px-2 py-1 rounded border ${tones[tone]} transition-colors`}
     >
       {label}
     </button>

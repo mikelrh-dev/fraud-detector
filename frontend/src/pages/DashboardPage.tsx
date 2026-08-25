@@ -8,6 +8,9 @@ import ScoreHistogram from "../components/ScoreHistogram";
 import ScoreTrendChart, { buildDailyAverages } from "../components/ScoreTrendChart";
 import TransactionTable from "../components/TransactionTable";
 import { Sidebar } from "../components/Sidebar";
+import { useCountUp } from "../hooks/useCountUp";
+import type { Icon } from "@phosphor-icons/react";
+import { Bell, ChartBar, CreditCard, ShieldWarning } from "@phosphor-icons/react";
 
 interface DashboardMetrics {
   total_transactions: number;
@@ -119,42 +122,34 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
               label="Transacciones"
-              value={
-                metricsLoading
-                  ? "—"
-                  : metrics?.total_transactions.toLocaleString("es-AR") || "0"
-              }
-              icon="💳"
+              value={metricsLoading ? null : metrics?.total_transactions ?? null}
+              format={(n) => Math.round(n).toLocaleString("es-AR")}
+              icon={CreditCard}
+              tone="info"
             />
             <MetricCard
               label="Fraude"
-              value={
-                metricsLoading
-                  ? "—"
-                  : `${metrics?.fraud_percentage.toFixed(1) || "0.0"}%`
-              }
-              icon="🚨"
+              value={metricsLoading ? null : metrics?.fraud_percentage ?? null}
+              format={(n) => `${n.toFixed(1)}%`}
+              icon={ShieldWarning}
+              tone="critical"
               highlight={
                 (metrics?.fraud_percentage || 0) > 5 ? "text-red-400" : "text-green-400"
               }
             />
             <MetricCard
               label="Score Promedio"
-              value={
-                metricsLoading
-                  ? "—"
-                  : metrics?.avg_score.toFixed(1) || "0.0"
-              }
-              icon="📊"
+              value={metricsLoading ? null : metrics?.avg_score ?? null}
+              format={(n) => n.toFixed(1)}
+              icon={ChartBar}
+              tone="clean"
             />
             <MetricCard
               label="Alertas Activas"
-              value={
-                metricsLoading
-                  ? "—"
-                  : String(metrics?.active_alerts || 0)
-              }
-              icon="🔔"
+              value={metricsLoading ? null : metrics?.active_alerts ?? null}
+              format={(n) => String(Math.round(n))}
+              icon={Bell}
+              tone="warn"
               highlight={
                 (metrics?.active_alerts || 0) > 0 ? "text-yellow-400" : "text-green-400"
               }
@@ -196,25 +191,45 @@ export default function DashboardPage() {
   );
 }
 
+/** Metric icon tone → token color class (no hex; see DESIGN.md tokens). */
+type MetricTone = "info" | "warn" | "critical" | "clean";
+
+const ICON_TONE_CLASSES: Record<MetricTone, string> = {
+  info: "text-status-info",
+  warn: "text-risk-warn",
+  critical: "text-risk-critical",
+  clean: "text-risk-clean",
+};
+
 function MetricCard({
   label,
   value,
-  icon,
+  format,
+  icon: Icon,
+  tone,
   highlight,
 }: {
   label: string;
-  value: string;
-  icon: string;
+  /** null renders the em-dash placeholder (loading / no data). */
+  value: number | null;
+  format: (n: number) => string;
+  icon: Icon;
+  tone: MetricTone;
   highlight?: string;
 }) {
+  const animated = useCountUp(value ?? 0);
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs text-slate-500 font-medium">{label}</span>
-        <span className="text-lg">{icon}</span>
+        <span
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${ICON_TONE_CLASSES[tone]}`}
+        >
+          <Icon size={18} weight="regular" />
+        </span>
       </div>
       <p className={`text-2xl font-bold ${highlight || "text-slate-100"}`}>
-        {value}
+        {value === null ? "—" : format(animated)}
       </p>
     </div>
   );

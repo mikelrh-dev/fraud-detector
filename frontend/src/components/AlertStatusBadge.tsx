@@ -19,12 +19,8 @@ const ALERT_STATUS_LABELS: Record<string, string> = {
 export function AlertStatusBadge({ status }: { status: string }) {
   const tone = ALERT_STATUS_TONES[status];
   if (!tone) {
-    // Unknown status: neutral fallback (no hex — slate utilities only)
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 text-[11px] rounded-full font-medium border bg-slate-800 border-slate-700 text-slate-400">
-        {status}
-      </span>
-    );
+    // Unknown status routes through the Badge primitive's neutral fallback.
+    return <Badge tone="neutral" size="sm">{status}</Badge>;
   }
   return (
     <Badge tone={tone} size="sm">

@@ -1,4 +1,10 @@
 import type { Transaction } from "../api/transactions";
+import { RiskMeter } from "./RiskMeter";
+import {
+  NUMERIC_CELL,
+  TABLE_HEADER_CELL,
+  TABLE_HEADER_NUMERIC,
+} from "../lib/ui";
 
 interface TransactionTableProps {
   transactions: Transaction[];
@@ -100,10 +106,10 @@ export default function TransactionTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
-              <th className="text-left p-3 font-medium">ID</th>
+            <tr className="border-b border-slate-800">
+              <th className={TABLE_HEADER_CELL}>ID</th>
               <th
-                className="text-left p-3 font-medium cursor-pointer hover:text-slate-200"
+                className={`${TABLE_HEADER_NUMERIC} cursor-pointer hover:text-slate-200`}
                 onClick={() => onSort("amount")}
               >
                 Monto
@@ -113,9 +119,9 @@ export default function TransactionTable({
                   direction={sortDirection}
                 />
               </th>
-              <th className="text-left p-3 font-medium">Comercio</th>
+              <th className={TABLE_HEADER_CELL}>Comercio</th>
               <th
-                className="text-left p-3 font-medium cursor-pointer hover:text-slate-200"
+                className={`${TABLE_HEADER_NUMERIC} cursor-pointer hover:text-slate-200`}
                 onClick={() => onSort("risk_score")}
               >
                 Score
@@ -125,10 +131,10 @@ export default function TransactionTable({
                   direction={sortDirection}
                 />
               </th>
-              <th className="text-left p-3 font-medium">Clasificación</th>
-              <th className="text-left p-3 font-medium">Estado</th>
+              <th className={TABLE_HEADER_CELL}>Clasificación</th>
+              <th className={TABLE_HEADER_CELL}>Estado</th>
               <th
-                className="text-left p-3 font-medium cursor-pointer hover:text-slate-200"
+                className={`${TABLE_HEADER_CELL} cursor-pointer hover:text-slate-200`}
                 onClick={() => onSort("created_at")}
               >
                 Fecha
@@ -164,37 +170,24 @@ export default function TransactionTable({
                   <tr
                     key={tx.id}
                     onClick={() => onTransactionClick(tx.id)}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/50 cursor-pointer transition-colors"
+                    className="border-b border-slate-800/50 hover:bg-slate-800/40 cursor-pointer transition-colors"
                   >
-                    <td className="p-3 text-slate-300 font-mono text-xs">
+                    <td className="px-4 py-3 text-slate-300 font-mono text-xs">
                       {tx.id.slice(0, 8)}...
                     </td>
-                    <td className="p-3 text-slate-200 font-medium">
+                    <td className={`px-4 py-3 text-slate-200 font-medium ${NUMERIC_CELL}`}>
                       ${tx.amount.toLocaleString("es-AR")}
                     </td>
-                    <td className="p-3 text-slate-300">{tx.merchant_name}</td>
-                    <td className="p-3">
+                    <td className="px-4 py-3 text-slate-300">{tx.merchant_name}</td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${tx.risk_score || 0}%`,
-                              backgroundColor:
-                                (tx.risk_score || 0) > 70
-                                  ? "#ef4444"
-                                  : (tx.risk_score || 0) > 40
-                                    ? "#f59e0b"
-                                    : "#22c55e",
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs text-slate-400 w-6">
+                        <RiskMeter value={tx.risk_score || 0} />
+                        <span className={`text-xs text-slate-400 w-6 ${NUMERIC_CELL}`}>
                           {tx.risk_score ?? "—"}
                         </span>
                       </div>
                     </td>
-                    <td className="p-3">
+                    <td className="px-4 py-3">
                       <span
                         className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${colorClass}`}
                       >
@@ -207,10 +200,10 @@ export default function TransactionTable({
                               : classification}
                       </span>
                     </td>
-                    <td className="p-3 text-slate-400 text-xs capitalize">
+                    <td className="px-4 py-3 text-slate-400 text-xs capitalize">
                       {tx.status}
                     </td>
-                    <td className="p-3 text-slate-400 text-xs">
+                    <td className="px-4 py-3 text-slate-400 text-xs">
                       {new Date(tx.created_at).toLocaleDateString("es-AR", {
                         day: "2-digit",
                         month: "2-digit",

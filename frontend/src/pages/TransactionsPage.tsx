@@ -5,6 +5,12 @@ import { listTransactions } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
 import { Sidebar } from "../components/Sidebar";
 import type { Transaction } from "../api/transactions";
+import { formatScore } from "../lib/score";
+import {
+  NUMERIC_CELL,
+  TABLE_HEADER_CELL,
+  TABLE_HEADER_NUMERIC,
+} from "../lib/ui";
 
 type StatusFilter = "all" | "legitimate" | "review" | "fraud";
 
@@ -142,7 +148,7 @@ export default function TransactionsPage() {
                   {/* Header row: merchant + amount */}
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-slate-200 truncate">{tx.merchant_name}</span>
-                    <span className="text-sm font-bold text-slate-100">${tx.amount.toFixed(2)}</span>
+                    <span className={`text-sm font-bold text-slate-100 ${NUMERIC_CELL}`}>${tx.amount.toFixed(2)}</span>
                   </div>
                   {/* Footer row: date + badge + score */}
                   <div className="flex items-center justify-between">
@@ -159,8 +165,8 @@ export default function TransactionsPage() {
                       ) : (
                         <span className="text-slate-500">—</span>
                       )}
-                      <span className="text-xs text-slate-300">
-                        {tx.risk_score !== null ? tx.risk_score.toFixed(1) : "—"}
+                      <span className={`text-xs text-slate-300 ${NUMERIC_CELL}`}>
+                        {formatScore(tx.risk_score)}
                       </span>
                     </div>
                   </div>
@@ -175,13 +181,13 @@ export default function TransactionsPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-800">
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Comercio</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Monto</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Moneda</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Estado</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Score</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Clasificación</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-400 font-medium">Fecha</th>
+                        <th className={TABLE_HEADER_CELL}>Comercio</th>
+                        <th className={TABLE_HEADER_NUMERIC}>Monto</th>
+                        <th className={TABLE_HEADER_CELL}>Moneda</th>
+                        <th className={TABLE_HEADER_CELL}>Estado</th>
+                        <th className={TABLE_HEADER_NUMERIC}>Score</th>
+                        <th className={TABLE_HEADER_CELL}>Clasificación</th>
+                        <th className={TABLE_HEADER_CELL}>Fecha</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -189,10 +195,10 @@ export default function TransactionsPage() {
                         <tr
                           key={tx.id}
                           onClick={() => navigate(`/transactions/${tx.id}`)}
-                          className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer transition-colors"
+                          className="border-b border-slate-800/50 hover:bg-slate-800/40 cursor-pointer transition-colors"
                         >
                           <td className="px-4 py-3 text-slate-200">{tx.merchant_name}</td>
-                          <td className="px-4 py-3 text-slate-200">${tx.amount.toFixed(2)}</td>
+                          <td className={`px-4 py-3 text-slate-200 ${NUMERIC_CELL}`}>${tx.amount.toFixed(2)}</td>
                           <td className="px-4 py-3 text-slate-400">{tx.currency}</td>
                           <td className="px-4 py-3">
                             <span
@@ -215,8 +221,8 @@ export default function TransactionsPage() {
                                     : tx.status}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-slate-300">
-                            {tx.risk_score !== null ? tx.risk_score.toFixed(1) : "—"}
+                          <td className={`px-4 py-3 text-slate-300 ${NUMERIC_CELL}`}>
+                            {formatScore(tx.risk_score)}
                           </td>
                           <td className="px-4 py-3">
                             {tx.classification ? (

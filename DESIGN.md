@@ -126,24 +126,39 @@ Base unit: **4px**. Common values: 4, 8, 12, 16, 24, 32, 48.
 
 All badges render through the **`Badge` primitive** (`src/components/Badge.tsx`) — never hand-roll pill styling:
 
-- **Tone prop** (semantic, zero hardcoded hex): `clean` → `risk-clean`, `warn` → `risk-warn`, `critical` → `risk-critical`, `info` → `status-info`
+- **Tone prop** (semantic, zero hardcoded hex): `clean` → `risk-clean`, `warn` → `risk-warn`, `critical` → `risk-critical`, `info` → `status-info`, `neutral` → slate utilities (`bg-slate-800 border-slate-700 text-slate-400`, unknown-state fallback — skips the tinted pattern on purpose)
 - **Background:** semantic color at 10% opacity (`bg-risk-XXX/10`)
 - **Border:** 1px solid semantic color at 30% opacity (`border-risk-XXX/30`)
 - **Text:** full semantic color (`text-risk-XXX`)
 - **Padding/radius:** `rounded-full`; sizes `md` (px-3 py-1 text-sm) and `sm` (px-2 py-0.5 text-[11px])
 - **Icon slot:** optional Material Symbols glyph via the `icon` prop
-- Consumers: `ClassificationBadge` (approved/flagged/blocked), `AlertStatusBadge` (open→warn, reviewed→info, resolved→clean)
+- Consumers: `ClassificationBadge` (approved/flagged/blocked), `AlertStatusBadge` (open→warn, reviewed→info, resolved→clean, unknown→neutral)
 
 ### Charts
 
 Chart colors come from **`src/lib/chart-theme.ts`** (`THEME`). Rule: **no literal hex inside chart components** — enforced by `chart-theme.test.ts`. The hex values in `THEME` must mirror the `@theme` CSS tokens in `index.css` until Tailwind exposes theme vars to JS; both sides are guarded by tests.
 
 ### Tables
-- Header: `slate-800` bg, `slate-400` text, 12px / 500
+
+Unified chrome (shared constants in `src/lib/ui.ts` — import them, don't copy class strings):
+
+- Header cells: `TABLE_HEADER_CELL` = `text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-slate-400`; numeric columns use `TABLE_HEADER_NUMERIC` (same, but `text-right`)
 - Rows: alternating `slate-900` / `slate-950`
-- Row hover: `slate-800`
-- Cell padding: 12px 16px
+- Row hover: `bg-slate-800/40` (unified across dashboard, transactions and alerts tables)
+- Cell padding: `px-4 py-3`
 - Borders: 1px solid `slate-800` between rows
+
+**Numeric-cell rule:** every AMOUNT cell and SCORE value renders right-aligned monospace with fixed-width digits — always via `NUMERIC_CELL` (`text-right font-mono tabular-nums`). Applies to desktop tables and mobile card values alike. Transaction IDs stay mono as before.
+
+### RiskMeter
+
+All score bars render through **`<RiskMeter value={n} />`** (`src/components/RiskMeter.tsx`) — never hand-roll an inline-styled bar:
+
+- Track: `h-1.5 rounded-full bg-slate-800`; optional `widthClass` (default `w-16`)
+- Fill: width clamped to 0–100%, tone from the shared banding in `src/lib/risk.ts`: `risk-clean <45`, `risk-warn 45–59`, `risk-critical ≥60`
+- Two threshold ticks at 45% / 60% (`border-slate-600/50`, absolute-positioned)
+- Zero inline hex; meter semantics via `role="meter"` + aria valuenow
+- Source-of-truth note: backend classification is dynamic (amount-based thresholds), so these bands are the agreed UI display convention
 
 ### Score Gauge (ensemble risk score, 0-100)
 - Track: `slate-800`
@@ -156,11 +171,12 @@ Chart colors come from **`src/lib/chart-theme.ts`** (`THEME`). Rule: **no litera
 
 ## Iconography
 
-- **Material Symbols Outlined** (Google Fonts) — chosen by Stitch during design generation
-- **Decision:** keep Material Symbols for design fidelity and zero-dependency loading (Google Fonts CDN)
-- Default size: 20px in nav, 18-20px in cards
+- **Phosphor Icons** (`@phosphor-icons/react`) — standard for metric cards and data-driven glyphs as of Phase 1 (dashboard MetricCards). **Standard weight: `weight="regular"`** — Phosphor draws on a 256-grid with stroke 16, which is exactly **1.5px at 24px** render size; that is the house strokeWidth. Size in cards: 18px inside a consistent `h-8 w-8 rounded-lg` container tinted with the card's semantic token (`text-status-info` / `text-risk-critical` / `text-risk-clean` / `text-risk-warn`).
+- **Material Symbols Outlined** (Google Fonts) — legacy nav/sidebar glyphs, chosen by Stitch during design generation; migrates to Phosphor in the icon-system phase
+- Material Symbols default size: 20px in nav, 18-20px in cards
 - Stroke: variable, controlled by `font-variation-settings`
-- Required icon set (used by the app): `dashboard`, `payments`, `notifications_active`, `policy`, `rule`, `add`, `logout`, `arrow_forward`
+- Required Material Symbols set (used by the app): `dashboard`, `payments`, `notifications_active`, `policy`, `rule`, `add`, `logout`, `arrow_forward`
+- No emojis in production UI — dashboard MetricCards use Phosphor (`CreditCard`, `ShieldWarning`, `ChartBar`, `Bell`)
 
 ---
 
@@ -170,6 +186,7 @@ Chart colors come from **`src/lib/chart-theme.ts`** (`THEME`). Rule: **no litera
 - No bounce or playful animations
 - Loading: subtle pulse (`slate-700` ↔ `slate-800`) on skeleton placeholders
 - Score gauge fill: 400ms ease-out on first render
+- Metric count-up: `useCountUp(target, { duration: 800 })` hook (`src/hooks/useCountUp.ts`) — requestAnimationFrame-driven, easeOutCubic, animates the real fetched value only (no invented deltas). **Respects `prefers-reduced-motion`**: jumps straight to the target.
 
 ---
 

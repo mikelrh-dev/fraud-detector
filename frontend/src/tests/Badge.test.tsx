@@ -57,6 +57,14 @@ describe("Badge primitive", () => {
     expect(pill.className).toContain("border");
   });
 
+  it("tone=neutral renders slate fallback styling (unknown-state route)", () => {
+    const { container } = render(<Badge tone="neutral">?</Badge>);
+    const pill = container.firstElementChild as HTMLElement;
+    expect(pill.className).toContain("bg-slate-800");
+    expect(pill.className).toContain("border-slate-700");
+    expect(pill.className).toContain("text-slate-400");
+  });
+
   it("source file has no hardcoded hex colors", () => {
     const src = readFileSync(
       join(process.cwd(), "src", "components", "Badge.tsx"),
