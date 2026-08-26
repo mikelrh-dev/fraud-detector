@@ -24,7 +24,7 @@ class FraudGraphService:
     - Edges: transactions between users/cards
     - Attributes: fraud labels on nodes, timestamps for pruning
     
-    Thread-Safe: All operations protected by asyncio.Lock() to handle concurrent requests.
+    Thread-Safe: All operations protected by threading.Lock() to handle concurrent requests.
     Memory-Safe: Automatic pruning keeps graph bounded (default: 30-day retention).
     """
 

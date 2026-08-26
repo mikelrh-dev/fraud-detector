@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 STREAM_NAME = "fraud:llm"
 GROUP_NAME = "llm-workers"
 CONSUMER_NAME = "llm-worker-1"
-MAX_RETRIES = 3
+MAX_RETRIES = 3  # total retries before DLQ (actual attempts = MAX_RETRIES + 1: original + retries)
 RECOVERY_INTERVAL = 60
 BACKOFF_CAP_SECONDS = 60
 
@@ -35,9 +35,6 @@ BACKOFF_CAP_SECONDS = 60
 def _backoff_delay(retry_count: int) -> int:
     """Exponential backoff before re-enqueueing a failed report."""
     return min(2**retry_count, BACKOFF_CAP_SECONDS)
-
-
-MAX_RETRIES = 3
 
 
 async def process_report_request(
