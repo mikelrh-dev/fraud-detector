@@ -43,7 +43,7 @@
         <p>La capa ML aprende lo que las reglas no pueden expresar: combinaciones no obvias de
         importe, ritmo, geografía y categoría que separan el fraude del gasto legítimo.</p>
 
-        <h3>Feature engineering: donde vive el conocimiento del dominio</h3>
+        <h2>Feature engineering: donde vive el conocimiento del dominio</h2>
         <p>Los inputs crudos (importe, timestamp, merchant) se transforman en diez features que
         exponen señal conductual al modelo:</p>
 
@@ -68,7 +68,7 @@
         importantes: $2,000 es normal para un usuario y alarmante para otro. Normalizar contra la
         propia línea base de cada usuario permite que un único modelo sirva a todos.</p>
 
-        <h3>¿Por qué XGBoost?</h3>
+        <h2>¿Por qué XGBoost?</h2>
         <ul>
           <li><strong>Señal supervisada:</strong> entrenado con fraude etiquetado (~1% de prevalencia), optimiza directamente la separación entre clases — a diferencia de detectores de anomalías como Isolation Forest, que solo saben "esto luce inusual".</li>
           <li><strong>Latencia amigable en CPU:</strong> la inferencia de árboles tarda microsegundos — compatible con scoring en tiempo real, sin infraestructura de GPU.</li>
@@ -76,7 +76,7 @@
           <li><strong>Rey de datos tabulares:</strong> en datos tabulares pequeños/medianos, los gradient-boosted trees siguen siendo estado del arte frente al deep learning.</li>
         </ul>
 
-        <h3>Domando la curva de probabilidad</h3>
+        <h2>Domando la curva de probabilidad</h2>
         <p>La probabilidad cruda de XGBoost queda comprimida hacia 0.5 bajo desbalance de clases.
         El sistema aplica un suavizado cúbico antes de escalar a 0–100, de modo que solo las
         predicciones confiadas puntúan alto mientras la incertidumbre media se queda en el medio,
@@ -88,7 +88,7 @@
         <p>Si falta el archivo del modelo, la capa devuelve <code>ml_score = 0</code> y el sistema
         sigue puntuando con reglas + contexto. La degradación es explícita, jamás un crash.</p>
 
-        <h3>Dentro del artefacto entrenado</h3>
+        <h2>Dentro del artefacto entrenado</h2>
         <p>El modelo de producción es un <code>CalibratedClassifierCV</code> que envuelve cinco folds
         de XGBoost calibrados con sigmoide — sus propios hiperparámetros cuentan la historia del
         entrenamiento:</p>
@@ -121,7 +121,7 @@
           gradient boosting encontró poca ganancia marginal restante que extraer.</figcaption>
         </figure>
 
-        <h3>Disciplina de entrenamiento</h3>
+        <h2>Disciplina de entrenamiento</h2>
         <ul>
           <li><strong>Sin leakage:</strong> el oversampling SMOTE se aplica estrictamente sobre el split de entrenamiento, nunca antes.</li>
           <li><strong>Inyección de ruido realista:</strong> los importes fraudulentos reciben ±15% de varianza, 3% de merchants fraudulentos reciben typos en el nombre, los timestamps fluctúan ±30 min — enseñando deliberadamente que los defraudadores no repiten patrones exactos.</li>

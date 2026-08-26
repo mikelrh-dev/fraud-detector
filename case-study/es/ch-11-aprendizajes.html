@@ -44,7 +44,7 @@
         <h2>Lo que me enseñó construirlo</h2>
         <ul>
           <li><strong>El feature engineering le gana a la complejidad del modelo.</strong> Las features relativas (importe contra el promedio y desviación de cada usuario) llevan la señal de personalización — el importe crudo solo casi no significa nada hasta normalizarlo contra una línea base.</li>
-          <li><strong>El desbalance de clases es un problema matemático, no un misterio.</strong> scale_pos_weight ≈ 100 más SMOTE solo-en-train convirtieron un desbalance severo en señal aprendible sin distorsionar la evaluación.</li>
+          <li><strong>El desbalance de clases es un problema matemático, no un misterio.</strong> Pero la matemática debe coincidir con la realidad: el artefacto original asumía una tasa de fraude de ~1% (<code>scale_pos_weight</code> ≈ 100) sobre datos cuya tasa real es 4,84%. La auditoría detectó el desajuste y el reentrenamiento alineado corrigió el peso a ≈19,7. Lección: valida siempre la ponderación de clases contra la tasa real, no contra la supuesta.</li>
           <li><strong>La explicabilidad es una feature del producto.</strong> Las atribuciones SHAP cambiaron cómo se revisan las alertas: los analistas confían en un score que muestra su trabajo.</li>
           <li><strong>La confiabilidad es una decisión de arquitectura.</strong> Consumer groups, recuperación de pendientes y una cola de mensajes muertos separan el "casi siempre funciona" del pipeline auditable.</li>
           <li><strong>El LLM va después de la decisión.</strong> Mantener la generación de informes asíncrona y estrictamente no-decisiva eliminó el modo de fallo más peligroso desde el día uno.</li>
@@ -61,7 +61,7 @@
         <p>Un caso de estudio que esconde sus huecos es marketing, no ingeniería. Limitaciones
         conocidas, dichas sin rodeos:</p>
         <ul>
-          <li><strong>Sin métricas held-out publicadas todavía.</strong> Las figuras 2 y 3 provienen del propio dataset de entrenamiento del modelo, así que su separación es optimista. El próximo paso inmediato es un split de evaluación reproducible que reporte F1 / PR-AUC honestos sobre transacciones no vistas.</li>
+          <li><strong>Sin evaluación sobre tráfico real todavía.</strong> Las métricas held-out existen (las publica el Capítulo 4), pero corren sobre datos sintéticos cuyas clases casi no se solapan; las figuras 2 y 3 provienen además del propio dataset de entrenamiento del modelo. Lo que sigue abierto es una evaluación reproducible sobre tráfico real etiquetado que reporte F1 / PR-AUC honestos sobre transacciones no vistas.</li>
           <li><strong>Procedencia sintética de los datos.</strong> El artefacto actual entrena sobre transacciones generadas (con una ruta de mapeo a PaySim disponible). Las afirmaciones del mundo real requieren tráfico real etiquetado — por diseño, el pipeline es agnóstico del dataset.</li>
           <li><strong>Rango de score acotado.</strong> La curva cúbica de serving comprime <code>ml_score</code> en aproximadamente [26, 74] — las medianas de la Figura 2 se apoyan exactamente en esos bordes. Un trade-off deliberado de calibración, revisable solo si algún día hiciera falta granularidad fina cerca de los extremos.</li>
           <li><strong>Capturas pendientes de deploy.</strong> El dashboard de analistas existe y está testeado; esta página incrustará capturas reales de UI cuando la demo corra públicamente.</li>

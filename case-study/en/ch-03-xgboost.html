@@ -42,7 +42,7 @@
         <p>The ML layer learns what rules cannot express: non-obvious combinations of amount,
         rhythm, geography and category that separate fraud from legitimate spending.</p>
 
-        <h3>Feature engineering: where the domain knowledge lives</h3>
+        <h2>Feature engineering: where the domain knowledge lives</h2>
         <p>Raw inputs (amount, timestamp, merchant) are transformed into ten features that expose
         behavioral signal to the model:</p>
 
@@ -67,7 +67,7 @@
         $2,000 is unremarkable for one user and alarming for another. Normalizing against each
         user's own baseline lets a single model serve everyone.</p>
 
-        <h3>Why XGBoost?</h3>
+        <h2>Why XGBoost?</h2>
         <ul>
           <li><strong>Supervised signal:</strong> trained on labeled fraud (~1% prevalence), it optimizes directly for separating the classes — unlike anomaly detectors such as Isolation Forest, which only know "this looks unusual".</li>
           <li><strong>CPU-friendly latency:</strong> tree inference is microseconds — compatible with real-time scoring, no GPU serving infra needed.</li>
@@ -75,7 +75,7 @@
           <li><strong>Tabular king:</strong> on small-to-medium tabular data, gradient-boosted trees remain the state of the art versus deep learning.</li>
         </ul>
 
-        <h3>Taming the probability curve</h3>
+        <h2>Taming the probability curve</h2>
         <p>XGBoost's raw probability is compressed toward 0.5 under class imbalance. The system
         applies a cubic smoothing before scaling to 0–100, so only confident predictions score high
         while mid-range uncertainty stays mid-range instead of producing false alarms:</p>
@@ -86,7 +86,7 @@
         <p>If the model file is missing, the layer returns <code>ml_score = 0</code> and the system
         keeps scoring with rules + context. Degradation is explicit, never a crash.</p>
 
-        <h3>Inside the trained artifact</h3>
+        <h2>Inside the trained artifact</h2>
         <p>The production model is a <code>CalibratedClassifierCV</code> wrapper around five
         sigmoid-calibrated XGBoost folds — its own hyperparameters tell the training story:</p>
         <table class="data-table">
@@ -118,7 +118,7 @@
           extract.</figcaption>
         </figure>
 
-        <h3>Training discipline</h3>
+        <h2>Training discipline</h2>
         <ul>
           <li><strong>No leakage:</strong> SMOTE oversampling is applied strictly on the training split, never before it.</li>
           <li><strong>Realistic noise injection:</strong> fraud amounts get ±15% variance, 3% of fraud merchants receive name typos, timestamps jitter ±30 min — deliberately teaching the model that fraudsters don't repeat exact patterns.</li>

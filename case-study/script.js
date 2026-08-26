@@ -83,17 +83,21 @@ if (burger) {
 /* ------------------------------------------------------------------
  * Keyboard chapter navigation (ArrowLeft / ArrowRight)
  * Skips when focus is inside form controls.
+ * Pager links are identified explicitly (the "next" link carries
+ * .pager-next) so ArrowRight never falls back to the previous
+ * chapter on the last page, and ArrowLeft only fires when a true
+ * PREV link exists.
  * ------------------------------------------------------------------ */
 document.addEventListener("keydown", function (e) {
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   var tag = document.activeElement ? document.activeElement.tagName : "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-  var links = document.querySelectorAll(".pager a");
-  if (links.length === 0) return;
-  if (e.key === "ArrowLeft" && links.length > 1) {
-    window.location.href = links[0].getAttribute("href");
-  } else if (e.key === "ArrowRight") {
-    window.location.href = links[links.length - 1].getAttribute("href");
+  var prev = document.querySelector(".pager a:not(.pager-next)");
+  var next = document.querySelector(".pager a.pager-next");
+  if (e.key === "ArrowLeft" && prev) {
+    window.location.href = prev.getAttribute("href");
+  } else if (e.key === "ArrowRight" && next) {
+    window.location.href = next.getAttribute("href");
   }
 });
 

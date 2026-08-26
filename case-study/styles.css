@@ -86,6 +86,9 @@
   --color-primary: #dc2626;
   --color-primary-hover: #b91c1c;
   --color-focus-ring: #ef4444;
+  /* Kicker/label accent — #ef4444 passes WCAG AA (≈5.3:1) on the page
+     background where --color-primary (#dc2626, ≈3.5:1) would fail at 13px */
+  --color-kicker: #ef4444;
 
   /* Semantic */
   --color-status-approved: #22c55e;
@@ -270,7 +273,7 @@ p { color: var(--color-text-secondary); }
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-primary);
+  color: var(--color-kicker);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   margin-bottom: 20px;
@@ -368,7 +371,7 @@ section {
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-primary);
+  color: var(--color-kicker);
   text-transform: uppercase;
   letter-spacing: 0.14em;
   display: block;

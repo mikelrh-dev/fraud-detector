@@ -43,7 +43,7 @@
         <h2>What building this taught me</h2>
         <ul>
           <li><strong>Feature engineering beats model complexity.</strong> The relative features (amount vs each user's average and deviation) carry the personalization signal — raw amount alone is nearly meaningless until normalized against a baseline.</li>
-          <li><strong>Class imbalance is a math problem, not a mystery.</strong> scale_pos_weight ≈ 100 plus train-only SMOTE turned a severe imbalance into a learnable signal without distorting evaluation.</li>
+          <li><strong>Class imbalance is a math problem, not a mystery.</strong> But the math has to match reality: the original artifact assumed a ~1% fraud rate (<code>scale_pos_weight</code> ≈ 100) on data whose real rate is 4.84%. The audit caught the mismatch and the aligned retrain corrected the weight to ≈19.7. Lesson: always validate class weighting against the actual rate, not the assumed one.</li>
           <li><strong>Explainability is a product feature.</strong> SHAP attributions changed how alerts get reviewed: analysts trust a score that shows its work.</li>
           <li><strong>Reliability is an architecture decision.</strong> Consumer groups, pending-message recovery and a dead-letter queue separate "usually works" from an auditable pipeline.</li>
           <li><strong>The LLM belongs after the decision.</strong> Keeping report generation asynchronous and strictly non-decisive removed the scariest failure mode from day one.</li>
@@ -59,7 +59,7 @@
         <h2>Known limitations</h2>
         <p>A case study that hides its gaps is marketing, not engineering. Known limitations, stated plainly:</p>
         <ul>
-          <li><strong>No published held-out metrics yet.</strong> Figures 2 and 3 come from the model's own training dataset, so their separation is optimistic. The immediate next step is a reproducible evaluation split reporting honest F1 / PR-AUC on unseen transactions.</li>
+          <li><strong>No evaluation on real traffic yet.</strong> Held-out metrics do exist (Chapter 4 publishes them), but they run on synthetic data whose classes barely overlap; Figures 2 and 3 additionally come from the model's own training dataset. What remains open is a reproducible evaluation on real labeled traffic reporting honest F1 / PR-AUC on unseen transactions.</li>
           <li><strong>Synthetic data provenance.</strong> The current artifact trains on generated transactions (with a PaySim mapping path available). Real-world claims require real labeled traffic — by design, the pipeline is dataset-agnostic.</li>
           <li><strong>Bounded score range.</strong> The cubic serving curve compresses <code>ml_score</code> into roughly [26, 74] — the medians in Figure 2 sit exactly on those bounds. A deliberate calibration trade-off worth revisiting only if finer granularity near the extremes is ever needed.</li>
           <li><strong>Screenshots pending deployment.</strong> The analyst dashboard exists and is tested; this page will embed real UI captures once the demo runs publicly.</li>
