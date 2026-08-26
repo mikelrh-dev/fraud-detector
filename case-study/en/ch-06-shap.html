@@ -51,11 +51,13 @@
         dashboard renders these as attribution cards.</p>
 
         <figure class="figure">
-          <img src="../assets/shap-attribution.png" alt="Horizontal bar chart of real SHAP attributions for one $50,000 crypto transaction at 3am with high velocity: 5-minute transaction count contributes +2.22 log-odds, merchant risk level +0.36, hourly velocity +0.30 and amount +0.19; remaining features show exactly zero contribution." width="1440" height="750">
+          <img src="../assets/shap-attribution.png" alt="Horizontal bar chart of real SHAP attributions for one $50,000 crypto transaction at 3am with high velocity: sustained 1-hour velocity contributes +3.99 log-odds, the 5-minute burst +3.12 and amount-versus-user-standard-deviation +0.49; remaining features contribute +0.11 or less, with merchant risk level at exactly zero." width="1440" height="750">
           <figcaption><strong>Figure 3 — Real SHAP attributions</strong> for a single $50,000
           cryptocurrency transaction at 3am with burst velocity, computed with the trained artifact.
-          The 5-minute burst (+2.22 log-odds over an 11.54 base) does most of the work, followed by
-          merchant risk and sustained hourly velocity. Note the exact-zero bars: tree ensembles only
+          Sustained 1-hour velocity (+3.99 log-odds over a 4.79 base) does most of the work, followed
+          by the 5-minute burst (+3.12) and the amount's deviation from this user's own history
+          (+0.49); retraining inverted the ranking — merchant risk, previously a leading attribution,
+          now contributes exactly zero. Note the exact-zero bars: tree ensembles only
           credit features actually used in a decision-path split — silence is information too. After
           the production smoothing curve, this prediction surfaces as <span style="color:#ef4444">ml_score ≈ 74/100</span>.</figcaption>
         </figure>
