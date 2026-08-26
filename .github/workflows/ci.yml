@@ -23,8 +23,7 @@ jobs:
           cache: "pip"
       - name: Install dependencies
         run: |
-          pip install -e .
-          pip install ruff mypy pytest pytest-asyncio pytest-cov httpx
+          pip install -r requirements.txt -r requirements-dev.txt
       - name: Run ruff
         run: ruff check src/
       - name: Run mypy
@@ -60,9 +59,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
       - name: Install dependencies
-        run: |
-          pip install -e .
-          pip install pytest pytest-asyncio pytest-cov httpx
+        run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Run tests
         env:
           DB_USER: fraud
@@ -121,8 +118,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build backend image
-        run: docker build -t fraud-detector-api -f Dockerfile .
+        run: docker build -t fraud-detector-api -f docker/Dockerfile.api .
       - name: Build frontend image
         run: >-
           docker build -t fraud-detector-frontend
-          -f frontend/Dockerfile ./frontend
+          -f docker/Dockerfile.frontend .
