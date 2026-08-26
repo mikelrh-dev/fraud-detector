@@ -58,7 +58,8 @@ def main() -> None:
     print("Extracting aligned features with production FeatureEngine...")
     X = build_feature_vectors([{"tx": tx, "history": h} for tx, h in zip(noisy_tx, histories)])
 
-    model = joblib.load(MODEL_PATH)
+    raw = joblib.load(MODEL_PATH)
+    model = raw["model"] if isinstance(raw, dict) else raw
     scores = cubic_smooth(model.predict_proba(X)[:, 1]) * 100.0
 
     edges = np.linspace(BIN_LO, BIN_HI, N_BINS + 1)

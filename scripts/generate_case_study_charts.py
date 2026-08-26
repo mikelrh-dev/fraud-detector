@@ -240,26 +240,22 @@ def build_network_graph(metrics_out: dict) -> None:
 
     from src.services.graph_service import FraudGraphService
 
-    async def _populate_ring() -> FraudGraphService:
+    def _populate_ring() -> FraudGraphService:
         service = FraudGraphService()
         for sender, receiver, card, is_fraud in RING_TRANSACTIONS:
-            await service.add_transaction(sender, receiver, card, is_fraud=is_fraud)
+            service.add_transaction(sender, receiver, card, is_fraud=is_fraud)
         return service
 
     print("Chart 9/10: network-graph.png (production FraudGraphService path)")
-    service = asyncio.run(_populate_ring())
+    service = _populate_ring()
     G = service.graph
     fraud_nodes = set(service.known_fraudsters)
     NEAR_NODE = "victim_bridge"
 
     # Honest proof the production detection logic fires on this scenario.
-    loop = asyncio.new_event_loop()
-    try:
-        features_near = loop.run_until_complete(service.get_graph_features(NEAR_NODE))
-        features_legit = loop.run_until_complete(service.get_graph_features("legit_04"))
-        stats = loop.run_until_complete(service.get_stats())
-    finally:
-        loop.close()
+    features_near = service.get_graph_features(NEAR_NODE)
+    features_legit = service.get_graph_features("legit_04")
+    stats = service.get_stats()
     assert features_near["is_near_fraud"] == 1, "victim_bridge should be ≤2 hops from a fraudster"
     assert features_legit["is_near_fraud"] == 0, "legit cluster must stay clean"
 
@@ -454,7 +450,8 @@ def main() -> None:
     print("Extracting aligned features with production FeatureEngine...")
     X = build_feature_vectors([{"tx": tx, "history": h} for tx, h in zip(noisy_tx, histories)])
 
-    model = joblib.load(MODEL_PATH)
+    raw = joblib.load(MODEL_PATH)
+    model = raw["model"] if isinstance(raw, dict) else raw
     inner_estimators = [c.estimator for c in model.calibrated_classifiers_]
 
     metrics: dict = {"model": MODEL_PATH, "type": type(model).__name__}

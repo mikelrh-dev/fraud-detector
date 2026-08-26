@@ -2,6 +2,4 @@
 // from models/xgboost_paysim_v1.joblib over data/synthetic_transactions.csv via
 // the production FeatureEngine and serving cubic-smoothing. Zoomed to the
 // meaningful range [20, 80] (2-point bins); do not edit by hand.
-// Note: the current calibrated artifact yields two tight, non-overlapping
-// clusters (~26.3 legit / ~73.7 fraud) — see Chapter 04 on separability.
 const SCORE_BINS={"edges":[20.0,22.0,24.0,26.0,28.0,30.0,32.0,34.0,36.0,38.0,40.0,42.0,44.0,46.0,48.0,50.0,52.0,54.0,56.0,58.0,60.0,62.0,64.0,66.0,68.0,70.0,72.0,74.0,76.0,78.0,80.0],"legit":[0,0,0,47580,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"fraud":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2420,0,0,0],"meta":{"legitN":47580,"fraudN":2420,"range":[20.0,80.0],"bins":30,"model":"models/xgboost_paysim_v1.joblib","dataset":"data/synthetic_transactions.csv"}};
