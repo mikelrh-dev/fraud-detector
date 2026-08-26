@@ -4,6 +4,8 @@
 
 [English](README.md) | **Español**
 
+> 📖 **Lee el [caso de estudio técnico](case-study/es/index.html)** — un recorrido en 11 capítulos de cómo funciona este sistema, cada número trazado a un artefacto real.
+
 Sistema híbrido de detección de fraude en transacciones financieras. Un **motor de reglas determinista** (9 reglas), un **modelo ML supervisado** (XGBoost, entrenado con PaySim) y un **LLM local** (Ollama) que redacta informes explicativos para analistas — el LLM nunca decide, solo explica.
 
 Cada transacción recibe un score de riesgo 0–100, una clasificación (`legitimate | review | fraud`), atribuciones SHAP de sus features y, cuando se marca como sospechosa, un informe técnico generado asíncronamente por el LLM.

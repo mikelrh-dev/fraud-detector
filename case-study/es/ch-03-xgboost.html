@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>03 ML - Caso de Estudio Fraud Detector</title>
+  <meta name="description" content="El artefacto XGBoost entrenado al descubierto: diez features de ingeniería, ensamble calibrado, suavizado cúbico y la disciplina del reentrenamiento alineado.">
+  <meta property="og:title" content="03 ML - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="El artefacto XGBoost entrenado al descubierto: diez features de ingeniería, ensamble calibrado, suavizado cúbico y la disciplina del reentrenamiento alineado.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -26,7 +37,7 @@
         <li><a href="ch-10-security.html">10 Seguridad</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
       </ul>
-      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+      <span class="nav-lang"><a href="../en/ch-03-xgboost.html">EN</a></span>
     </div>
   </nav>
 
@@ -47,6 +58,7 @@
         <p>Los inputs crudos (importe, timestamp, merchant) se transforman en diez features que
         exponen señal conductual al modelo:</p>
 
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Feature</th><th>Qué captura</th></tr>
@@ -64,6 +76,7 @@
             <tr><td class="mono">amount_round_number</td><td>montos redondos correlacionan con pruebas manuales de tarjetas robadas</td></tr>
           </tbody>
         </table>
+        </div>
         <p>Las features relativas (<code>amount_vs_user_avg</code>, <code>_std</code>) son las más
         importantes: $2,000 es normal para un usuario y alarmante para otro. Normalizar contra la
         propia línea base de cada usuario permite que un único modelo sirva a todos.</p>
@@ -92,6 +105,7 @@
         <p>El modelo de producción es un <code>CalibratedClassifierCV</code> que envuelve cinco folds
         de XGBoost calibrados con sigmoide — sus propios hiperparámetros cuentan la historia del
         entrenamiento:</p>
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Hiperparámetro</th><th>Valor</th><th>Qué significa</th></tr>
@@ -108,9 +122,10 @@
             <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 19.7</td><td>ajustado a la tasa real de fraude del dataset (4,84%) — no a un ~1% supuesto</td></tr>
           </tbody>
         </table>
+        </div>
 
         <figure class="figure">
-          <img src="../assets/feature-importance.png" alt="Gráfico de barras horizontales de las importancias de features del ensamble XGBoost calibrado entrenado: el conteo de transacciones de 1 hora lidera con 0.428, seguido por la velocidad de 5 minutos con 0.374 y el importe frente a la desviación estándar del usuario con 0.179; las demás features aportan casi cero." width="1440" height="810">
+          <img loading="lazy" decoding="async" src="../assets/feature-importance.png" alt="Gráfico de barras horizontales de las importancias de features del ensamble XGBoost calibrado entrenado: el conteo de transacciones de 1 hora lidera con 0.428, seguido por la velocidad de 5 minutos con 0.374 y el importe frente a la desviación estándar del usuario con 0.179; las demás features aportan casi cero." width="1440" height="810">
           <figcaption><strong>Figura 1 — Importancias reales de features</strong>, extraídas
           directamente del artefacto entrenado <code>xgboost_paysim_v1.joblib</code> (ganancia media
           entre los cinco folds calibrados; regenerada a partir del artefacto actual tras el
@@ -130,12 +145,12 @@
         </ul>
 
         <figure class="figure">
-          <img src="../assets/score-distribution.png" alt="Dos histogramas superpuestos de valores ml_score: las transacciones legítimas se agrupan alrededor de una mediana de 26 mientras que las fraudulentas lo hacen alrededor de 74, con una línea punteada marcando el umbral de fraude del tier bajo en 70." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/score-distribution.png" alt="Dos histogramas superpuestos de valores ml_score: las transacciones legítimas se agrupan alrededor de una mediana de 26 mientras que las fraudulentas lo hacen alrededor de 74, con una línea punteada marcando el umbral de fraude del tier bajo en 70." width="1440" height="750">
           <figcaption><strong>Figura 2 — Separación real de scores.</strong> Producida corriendo el
           <code>FeatureEngine</code> de producción más el artefacto entrenado sobre las 50k
           transacciones sintéticas, aplicando después la fórmula exacta de suavizado cúbico usada en
-          serving. Medianas: <span style="color:#3b82f6">26,3 legítimas</span> vs
-          <span style="color:#ef4444">73,7 fraude</span> — una brecha de 47,5 puntos. Advertencia
+          serving. Medianas: <span class="tone-info">26,3 legítimas</span> vs
+          <span class="tone-critical">73,7 fraude</span> — una brecha de 47,5 puntos. Advertencia
           honesta: estos scores provienen del propio dataset de entrenamiento del modelo, así que la
           separación aquí es optimista respecto de tráfico genuinamente no visto; el monitoreo de
           drift (Capítulo 8) existe precisamente para cazar esa brecha en producción.</figcaption>

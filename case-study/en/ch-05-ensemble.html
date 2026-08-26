@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>05 Ensemble - Fraud Detector Case Study</title>
+  <meta name="description" content="Risk policy as configuration: amount-tiered dynamic thresholds, a human review band and an interactive playground built on the real score distribution.">
+  <meta property="og:title" content="05 Ensemble - Fraud Detector Case Study">
+  <meta property="og:description" content="Risk policy as configuration: amount-tiered dynamic thresholds, a human review band and an interactive playground built on the real score distribution.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -26,7 +37,7 @@
         <li><a href="ch-10-security.html">10 Security</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
       </ul>
-      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+      <span class="nav-lang"><a href="../es/ch-05-ensemble.html">ES</a></span>
     </div>
   </nav>
 
@@ -44,6 +55,7 @@
         analysts in false positives, while waiting for score 70 on a $60,000 transfer would be
         negligent. The decision threshold therefore scales inversely with amount:</p>
 
+        <div class="table-scroll">
         <table class="threshold-table">
           <thead>
             <tr><th>Amount Tier</th><th>Fraud Threshold</th></tr>
@@ -55,9 +67,10 @@
             <tr><td class="tier-label">$50,001+</td><td class="tier-threshold">≥ 40</td></tr>
           </tbody>
         </table>
+        </div>
         <p>The intuition: the more money moves, the less certainty you demand before acting. Scores
         between 75% of the tier threshold and the threshold itself land in a
-        <strong style="color:#eab308">review band</strong> — flagged for human analysis rather than
+        <strong class="tone-warn">review band</strong> — flagged for human analysis rather than
         auto-blocked. This band is where the human-in-the-loop design lives: the system narrows
         thousands of transactions down to a reviewable queue, and analysts make the final call.</p>
         <div class="callout">
@@ -75,7 +88,7 @@
     <section class="reveal">
       <h2>Try the policy</h2>
       <div class="playground" id="threshold-playground">
-        <p class="pg-hint">Not a mockup: the bars are the real score distribution produced by the trained artifact over 50k transactions (Chapter 3). Drag the slider and watch the decision policy react.</p>
+        <p class="pg-hint">Not a mockup: the bars are the real score distribution produced by the trained artifact over 50k transactions (Chapter 3). The current calibrated model separates classes so cleanly that scores land in two tight clusters (~26 legitimate vs ~74 fraud) with zero overlap — exactly the Chapter 4 warning. Drag the slider and watch the decision policy react.</p>
         <div class="pg-controls">
           <label for="pg-slider">Amount</label>
           <input type="range" id="pg-slider" class="pg-slider" min="50" max="60000" step="50" value="2500">

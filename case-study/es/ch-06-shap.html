@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>06 SHAP - Caso de Estudio Fraud Detector</title>
+  <meta name="description" content="Explicabilidad SHAP en producción: atribuciones en log-odds con cada alerta, para que los analistas vean por qué una transacción puntuó lo que puntuó.">
+  <meta property="og:title" content="06 SHAP - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="Explicabilidad SHAP en producción: atribuciones en log-odds con cada alerta, para que los analistas vean por qué una transacción puntuó lo que puntuó.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -27,7 +38,7 @@
         <li><a href="ch-10-security.html">10 Seguridad</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
       </ul>
-      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+      <span class="nav-lang"><a href="../en/ch-06-shap.html">EN</a></span>
     </div>
   </nav>
 
@@ -54,7 +65,7 @@
         React las muestra como tarjetas de atribución.</p>
 
         <figure class="figure">
-          <img src="../assets/shap-attribution.png" alt="Gráfico de barras horizontales de atribuciones SHAP reales para una transacción cripto de $50.000 a las 3am con alta velocidad: la velocidad sostenida de 1 hora contribuye +3,99 log-odds, la ráfaga de 5 minutos +3,12 y el importe frente a la desviación estándar del usuario +0,49; las demás features aportan +0,11 o menos, con el nivel de riesgo del merchant en exactamente cero." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/shap-attribution.png" alt="Gráfico de barras horizontales de atribuciones SHAP reales para una transacción cripto de $50.000 a las 3am con alta velocidad: la velocidad sostenida de 1 hora contribuye +3,99 log-odds, la ráfaga de 5 minutos +3,12 y el importe frente a la desviación estándar del usuario +0,49; las demás features aportan +0,11 o menos, con el nivel de riesgo del merchant en exactamente cero." width="1440" height="750">
           <figcaption><strong>Figura 3 — Atribuciones SHAP reales</strong> para una única
           transacción de $50.000 en cripto a las 3am con ráfaga de velocidad, calculadas con el
           artefacto entrenado. La velocidad sostenida de 1 hora (+3,99 log-odds sobre una base de
@@ -64,7 +75,7 @@
           aporta exactamente cero. Las barras en exactamente cero también dicen algo: los ensambles de árboles solo acreditan
           features realmente usadas en algún split del camino de decisión — el silencio también es
           información. Tras la curva de suavizado de producción, esta predicción emerge como
-          <span style="color:#ef4444">ml_score ≈ 74/100</span>.</figcaption>
+          <span class="tone-critical">ml_score ≈ 74/100</span>.</figcaption>
         </figure>
         <p>Esto cierra el círculo entre capas: las reglas dan disparadores nombrados, SHAP da causas
         a nivel feature, y juntos convierten un score caja-negra en una narrativa defendible. Las

@@ -213,6 +213,16 @@ document.addEventListener("keydown", function (e) {
   var NS = "http://www.w3.org/2000/svg";
   var W = 720, H = 220, PAD_L = 8, PAD_B = 22;
   var plotW = W - PAD_L - 8, plotH = H - PAD_B - 8;
+  // Bins may be zoomed to a sub-range of the score scale; honor SCORE_BINS
+  // edges when present so bars, threshold line and band stay geometrically
+  // honest. Falls back to the full 0–100 scale for legacy data.
+  var hasEdges = SCORE_BINS.edges && SCORE_BINS.edges.length > 1;
+  var binLo = hasEdges ? SCORE_BINS.edges[0] : 0;
+  var binHi = hasEdges ? SCORE_BINS.edges[SCORE_BINS.edges.length - 1] : 100;
+  var binSpan = binHi - binLo;
+  function scoreToX(score) {
+    return PAD_L + ((score - binLo) / binSpan) * plotW;
+  }
   var maxCount = Math.max.apply(null, SCORE_BINS.legit.concat(SCORE_BINS.fraud));
   var n = SCORE_BINS.legit.length;
   var binW = plotW / n;
@@ -263,7 +273,7 @@ document.addEventListener("keydown", function (e) {
   scoreAxis.setAttribute("font-size", 10);
   scoreAxis.setAttribute("fill", "#94a3b8");
   scoreAxis.setAttribute("font-family", "monospace");
-  scoreAxis.textContent = "ml_score 0–100";
+  scoreAxis.textContent = "ml_score " + binLo + "–" + binHi;
   chart.appendChild(scoreAxis);
 
   function fmt(n2) { return n2.toLocaleString(document.documentElement.lang === "es" ? "es-ES" : "en-US"); }
@@ -281,8 +291,8 @@ document.addEventListener("keydown", function (e) {
     outThreshold.textContent = "≥ " + thr;
     outBand.textContent = "≥ " + bandFrom.toFixed(1);
 
-    var thrX = PAD_L + (thr / 100) * plotW;
-    var bandX = PAD_L + (bandFrom / 100) * plotW;
+    var thrX = scoreToX(thr);
+    var bandX = scoreToX(bandFrom);
     line.setAttribute("x1", thrX.toFixed(2));
     line.setAttribute("x2", thrX.toFixed(2));
     bandRect.setAttribute("x", bandX.toFixed(2));

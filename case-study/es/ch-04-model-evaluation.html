@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>04 Evaluación del Modelo - Caso de Estudio Fraud Detector</title>
+  <meta name="description" content="Evaluación held-out del modelo de fraude: F1 perfecto explicado con honestidad — las clases sintéticas separables convierten las métricas perfectas en advertencia.">
+  <meta property="og:title" content="04 Evaluación del Modelo - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="Evaluación held-out del modelo de fraude: F1 perfecto explicado con honestidad — las clases sintéticas separables convierten las métricas perfectas en advertencia.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -46,6 +57,7 @@
         transacciones). El artefacto de producción no fue reentrenado ni modificado.</p>
 
         <h2>La tabla de resultados</h2>
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Modelo</th><th>Precision @0.5</th><th>Recall @0.5</th><th>F1 @0.5</th><th>PR-AUC</th></tr>
@@ -57,10 +69,11 @@
             <tr><td class="mono">XGBoost (params de producción)</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td></tr>
           </tbody>
         </table>
+        </div>
         <p class="table-caption">ROC-AUC (XGB): 1.000 · CV 5-fold: F1 = 1.000 ± 0.000, PR-AUC = 1.000 ± 0.000 (SMOTE dentro de cada fold).</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-confusion.png" alt="Dos matrices de confusión lado a lado en el umbral 0.50 y en el umbral costo-óptimo: ambas muestran 9.516 verdaderos negativos, cero falsos positivos, cero falsos negativos y 484 verdaderos positivos." width="1440" height="660">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Dos matrices de confusión lado a lado en el umbral 0.50 y en el umbral costo-óptimo: ambas muestran 9.516 verdaderos negativos, cero falsos positivos, cero falsos negativos y 484 verdaderos positivos." width="1440" height="660">
           <figcaption><strong>Matriz de confusión en el test set:</strong> 9.516 legítimas
           correctamente liberadas, 484 fraudes capturados, cero errores de ambos lados — tanto en el
           umbral por defecto como en el costo-óptimo.</figcaption>
@@ -78,7 +91,7 @@
         solapan:</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-separability.png" alt="Dos histogramas: los montos de transacciones por clase en escala log apenas se solapan entre legítimas y fraude; las distribuciones horarias tampoco se solapan." width="1560" height="690">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-separability.png" alt="Dos histogramas: los montos de transacciones por clase en escala log apenas se solapan entre legítimas y fraude; las distribuciones horarias tampoco se solapan." width="1560" height="690">
           <figcaption><strong>Por qué el test set es trivialmente separable:</strong> el generador
           sintético dibuja montos fraudulentos de una log-normal centrada cerca de $36k y las
           legítimas cerca de $90, con horas noche-vs-día y rangos de velocidad disjuntos. Las clases
@@ -111,14 +124,14 @@
         con data real esta curva se convierte en la herramienta de decisión.</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-pr.png" alt="Curva precision-recall pegada a la esquina superior derecha con PR-AUC 1.000, comparada contra random forest y la línea de prevalencia del dummy." width="1260" height="780">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-pr.png" alt="Curva precision-recall pegada a la esquina superior derecha con PR-AUC 1.000, comparada contra random forest y la línea de prevalencia del dummy." width="1260" height="780">
           <figcaption><strong>Curva PR</strong> contra la prevalencia base del dummy (0.048). Con
           clases separables la curva abraza la esquina; con data real su forma — especialmente la
           caída de precisión a recall alto — se vuelve la historia operativa.</figcaption>
         </figure>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-cost.png" alt="Costo económico versus umbral de decisión: plano en cero más allá del umbral 0.05, mostrando que cualquier umbral arriba de 0.05 produce cero errores en este dataset." width="1260" height="750">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-cost.png" alt="Costo económico versus umbral de decisión: plano en cero más allá del umbral 0.05, mostrando que cualquier umbral arriba de 0.05 produce cero errores en este dataset." width="1260" height="750">
           <figcaption><strong>Costo vs umbral</strong> (FN × $10 + FP × $1): plano en cero después
           de 0.05 acá. Lo que importa es la maquinaria — con data de producción esta curva suele
           tener un mínimo claro lejos de ambos extremos, y elegir ese punto es una decisión de
@@ -135,10 +148,10 @@
         observadas de fraude — para la salida cruda y para la salida suavizada de serving:</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-calibration.png" alt="Diagrama de confiabilidad con las curvas de predict_proba cruda y suavizada cúbicamente siguiendo de cerca la diagonal a través de los bins por cuantiles." width="1080" height="840">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-calibration.png" alt="Diagrama de confiabilidad con las curvas de predict_proba cruda y suavizada cúbicamente siguiendo de cerca la diagonal a través de los bins por cuantiles." width="1080" height="840">
           <figcaption><strong>Diagrama de confiabilidad:</strong> ambas curvas siguen la diagonal a
           través de los deciles — el suavizado comprime extremos pero no distorsiona sistemáticamente
-          el ordenamiento. Con data más difícil este gráfico es como decidís si un paso de
+          el ordenamiento. Con data más difícil este gráfico es como decides si un paso de
           calibración (<code>CalibratedClassifierCV</code>) pertenece al pipeline.</figcaption>
         </figure>
       </div>

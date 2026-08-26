@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>04 Model Evaluation - Fraud Detector Case Study</title>
+  <meta name="description" content="Held-out evaluation of the fraud model: perfect F1 explained honestly — why separable synthetic classes make perfect metrics a warning, not a win.">
+  <meta property="og:title" content="04 Model Evaluation - Fraud Detector Case Study">
+  <meta property="og:description" content="Held-out evaluation of the fraud model: perfect F1 explained honestly — why separable synthetic classes make perfect metrics a warning, not a win.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -46,6 +57,7 @@
         transactions). The production artifact was not retrained or modified.</p>
 
         <h2>The results table</h2>
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Model</th><th>Precision @0.5</th><th>Recall @0.5</th><th>F1 @0.5</th><th>PR-AUC</th></tr>
@@ -57,10 +69,11 @@
             <tr><td class="mono">XGBoost (production params)</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td></tr>
           </tbody>
         </table>
+        </div>
         <p class="table-caption">ROC-AUC (XGBoost): 1.000 · 5-fold CV: F1 = 1.000 ± 0.000, PR-AUC = 1.000 ± 0.000 (SMOTE inside every fold).</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-confusion.png" alt="Two confusion matrices side by side at threshold 0.50 and at the cost-optimal threshold: both show 9,516 true negatives, zero false positives, zero false negatives and 484 true positives." width="1440" height="660">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Two confusion matrices side by side at threshold 0.50 and at the cost-optimal threshold: both show 9,516 true negatives, zero false positives, zero false negatives and 484 true positives." width="1440" height="660">
           <figcaption><strong>Confusion matrix on the held-out test set:</strong> 9,516 legitimate
           correctly cleared, 484 frauds caught, zero errors on either side — at both the default and
           the cost-optimal threshold.</figcaption>
@@ -77,7 +90,7 @@
         was never the bottleneck. The classes themselves are almost non-overlapping:</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-separability.png" alt="Two histograms: transaction amounts by class on a log scale barely overlap between legitimate and fraud; hour-of-day distributions also barely overlap." width="1560" height="690">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-separability.png" alt="Two histograms: transaction amounts by class on a log scale barely overlap between legitimate and fraud; hour-of-day distributions also barely overlap." width="1560" height="690">
           <figcaption><strong>Why the test set is trivially separable:</strong> the synthetic
           generator draws fraud amounts from a log-normal centered near $36k and legitimate ones
           near $90, with night-vs-day hours and disjoint velocity ranges. The classes share almost
@@ -110,14 +123,14 @@
         real data this curve becomes the decision-making tool.</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-pr.png" alt="Precision-recall curve hugging the top-right corner with PR-AUC 1.000, compared against random forest and the dummy prevalence baseline." width="1260" height="780">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-pr.png" alt="Precision-recall curve hugging the top-right corner with PR-AUC 1.000, compared against random forest and the dummy prevalence baseline." width="1260" height="780">
           <figcaption><strong>PR curve</strong> against the dummy prevalence baseline (0.048).
           With separable classes the curve hugs the corner; on real data its shape — especially the
           precision drop-off at high recall — becomes the operational story.</figcaption>
         </figure>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-cost.png" alt="Economic cost versus decision threshold: flat at zero beyond threshold 0.05, showing any threshold above 0.05 yields zero misclassifications on this dataset." width="1260" height="750">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-cost.png" alt="Economic cost versus decision threshold: flat at zero beyond threshold 0.05, showing any threshold above 0.05 yields zero misclassifications on this dataset." width="1260" height="750">
           <figcaption><strong>Cost vs threshold</strong> (FN × $10 + FP × $1): flat zero beyond
           0.05 here. The machinery is what matters — on production data this curve typically has a
           clear minimum away from both extremes, and picking that point is a business decision, not
@@ -134,7 +147,7 @@
         both the raw output and the smoothed serving output:</p>
 
         <figure class="figure">
-          <img src="../assets/fig-eval-calibration.png" alt="Reliability diagram with both raw predict_proba and cubic-smoothed curves tracking close to the diagonal across quantile bins." width="1080" height="840">
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-calibration.png" alt="Reliability diagram with both raw predict_proba and cubic-smoothed curves tracking close to the diagonal across quantile bins." width="1080" height="840">
           <figcaption><strong>Reliability diagram:</strong> both curves track the diagonal across
           deciles — the smoothing compresses extremes but does not systematically distort ordering.
           On harder data this chart is how you decide whether a calibration step

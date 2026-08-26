@@ -4,6 +4,8 @@
 
 **English** | [Español](README.es.md)
 
+> 📖 **Read the [technical case study](case-study/en/index.html)** — an 11-chapter walkthrough of how this system works, every number traced to a real artifact.
+
 Hybrid fraud detection system for financial transactions. A **deterministic rule engine** (9 rules), a **supervised ML model** (XGBoost, trained on PaySim) and a **local LLM** (Ollama) that writes explanatory reports for analysts — the LLM never decides, it only explains.
 
 Every transaction gets a 0–100 risk score, a classification (`legitimate | review | fraud`), SHAP feature attributions, and — when flagged — an async LLM-generated technical report.

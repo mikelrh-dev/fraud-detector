@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>06 SHAP - Fraud Detector Case Study</title>
+  <meta name="description" content="SHAP explainability in production: TreeExplainer log-odds attributions shipped with every alert, so analysts see why a transaction scored what it did.">
+  <meta property="og:title" content="06 SHAP - Fraud Detector Case Study">
+  <meta property="og:description" content="SHAP explainability in production: TreeExplainer log-odds attributions shipped with every alert, so analysts see why a transaction scored what it did.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -26,7 +37,7 @@
         <li><a href="ch-10-security.html">10 Security</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
       </ul>
-      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+      <span class="nav-lang"><a href="../es/ch-06-shap.html">ES</a></span>
     </div>
   </nav>
 
@@ -51,7 +62,7 @@
         dashboard renders these as attribution cards.</p>
 
         <figure class="figure">
-          <img src="../assets/shap-attribution.png" alt="Horizontal bar chart of real SHAP attributions for one $50,000 crypto transaction at 3am with high velocity: sustained 1-hour velocity contributes +3.99 log-odds, the 5-minute burst +3.12 and amount-versus-user-standard-deviation +0.49; remaining features contribute +0.11 or less, with merchant risk level at exactly zero." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/shap-attribution.png" alt="Horizontal bar chart of real SHAP attributions for one $50,000 crypto transaction at 3am with high velocity: sustained 1-hour velocity contributes +3.99 log-odds, the 5-minute burst +3.12 and amount-versus-user-standard-deviation +0.49; remaining features contribute +0.11 or less, with merchant risk level at exactly zero." width="1440" height="750">
           <figcaption><strong>Figure 3 — Real SHAP attributions</strong> for a single $50,000
           cryptocurrency transaction at 3am with burst velocity, computed with the trained artifact.
           Sustained 1-hour velocity (+3.99 log-odds over a 4.79 base) does most of the work, followed
@@ -59,7 +70,7 @@
           (+0.49); retraining inverted the ranking — merchant risk, previously a leading attribution,
           now contributes exactly zero. Note the exact-zero bars: tree ensembles only
           credit features actually used in a decision-path split — silence is information too. After
-          the production smoothing curve, this prediction surfaces as <span style="color:#ef4444">ml_score ≈ 74/100</span>.</figcaption>
+          the production smoothing curve, this prediction surfaces as <span class="tone-critical">ml_score ≈ 74/100</span>.</figcaption>
         </figure>
         <p>This closes the loop between layers: rules give named triggers, SHAP gives feature-level
         causes, and together they turn a black-box score into a defensible narrative. Attributions

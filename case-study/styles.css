@@ -479,6 +479,10 @@ section {
    Data Tables
    ========================================================================== */
 
+.table-scroll {
+  overflow-x: auto;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -784,6 +788,15 @@ section {
 }
 
 /* ==========================================================================
+   Semantic tone utilities (DESIGN.md status colors — replaces inline hex)
+   ========================================================================== */
+
+.tone-clean    { color: var(--color-status-approved); }
+.tone-warn     { color: var(--color-status-flagged); }
+.tone-critical { color: var(--color-status-blocked); }
+.tone-info     { color: var(--color-status-info); }
+
+/* ==========================================================================
    Mobile hamburger navigation
    ========================================================================== */
 
@@ -887,7 +900,7 @@ section {
 }
 
 /* ==========================================================================
-   Threshold policy playground (ch-04)
+   Threshold policy playground (ch-05)
    ========================================================================== */
 
 .playground {

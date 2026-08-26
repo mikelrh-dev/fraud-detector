@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>02 Rules - Fraud Detector Case Study</title>
+  <meta name="description" content="Nine deterministic fraud rules with explicit weights: transparent by construction, tunable without retraining, and defensible in front of any analyst.">
+  <meta property="og:title" content="02 Rules - Fraud Detector Case Study">
+  <meta property="og:description" content="Nine deterministic fraud rules with explicit weights: transparent by construction, tunable without retraining, and defensible in front of any analyst.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -26,7 +37,7 @@
         <li><a href="ch-10-security.html">10 Security</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
       </ul>
-      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+      <span class="nav-lang"><a href="../es/ch-02-rule-engine.html">ES</a></span>
     </div>
   </nav>
 
@@ -48,6 +59,7 @@
         They also cover cold-start scenarios where no ML model exists yet — the system scores
         meaningfully from day zero with <code>ml_score = 0</code>.</p>
 
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Rule</th><th>Weight</th><th>Trigger</th></tr>
@@ -64,6 +76,7 @@
             <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transaction between 00:00–06:00</td></tr>
           </tbody>
         </table>
+        </div>
         <p class="table-caption">Risky categories: btc, crypto, gambling, casino, money_transfer.</p>
         <p>Note how the weights encode domain logic: amount alone (35) outweighs odd timing alone
         (10), but night-hour crypto activity (25) jumps near the top because the combination is far

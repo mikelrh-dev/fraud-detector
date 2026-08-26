@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>02 Reglas - Caso de Estudio Fraud Detector</title>
+  <meta name="description" content="Nueve reglas deterministas de fraude con pesos explícitos: transparentes por construcción, ajustables sin reentrenar y defendibles ante cualquier analista.">
+  <meta property="og:title" content="02 Reglas - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="Nueve reglas deterministas de fraude con pesos explícitos: transparentes por construcción, ajustables sin reentrenar y defendibles ante cualquier analista.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -27,7 +38,7 @@
         <li><a href="ch-10-security.html">10 Seguridad</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
       </ul>
-      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+      <span class="nav-lang"><a href="../en/ch-02-rule-engine.html">EN</a></span>
     </div>
   </nav>
 
@@ -49,6 +60,7 @@
         off_hours_crypto"). Además cubren el arranque en frío cuando aún no existe modelo ML — el
         sistema puntúa de forma útil desde el día cero con <code>ml_score = 0</code>.</p>
 
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Regla</th><th>Peso</th><th>Disparador</th></tr>
@@ -65,6 +77,7 @@
             <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transacción entre 00:00–06:00</td></tr>
           </tbody>
         </table>
+        </div>
         <p class="table-caption">Categorías de riesgo: btc, crypto, gambling, casino, money_transfer.</p>
         <p>Los pesos codifican lógica de dominio a propósito: el importe por sí solo (35) pesa más que el
         horario sospechoso por sí solo (10), pero crypto de madrugada (25) salta casi al tope porque la

@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>09 Streams - Caso de Estudio Fraud Detector</title>
+  <meta name="description" content="Confiabilidad con Redis Streams: consumer groups, recuperación de pendientes y colas de mensajes muertos — entrega al-menos-una-vez en un pipeline financiero.">
+  <meta property="og:title" content="09 Streams - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="Confiabilidad con Redis Streams: consumer groups, recuperación de pendientes y colas de mensajes muertos — entrega al-menos-una-vez en un pipeline financiero.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -27,7 +38,7 @@
         <li><a href="ch-10-security.html">10 Seguridad</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
       </ul>
-      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+      <span class="nav-lang"><a href="../en/ch-09-reliability.html">EN</a></span>
     </div>
   </nav>
 
@@ -51,6 +62,7 @@
           <li><strong>Memoria acotada:</strong> los streams se recortan en ~100K entradas (<code>MAXLEN</code> aproximado); la DLQ tiene tope de 10K.</li>
         </ul>
 
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Stream</th><th>Worker</th><th>Produce</th><th>Política ante fallos</th></tr>
@@ -61,6 +73,7 @@
             <tr><td class="mono">fraud:embeddings</td><td class="mono">embedding_worker</td><td>clave Redis con resultado (TTL 1h)</td><td>ack al éxito, log al fallo</td></tr>
           </tbody>
         </table>
+        </div>
         <p>El principio de diseño: la API siempre responde rápido; el enriquecimiento llega
         eventualmente; y cuando falla, el fallo mismo es un dato durable que un ingeniero puede
         reprocesar.</p>

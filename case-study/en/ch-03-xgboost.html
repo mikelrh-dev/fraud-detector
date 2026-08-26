@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>03 ML - Fraud Detector Case Study</title>
+  <meta name="description" content="The trained XGBoost artifact opened up: ten engineered features, a calibrated ensemble, cubic smoothing and the discipline behind the aligned retrain.">
+  <meta property="og:title" content="03 ML - Fraud Detector Case Study">
+  <meta property="og:description" content="The trained XGBoost artifact opened up: ten engineered features, a calibrated ensemble, cubic smoothing and the discipline behind the aligned retrain.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -25,7 +36,7 @@
         <li><a href="ch-10-security.html">10 Security</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
       </ul>
-      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+      <span class="nav-lang"><a href="../es/ch-03-xgboost.html">ES</a></span>
     </div>
   </nav>
 
@@ -46,6 +57,7 @@
         <p>Raw inputs (amount, timestamp, merchant) are transformed into ten features that expose
         behavioral signal to the model:</p>
 
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Feature</th><th>What it captures</th></tr>
@@ -63,6 +75,7 @@
             <tr><td class="mono">amount_round_number</td><td>round amounts correlate with manual testing of stolen cards</td></tr>
           </tbody>
         </table>
+        </div>
         <p>The relative features (<code>amount_vs_user_avg</code>, <code>_std</code>) matter most:
         $2,000 is unremarkable for one user and alarming for another. Normalizing against each
         user's own baseline lets a single model serve everyone.</p>
@@ -89,6 +102,7 @@
         <h2>Inside the trained artifact</h2>
         <p>The production model is a <code>CalibratedClassifierCV</code> wrapper around five
         sigmoid-calibrated XGBoost folds — its own hyperparameters tell the training story:</p>
+        <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr><th>Hyperparameter</th><th>Value</th><th>What it means</th></tr>
@@ -105,9 +119,10 @@
             <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 19.7</td><td>matched to this dataset&rsquo;s real 4.84% fraud rate — not an assumed ~1%</td></tr>
           </tbody>
         </table>
+        </div>
 
         <figure class="figure">
-          <img src="../assets/feature-importance.png" alt="Horizontal bar chart of feature importances from the trained calibrated XGBoost ensemble: 1-hour transaction count leads at 0.428, followed by 5-minute velocity at 0.374 and amount-versus-user-standard-deviation at 0.179; remaining features contribute near zero." width="1440" height="810">
+          <img loading="lazy" decoding="async" src="../assets/feature-importance.png" alt="Horizontal bar chart of feature importances from the trained calibrated XGBoost ensemble: 1-hour transaction count leads at 0.428, followed by 5-minute velocity at 0.374 and amount-versus-user-standard-deviation at 0.179; remaining features contribute near zero." width="1440" height="810">
           <figcaption><strong>Figure 1 — Real feature importances</strong>, extracted directly from
           the trained <code>xgboost_paysim_v1.joblib</code> (mean gain across the five calibrated
           folds; regenerated from the current artifact after the aligned retrain). Three features
@@ -127,12 +142,12 @@
         </ul>
 
         <figure class="figure">
-          <img src="../assets/score-distribution.png" alt="Two overlaid histograms of ml_score values: legitimate transactions cluster around a median of 26 while fraud transactions cluster around a median of 74, with a dashed line marking the low-tier fraud threshold at 70." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/score-distribution.png" alt="Two overlaid histograms of ml_score values: legitimate transactions cluster around a median of 26 while fraud transactions cluster around a median of 74, with a dashed line marking the low-tier fraud threshold at 70." width="1440" height="750">
           <figcaption><strong>Figure 2 — Real score separation.</strong> Produced by running the
           production <code>FeatureEngine</code> plus the trained artifact over all 50k synthetic
           transactions, then applying the exact cubic-smoothing formula used in serving. Medians:
-          <span style="color:#3b82f6">26.3 legitimate</span> vs
-          <span style="color:#ef4444">73.7 fraud</span> — a 47.5-point gap. Honest caveat: these
+          <span class="tone-info">26.3 legitimate</span> vs
+          <span class="tone-critical">73.7 fraud</span> — a 47.5-point gap. Honest caveat: these
           scores come from the model's own training dataset, so separation here is optimistic
           relative to truly unseen traffic; drift monitoring (Chapter 8) exists precisely to catch
           that gap in production.</figcaption>

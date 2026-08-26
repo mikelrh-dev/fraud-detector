@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>01 Architecture - Fraud Detector Case Study</title>
+  <meta name="description" content="End-to-end architecture: three independent scoring layers (rules, ML, context) fused into one auditable 0-100 risk score, with async workers and zero blocking.">
+  <meta property="og:title" content="01 Architecture - Fraud Detector Case Study">
+  <meta property="og:description" content="End-to-end architecture: three independent scoring layers (rules, ML, context) fused into one auditable 0-100 risk score, with async workers and zero blocking.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -26,7 +37,7 @@
         <li><a href="ch-10-security.html">10 Security</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Learnings</a></li>
       </ul>
-      <span class="nav-lang"><a href="../es/index.html">ES</a></span>
+      <span class="nav-lang"><a href="../es/ch-01-arquitectura.html">ES</a></span>
     </div>
   </nav>
 
@@ -47,8 +58,8 @@
           <g class="diagram-node" data-target="ch-02-rule-engine.html" data-tip="Layer 1 · 9 deterministic rules · weights 10-35 · capped at 100">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="30" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-            <text x="150" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Rule Engine</text>
-            <text x="150" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">9 deterministic rules</text>
+            <text x="150" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Rule Engine</text>
+            <text x="150" y="96" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">9 deterministic rules</text>
           </g>
 
           <!-- Arrow: Rules → XGBoost -->
@@ -58,8 +69,8 @@
           <g class="diagram-node" data-target="ch-03-xgboost.html" data-tip="Layer 2 · XGBoost: calibrated 5×200-tree ensemble">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="350" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-            <text x="470" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">XGBoost</text>
-            <text x="470" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">10 engineered features</text>
+            <text x="470" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">XGBoost</text>
+            <text x="470" y="96" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">10 engineered features</text>
           </g>
 
           <!-- Arrow: XGBoost → Context -->
@@ -69,8 +80,8 @@
           <g class="diagram-node" data-target="ch-05-ensemble.html" data-tip="Layer 3 · user baselining — 15% of the final score">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="670" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-            <text x="790" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Context</text>
-            <text x="790" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">User baselining</text>
+            <text x="790" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Context</text>
+            <text x="790" y="96" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">User baselining</text>
           </g>
 
           <!-- Converge into Ensemble -->
@@ -84,7 +95,7 @@
           <g class="diagram-node" data-target="ch-05-ensemble.html" data-tip="Ensemble · 0.60 rules + 0.25 ML + 0.15 context">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="490" y="200" width="280" height="70" rx="12" fill="#0f172a" stroke="#dc2626" stroke-width="2"/>
-            <text x="630" y="228" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Ensemble</text>
+            <text x="630" y="228" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Ensemble</text>
             <text x="630" y="252" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="13" fill="#cbd5e1">0.60 / 0.25 / 0.15</text>
           </g>
 
@@ -95,7 +106,7 @@
           <g class="diagram-node" data-target="ch-09-reliability.html" data-tip="PostgreSQL 16 + Redis Streams · consumer groups + DLQ">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="440" y="290" width="380" height="50" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
-            <text x="630" y="320" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="500" fill="#cbd5e1">PostgreSQL + Redis Streams</text>
+            <text x="630" y="320" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="500" fill="#cbd5e1">PostgreSQL + Redis Streams</text>
           </g>
 
           <!-- Worker flow lines (aligned to worker centers) -->
@@ -107,19 +118,19 @@
           <g class="diagram-node" data-target="ch-09-reliability.html" data-tip="Worker · consumes fraud:llm → Ollama report (ES)">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="370" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
-            <text x="440" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">LLM Worker</text>
+            <text x="440" y="376" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">LLM Worker</text>
             <text x="440" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:llm</text>
           </g>
           <g class="diagram-node" data-target="ch-06-shap.html" data-tip="Worker · consumes fraud:shap → top-5 attributions">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="560" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
-            <text x="630" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">SHAP Worker</text>
+            <text x="630" y="376" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">SHAP Worker</text>
             <text x="630" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:shap</text>
           </g>
           <g class="diagram-node" data-target="ch-07-network-signals.html" data-tip="Worker · consumes fraud:embeddings → spoofing check">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="750" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
-            <text x="820" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Embedding Worker</text>
+            <text x="820" y="376" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Embedding Worker</text>
             <text x="820" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:embeddings</text>
           </g>
 
@@ -153,9 +164,9 @@
           <span class="f-comment">// weights configurable via environment, no retraining needed to tune</span>
         </div>
         <p>The final score is compared against a dynamic threshold (Chapter 5) to classify each
-        transaction as <strong style="color:#22c55e">legitimate</strong>,
-        <strong style="color:#eab308">review</strong>, or
-        <strong style="color:#ef4444">fraud</strong>. Flagged transactions are persisted and pushed to
+        transaction as <strong class="tone-clean">legitimate</strong>,
+        <strong class="tone-warn">review</strong>, or
+        <strong class="tone-critical">fraud</strong>. Flagged transactions are persisted and pushed to
         async workers that enrich them with LLM reports, SHAP attributions and merchant embedding
         analysis — without ever blocking the API response path.</p>
       </div>

@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
+  <meta name="description" content="Arquitectura de punta a punta: tres capas de scoring independientes (reglas, ML, contexto) fusionadas en un score auditable de 0-100, con workers asíncronos.">
+  <meta property="og:title" content="01 Arquitectura - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="Arquitectura de punta a punta: tres capas de scoring independientes (reglas, ML, contexto) fusionadas en un score auditable de 0-100, con workers asíncronos.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary">
+  <!-- og:url / canonical / og:image: pending deployment (no production domain yet) -->
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/newsreader-700-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="../assets/fonts/source-sans-3-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
@@ -27,7 +38,7 @@
         <li><a href="ch-10-security.html">10 Seguridad</a></li>
         <li><a href="ch-11-aprendizajes.html">11 Aprendizajes</a></li>
       </ul>
-      <span class="nav-lang"><a href="../en/index.html">EN</a></span>
+      <span class="nav-lang"><a href="../en/ch-01-arquitectura.html">EN</a></span>
     </div>
   </nav>
 
@@ -48,8 +59,8 @@
           <g class="diagram-node" data-target="ch-02-rule-engine.html" data-tip="Capa 1 · 9 reglas deterministas · pesos 10-35 · tope 100">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="30" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-            <text x="150" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Motor de Reglas</text>
-            <text x="150" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">9 reglas deterministas</text>
+            <text x="150" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Motor de Reglas</text>
+            <text x="150" y="96" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">9 reglas deterministas</text>
           </g>
 
           <!-- Arrow: Rules → XGBoost -->
@@ -59,8 +70,8 @@
           <g class="diagram-node" data-target="ch-03-xgboost.html" data-tip="Capa 2 · XGBoost: ensamble calibrado 5×200 árboles">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="350" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-            <text x="470" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">XGBoost</text>
-            <text x="470" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">10 features</text>
+            <text x="470" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">XGBoost</text>
+            <text x="470" y="96" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">10 features</text>
           </g>
 
           <!-- Arrow: XGBoost → Context -->
@@ -70,8 +81,8 @@
           <g class="diagram-node" data-target="ch-05-ensemble.html" data-tip="Capa 3 · baseline de usuario — 15% del score final">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="670" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-            <text x="790" y="72" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Contexto</text>
-            <text x="790" y="96" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">Baseline de usuario</text>
+            <text x="790" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Contexto</text>
+            <text x="790" y="96" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">Baseline de usuario</text>
           </g>
 
           <!-- Converge into Ensemble -->
@@ -85,7 +96,7 @@
           <g class="diagram-node" data-target="ch-05-ensemble.html" data-tip="Ensemble · 0.60 reglas + 0.25 ML + 0.15 contexto">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="490" y="200" width="280" height="70" rx="12" fill="#0f172a" stroke="#dc2626" stroke-width="2"/>
-            <text x="630" y="228" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Ensemble</text>
+            <text x="630" y="228" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Ensemble</text>
             <text x="630" y="252" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="13" fill="#cbd5e1">0.60 / 0.25 / 0.15</text>
           </g>
 
@@ -96,7 +107,7 @@
           <g class="diagram-node" data-target="ch-09-reliability.html" data-tip="PostgreSQL 16 + Redis Streams · consumer groups + DLQ">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="440" y="290" width="380" height="50" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
-            <text x="630" y="320" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="500" fill="#cbd5e1">PostgreSQL + Redis Streams</text>
+            <text x="630" y="320" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="500" fill="#cbd5e1">PostgreSQL + Redis Streams</text>
           </g>
 
           <!-- Worker flow lines -->
@@ -108,19 +119,19 @@
           <g class="diagram-node" data-target="ch-09-reliability.html" data-tip="Worker · consume fraud:llm → informe Ollama (ES)">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="370" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
-            <text x="440" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker LLM</text>
+            <text x="440" y="376" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker LLM</text>
             <text x="440" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:llm</text>
           </g>
           <g class="diagram-node" data-target="ch-06-shap.html" data-tip="Worker · consume fraud:shap → top-5 atribuciones">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="560" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
-            <text x="630" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker SHAP</text>
+            <text x="630" y="376" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker SHAP</text>
             <text x="630" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:shap</text>
           </g>
           <g class="diagram-node" data-target="ch-07-network-signals.html" data-tip="Worker · consume fraud:embeddings → chequeo de spoofing">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="750" y="358" width="140" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
-            <text x="820" y="376" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker Embeddings</text>
+            <text x="820" y="376" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#cbd5e1">Worker Embeddings</text>
             <text x="820" y="392" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#94a3b8">fraud:embeddings</text>
           </g>
 
@@ -154,9 +165,9 @@
           <span class="f-comment">// pesos configurables por entorno, sin reentrenar para ajustarlos</span>
         </div>
         <p>El score final se compara contra un umbral dinámico (Capítulo 5) para clasificar cada
-        transacción como <strong style="color:#22c55e">legítima</strong>,
-        <strong style="color:#eab308">requiere revisión</strong>, o
-        <strong style="color:#ef4444">fraude</strong>. Las transacciones marcadas se persisten y se
+        transacción como <strong class="tone-clean">legítima</strong>,
+        <strong class="tone-warn">requiere revisión</strong>, o
+        <strong class="tone-critical">fraude</strong>. Las transacciones marcadas se persisten y se
         envían a workers asíncronos que las enriquecen con informes LLM, atribuciones SHAP y análisis
         de embeddings del merchant — sin bloquear nunca la respuesta de la API.</p>
       </div>
