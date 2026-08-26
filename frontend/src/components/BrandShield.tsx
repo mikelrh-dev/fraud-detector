@@ -4,8 +4,8 @@ interface BrandShieldProps {
 
 /**
  * Brand mark: shield + check outline glyph. Stroke inherits `currentColor`
- * so callers tint via text-* utilities. Same geometry as the public/
- * favicon.svg source of truth (DESIGN.md — Tab identity).
+ * so callers tint via text-* utilities. Independent SVG — the favicon is a
+ * separate simplified mark, not a geometry mirror (DESIGN.md — Tab identity).
  */
 export function BrandShield({ className = "h-6 w-6" }: BrandShieldProps) {
   return (

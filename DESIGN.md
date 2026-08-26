@@ -226,7 +226,7 @@ Signature 270° dial rendered by `<ScoreGauge>` inside `ScoreResultCard`:
 
 ## Tab identity
 
-- **Favicon:** `frontend/public/favicon.svg` (**source of truth** for shield geometry; `<BrandShield>` mirrors it) — outer shield stroke `#e2e8f0` (slate-200) on transparent, inner check filled `#ef4444` at 0.9 opacity, < 1KB. Wired via `<link rel="icon" type="image/svg+xml">`.
+- **Favicon:** `frontend/public/favicon.svg` (**independent simplified mark**; `<BrandShield>` is its own component-level drawing, not a geometry mirror of this file) — outer shield stroke `#e2e8f0` (slate-200) on transparent, inner check filled `#ef4444` at 0.9 opacity, < 1KB. Wired via `<link rel="icon" type="image/svg+xml">`.
 - `<meta name="theme-color">` = `#020617` (page background). Title: "Fraud Detector — Consola de análisis".
 - **Sanctioned hex locations (complete list):** `frontend/src/index.css` `@theme`, `src/lib/chart-theme.ts`, `frontend/index.html` meta/favicon, `frontend/public/favicon.svg`. Anywhere else is a violation; repeated colors become tokens.
 

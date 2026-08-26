@@ -55,6 +55,11 @@ export default function LoginPage() {
       return;
     }
 
+    if (password.length === 0) {
+      setError("Ingrese su contraseña.");
+      return;
+    }
+
     void submitCredentials({ email, password });
   }
 
