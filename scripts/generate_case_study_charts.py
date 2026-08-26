@@ -23,12 +23,23 @@ the Gaussian/SMOTE steps are train-side only and are correctly NOT applied here)
     fig-eval-calibration.png    1080x840
     fig-eval-separability.png   1560x690
 
+Back-half case-study figures (no trained artifact needed, built from real
+production services / real CSV windows):
+    network-graph.png           1440x750   synthetic fraud ring rendered through
+                                           the PRODUCTION FraudGraphService
+    feature-drift.png           1440x750   PSI between two CSV windows under an
+                                           explicitly documented simulated shift
+
 Visual style matches the established dark-editorial aesthetic: slate-900
 background (#0f172a), muted grid, risk tones green/amber/red, mono ticks,
 saved at 150 dpi so page layout does not shift.
 
 Usage (from repo root):
     .venv\\Scripts\\python.exe scripts/generate_case_study_charts.py
+    .venv\\Scripts\\python.exe scripts/generate_case_study_charts.py --only=network-graph,feature-drift
+
+With --only=<names> just those figures are regenerated (skipping the slow
+model-loading path); without arguments every figure is refreshed.
 """
 
 import json
@@ -176,10 +187,260 @@ def reliability_groups(proba: np.ndarray, y_true: np.ndarray, max_bins: int = 10
     return [(float(np.mean(proba[m])), float(np.mean(y_true[m])), m) for _, m in groups]
 
 
+# ---------------------------------------------------------------------------
+# Back-half figures (Chapter 07 network / Chapter 08 drift)
+# ---------------------------------------------------------------------------
+
+# Synthetic fraud-ring scenario. Every node, edge and fraudster flag below is
+# created by calling the PRODUCTION FraudGraphService.add_transaction() — the
+# exact code path the API exercises per request (src/services/graph_service.py).
+# Ring story:
+#   - fraudster_01 / fraudster_02 cash stolen cards (card_stolen_A/B) through
+#     mule accounts; fraudulent txns mark sender + card as known fraudsters.
+#   - mule_03 cashes out back to its operator (directed edge INTO the ring).
+#   - victim_bridge pays mule_03 -> exactly 2 directed hops from a known
+#     fraudster, so production get_graph_features() returns is_near_fraud=1
+#     (the near_fraud rule would fire for this user).
+#   - legit_01..legit_05 transact only among themselves: unreachable from the
+#     ring in both directions (shortest_path_to_fraud stays 999).
+RING_TRANSACTIONS: list[tuple[str, str, str, bool]] = [
+    # (sender_id, receiver_id, card_id, is_fraud)
+    ("fraudster_01", "mule_01", "card_stolen_A", True),
+    ("fraudster_01", "mule_02", "card_stolen_A", True),
+    ("fraudster_02", "mule_02", "card_stolen_B", True),
+    ("fraudster_02", "mule_03", "card_stolen_B", False),
+    ("mule_03", "fraudster_02", "card_mule_03", False),   # cash-out hop
+    ("victim_bridge", "mule_03", "card_victim", False),   # innocent payment, lands ≤2 hops away
+    ("legit_01", "legit_02", "card_l1", False),
+    ("legit_02", "legit_03", "card_l2", False),
+    ("legit_03", "legit_01", "card_l3", False),
+    ("legit_04", "legit_05", "card_l4", False),
+    ("legit_05", "legit_01", "card_l5", False),
+]
+
+DRIFT_FEATURES = ["amount", "user_avg_amount", "user_std_amount", "velocity_5min", "velocity_1h"]
+DRIFT_SPLIT = 25_000  # reference = rows [0, split) · current = rows [split, 50k)
+DRIFT_AMOUNT_FACTOR = 1.6      # simulated shift 1: whole current window
+DRIFT_TAIL_FRACTION = 0.15     # simulated shift 2: last 15% of current rows...
+DRIFT_VELOCITY_FACTOR = 3      # ...get velocity_5min (=tx_count_last_5min) inflated ×3
+
+
+def build_network_graph(metrics_out: dict) -> None:
+    """Render the synthetic fraud ring through the production FraudGraphService.
+
+    The scenario is synthetic (labelled as such on the figure caption), but the
+    graph structure is NOT hand-drawn: nodes/edges/fraud flags come from the
+    service's own add_transaction() calls, and the printed metrics come from
+    get_graph_features()/get_stats().
+    """
+    import asyncio
+
+    import networkx as nx
+    from matplotlib.lines import Line2D
+
+    from src.services.graph_service import FraudGraphService
+
+    async def _populate_ring() -> FraudGraphService:
+        service = FraudGraphService()
+        for sender, receiver, card, is_fraud in RING_TRANSACTIONS:
+            await service.add_transaction(sender, receiver, card, is_fraud=is_fraud)
+        return service
+
+    print("Chart 9/10: network-graph.png (production FraudGraphService path)")
+    service = asyncio.run(_populate_ring())
+    G = service.graph
+    fraud_nodes = set(service.known_fraudsters)
+    NEAR_NODE = "victim_bridge"
+
+    # Honest proof the production detection logic fires on this scenario.
+    loop = asyncio.new_event_loop()
+    try:
+        features_near = loop.run_until_complete(service.get_graph_features(NEAR_NODE))
+        features_legit = loop.run_until_complete(service.get_graph_features("legit_04"))
+        stats = loop.run_until_complete(service.get_stats())
+    finally:
+        loop.close()
+    assert features_near["is_near_fraud"] == 1, "victim_bridge should be ≤2 hops from a fraudster"
+    assert features_legit["is_near_fraud"] == 0, "legit cluster must stay clean"
+
+    pos = nx.spring_layout(G, k=0.85, seed=42, iterations=300)
+    users = [n for n, d in G.nodes(data=True) if d.get("node_type") == "user"]
+    cards = [n for n, d in G.nodes(data=True) if d.get("node_type") == "card"]
+
+    fig, ax = plt.subplots(figsize=(1440 / DPI, 750 / DPI))
+    ax.grid(False)
+
+    nx.draw_networkx_edges(
+        G, pos, ax=ax, edge_color="#334155", width=1.1,
+        arrows=True, arrowsize=13, arrowstyle="-|>", connectionstyle="arc3,rad=0.06",
+    )
+
+    def draw_group(nodes: list[str], marker: str, size: int, face: str, edge: str) -> None:
+        if not nodes:
+            return
+        nx.draw_networkx_nodes(
+            G, pos, nodelist=nodes, node_shape=marker, node_size=size,
+            node_color=face, edgecolors=edge, linewidths=1.4, ax=ax,
+        )
+
+    slate_face, slate_edge = "#64748b", "#94a3b8"
+    draw_group([n for n in users if n not in fraud_nodes and n != NEAR_NODE], "o", 520, slate_face, slate_edge)
+    draw_group([n for n in users if n in fraud_nodes], "o", 620, RED, "#fca5a5")
+    draw_group([NEAR_NODE], "o", 620, AMBER, "#fde68a")
+    draw_group(cards, "s", 340, "#334155", slate_edge)
+
+    nx.draw_networkx_labels(G, pos, labels={n: n for n in G.nodes()}, font_size=8.2,
+                            font_family=MONO, font_color=TEXT, ax=ax)
+
+    handles = [
+        Line2D([], [], marker="o", linestyle="", markersize=9, markerfacecolor=RED,
+               markeredgecolor="#fca5a5", label="known fraudster (flagged by add_transaction)"),
+        Line2D([], [], marker="o", linestyle="", markersize=9, markerfacecolor=AMBER,
+               markeredgecolor="#fde68a", label=f"near-fraud ≤ 2 hops ({NEAR_NODE})"),
+        Line2D([], [], marker="o", linestyle="", markersize=9, markerfacecolor=slate_face,
+               markeredgecolor=slate_edge, label="legitimate user"),
+        Line2D([], [], marker="s", linestyle="", markersize=8, markerfacecolor="#334155",
+               markeredgecolor=slate_edge, label="card node"),
+    ]
+    ax.legend(handles=handles, loc="upper left", frameon=False)
+
+    ax.set_title(
+        "Fraud Network Graph — Synthetic Ring Built Through the Production FraudGraphService",
+        fontweight="bold", pad=14,
+    )
+    ax.set_axis_off()
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    save(fig, "network-graph.png", 1440, 750)
+
+    metrics_out["network_graph"] = {
+        "nodes": stats["node_count"],
+        "edges": stats["edge_count"],
+        "known_fraudsters": stats["known_fraudsters"],
+        "graph_density": round(float(stats["graph_density"]), 4),
+        "victim_bridge_features": {k: (round(v, 4) if isinstance(v, float) else v)
+                                   for k, v in features_near.items()},
+        "legit_features": {k: (round(v, 4) if isinstance(v, float) else v)
+                           for k, v in features_legit.items()},
+    }
+    print(json.dumps({"network_graph": metrics_out["network_graph"]}, indent=2))
+
+
+def population_stability_index(reference: np.ndarray, current: np.ndarray, bins: int = 10) -> float:
+    """Population Stability Index over reference quantile bins (numpy-only).
+
+    PSI = Σ (cur% − ref%) · ln((cur% + ε) / (ref% + ε)). Conventional reading:
+    PSI < 0.1 stable · 0.1–0.25 warn · > 0.25 critical shift.
+    """
+    edges = np.unique(np.quantile(reference, np.linspace(0, 1, bins + 1)))
+    edges[0], edges[-1] = -np.inf, np.inf
+    ref_pct = np.histogram(reference, bins=edges)[0] / reference.size
+    cur_pct = np.histogram(current, bins=edges)[0] / current.size
+    eps = 1e-6
+    return float(np.sum((cur_pct - ref_pct) * np.log((cur_pct + eps) / (ref_pct + eps))))
+
+
+def build_feature_drift(metrics_out: dict) -> None:
+    """PSI between two real CSV windows under an explicitly SIMULATED shift.
+
+    Reference window : data/synthetic_transactions.csv rows [0, 25000), untouched.
+    Current window   : rows [25000, 50000) with two documented shifts applied —
+                       1) amount × 1.60 across the whole current window;
+                       2) velocity_5min × 3 for the last 15% of current rows
+                          (velocity_5min is the CSV column behind the production
+                          feature tx_count_last_5min).
+    Nothing else is altered; PSI itself is computed with plain numpy.
+    """
+    print("Chart 10/10: feature-drift.png (simulated drift scenario, numpy PSI)")
+    synth_tx, _ = load_synthetic_data(DATA_SYNTHETIC)
+    reference = synth_tx[:DRIFT_SPLIT]
+    current = [{**tx} for tx in synth_tx[DRIFT_SPLIT:]]
+
+    for tx in current:
+        tx["amount"] = float(tx["amount"]) * DRIFT_AMOUNT_FACTOR
+    tail_start = int(len(current) * (1.0 - DRIFT_TAIL_FRACTION))
+    for tx in current[tail_start:]:
+        tx["velocity_5min"] = int(tx["velocity_5min"]) * DRIFT_VELOCITY_FACTOR
+
+    psi: dict[str, float] = {}
+    for feat in DRIFT_FEATURES:
+        ref_vals = np.array([t[feat] for t in reference], dtype=float)
+        cur_vals = np.array([t[feat] for t in current], dtype=float)
+        psi[feat] = population_stability_index(ref_vals, cur_vals)
+
+    order = sorted(psi, key=lambda f: psi[f])
+    values = np.array([psi[f] for f in order])
+
+    def bar_color(v: float) -> str:
+        if v >= 0.25:
+            return RED
+        if v >= 0.10:
+            return AMBER
+        return BLUE
+
+    fig, ax = plt.subplots(figsize=(1440 / DPI, 750 / DPI))
+    ax.barh(np.arange(len(order)), values, color=[bar_color(v) for v in values], height=0.58)
+    ax.set_yticks(np.arange(len(order)), order, fontfamily=MONO)
+    for i, v in enumerate(values):
+        ax.text(v + max(values) * 0.015, i, f"{v:.3f}", va="center", fontfamily=MONO, fontsize=11)
+    ax.axvline(0.10, color=AMBER, linestyle="--", linewidth=1.6)
+    ax.axvline(0.25, color=RED, linestyle="--", linewidth=1.6)
+    ymax = len(order) - 0.1
+    ax.text(0.105, ymax, "warn 0.10", color=AMBER, fontsize=11, rotation=90, va="top")
+    ax.text(0.255, ymax, "critical 0.25", color=RED, fontsize=11, rotation=90, va="top")
+    ax.set_xlim(0, max(values.max() * 1.22, 0.30))
+    ax.set_title("Feature Drift — Population Stability Index (Simulated Drift Scenario)",
+                 fontweight="bold", pad=14)
+    ax.set_xlabel(
+        f"PSI · reference rows 0–{DRIFT_SPLIT - 1:,} vs shifted current rows "
+        f"{DRIFT_SPLIT:,}–{len(synth_tx) - 1:,} (amount ×{DRIFT_AMOUNT_FACTOR}; "
+        f"velocity_5min ×{DRIFT_VELOCITY_FACTOR} on last {int(DRIFT_TAIL_FRACTION * 100)}%)"
+    )
+    ax.set_ylabel("feature")
+    style_ticks(ax)
+    save(fig, "feature-drift.png", 1440, 750)
+
+    metrics_out["feature_drift"] = {
+        **{"simulated_shift": {
+            "amount_factor": DRIFT_AMOUNT_FACTOR,
+            "velocity_tail_fraction": DRIFT_TAIL_FRACTION,
+            "velocity_factor": DRIFT_VELOCITY_FACTOR,
+        }},
+        **{f: round(psi[f], 4) for f in DRIFT_FEATURES},
+    }
+    print(json.dumps(metrics_out["feature_drift"], indent=2))
+
+
+def _parse_only_flag() -> set[str] | None:
+    """Parse --only=name1,name2 (comma list). None means 'regenerate all'."""
+    for arg in sys.argv[1:]:
+        if arg.startswith("--only"):
+            _, _, raw = arg.partition("=")
+            return {name.strip() for name in raw.split(",") if name.strip()}
+    return None
+
+
 def main() -> None:
+    only = _parse_only_flag()
     print("=== Case-study figure regeneration ===")
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     setup_style()
+
+    # Back-half figures need no trained artifact -- run them first so they can
+    # be regenerated alone via --only without paying the model-loading cost.
+    if only is None or "network-graph" in only:
+        network_metrics: dict = {}
+        build_network_graph(network_metrics)
+    if only is None or "feature-drift" in only:
+        drift_metrics: dict = {}
+        build_feature_drift(drift_metrics)
+
+    MODEL_CHARTS = {"feature-importance", "shap-attribution", "score-distribution",
+                    "fig-eval-confusion", "fig-eval-pr", "fig-eval-cost",
+                    "fig-eval-calibration", "fig-eval-separability"}
+    wanted_model_charts = MODEL_CHARTS if only is None else (only & MODEL_CHARTS)
+    if not wanted_model_charts:
+        print(f"=== Done (requested figures refreshed) ===")
+        return
 
     # ------------------------------------------------------------------
     # 1. Data through the production pipeline (identical to training run)
@@ -498,7 +759,7 @@ def main() -> None:
     }
     print("\n=== METRICS JSON (sync into chapter texts) ===")
     print(json.dumps(metrics, indent=2))
-    print("=== Done: 8 figures refreshed ===")
+    print("=== Done: 10 figures refreshed (8 model-derived + 2 back-half) ===")
 
 
 if __name__ == "__main__":

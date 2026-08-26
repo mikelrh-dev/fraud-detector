@@ -67,6 +67,23 @@
         <p>Es una feature de segundo orden: captura relaciones que ni las reglas ni el ML
         por-transacción ven, porque la señal vive <em>entre</em> entidades, no dentro de una sola
         transacción.</p>
+
+        <figure class="figure">
+          <img loading="lazy" decoding="async" src="../assets/network-graph.png" alt="Grafo dirigido de un anillo de fraude sintético: cuatro nodos rojos marcan defraudadores conocidos y tarjetas robadas señaladas por el servicio de producción, un nodo ámbar marca un usuario legítimo a exactamente dos saltos de un defraudador vía una cuenta mula, círculos pizarra son usuarios legítimos, cuadrados pizarra son nodos de tarjeta, flechas pizarra finas muestran la dirección de las transacciones." width="1440" height="750">
+          <figcaption><strong>Anillo sintético, detección real:</strong> cada nodo, arista y
+          bandera de defraudador fue creado llamando al
+          <code>FraudGraphService.add_transaction()</code> de producción — el mismo camino de
+          código que ejercita cada request a la API. Las transacciones fraudulentas marcan
+          remitentes y tarjetas como defraudadores conocidos (rojo);
+          <span class="tone-warn">victim_bridge</span> (ámbar) simplemente paga a una cuenta mula y
+          queda a exactamente 2 saltos dirigidos de uno, así que
+          <code>get_graph_features()</code> devuelve <code>is_near_fraud=1</code> y la regla
+          <code>near_fraud</code> se dispara (+15). El cluster legítimo permanece inalcanzable
+          (<code>shortest_path_to_fraud=999</code>). Etiqueta honesta: el escenario en sí es
+          sintético — solo la lógica de detección que corre sobre él es código de producción.
+          Artefacto: <code>case-study/assets/network-graph.png</code>, generado por
+          <code>scripts/generate_case_study_charts.py</code>.</figcaption>
+        </figure>
       </div>
     </section>
 
@@ -111,7 +128,7 @@
         <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
       </div>
       <div class="footer-col">
-        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repositorio en GitHub &rarr;</a></p>
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:mikelromerohomobono@gmail.com">Email</a> · <a href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener">LinkedIn</a></p>
         <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
       </div>
     </div>

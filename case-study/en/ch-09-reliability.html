@@ -75,6 +75,120 @@
         </div>
         <p>The design principle: the API always answers fast; enrichment arrives eventually; and
         when enrichment fails, the failure itself is durable data an engineer can replay.</p>
+
+        <svg class="diagram-svg" viewBox="0 0 1200 500" role="img" aria-label="Sequence diagram: a POST /transactions request flows through the API into three Redis Streams, each consumed by its own worker which persists results to PostgreSQL tables or Redis keys; a guarantees panel explains XACK, pending recovery via XAUTOCLAIM and the fraud:dlq dead-letter queue." xmlns="http://www.w3.org/2000/svg">
+          <title>09 Streams - Fraud Detector Case Study</title>
+          <desc>From left to right: a client posts a transaction; the API scores it, persists it and publishes to three Redis streams (fraud:llm, fraud:shap, fraud:embeddings); three workers (llm_worker, shap_worker, embedding_worker) consume each stream and write LLMReport rows, ShapAttribution rows and a Redis result key with one-hour TTL respectively. A side panel states the delivery guarantees: XACK only after persistence, pending messages idle over five minutes reclaimed by an XAUTOCLAIM loop every sixty seconds, and messages failing three attempts moved to the fraud:dlq dead-letter queue.</desc>
+
+          <!-- Row 1: Client -> API -->
+          <g>
+            <rect x="30" y="44" width="190" height="68" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+            <text x="125" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Client</text>
+            <text x="125" y="97" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="10.5" fill="#cbd5e1">POST /transactions</text>
+          </g>
+          <line x1="220" y1="78" x2="262" y2="78" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#stream-arrow)"/>
+          <g>
+            <rect x="270" y="44" width="240" height="68" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+            <text x="390" y="70" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="14" font-weight="600" fill="#f1f5f9">Fraud Detector API</text>
+            <text x="390" y="96" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="10.5" fill="#cbd5e1">persist tx · then XADD</text>
+          </g>
+          <line x1="510" y1="78" x2="552" y2="78" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#stream-arrow)"/>
+
+          <!-- Redis Streams panel -->
+          <rect x="560" y="24" width="610" height="88" rx="12" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="5 4"/>
+          <text x="865" y="44" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" font-weight="500" fill="#94a3b8">Redis Streams · MAXLEN ~100K</text>
+          <g>
+            <rect x="585" y="52" width="180" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="675" y="79" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="12.5" fill="#93c5fd">fraud:llm</text>
+          </g>
+          <g>
+            <rect x="780" y="52" width="180" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="870" y="79" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="12.5" fill="#93c5fd">fraud:shap</text>
+          </g>
+          <g>
+            <rect x="975" y="52" width="180" height="44" rx="8" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="1065" y="79" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="12.5" fill="#93c5fd">fraud:embeddings</text>
+          </g>
+
+          <!-- Streams -> Workers -->
+          <line x1="675" y1="96" x2="675" y2="150" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#stream-arrow)"/>
+          <line x1="870" y1="96" x2="870" y2="150" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#stream-arrow)"/>
+          <line x1="1065" y1="96" x2="1065" y2="150" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#stream-arrow)"/>
+
+          <!-- Row 2: Workers -->
+          <g>
+            <rect x="585" y="156" width="180" height="64" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="675" y="184" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="600" fill="#f1f5f9">llm_worker</text>
+            <text x="675" y="204" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9.5" fill="#94a3b8">Ollama report (ES)</text>
+          </g>
+          <g>
+            <rect x="780" y="156" width="180" height="64" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="870" y="184" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="600" fill="#f1f5f9">shap_worker</text>
+            <text x="870" y="204" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9.5" fill="#94a3b8">TreeSHAP top-5</text>
+          </g>
+          <g>
+            <rect x="975" y="156" width="180" height="64" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1"/>
+            <text x="1065" y="184" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="600" fill="#f1f5f9">embedding_worker</text>
+            <text x="1065" y="204" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9.5" fill="#94a3b8">MiniLM spoof check</text>
+          </g>
+
+          <!-- Workers -> Outputs -->
+          <line x1="675" y1="220" x2="675" y2="284" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#stream-arrow)"/>
+          <line x1="870" y1="220" x2="870" y2="284" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#stream-arrow)"/>
+          <line x1="1065" y1="220" x2="1065" y2="284" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#stream-arrow)"/>
+
+          <!-- Row 3: Outputs -->
+          <g>
+            <rect x="585" y="290" width="180" height="64" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="675" y="318" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12.5" font-weight="500" fill="#cbd5e1">PostgreSQL</text>
+            <text x="675" y="337" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9.5" fill="#94a3b8">LLMReport rows + audit</text>
+          </g>
+          <g>
+            <rect x="780" y="290" width="180" height="64" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="870" y="318" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12.5" font-weight="500" fill="#cbd5e1">PostgreSQL</text>
+            <text x="870" y="337" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9.5" fill="#94a3b8">ShapAttribution rows</text>
+          </g>
+          <g>
+            <rect x="975" y="290" width="180" height="64" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+            <text x="1065" y="318" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12.5" font-weight="500" fill="#cbd5e1">Redis result key</text>
+            <text x="1065" y="337" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9.5" fill="#94a3b8">embedding_result:* · TTL 1h</text>
+          </g>
+
+          <!-- Delivery guarantees panel -->
+          <g>
+            <rect x="30" y="170" width="480" height="250" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+            <text x="48" y="202" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="14" font-weight="600" fill="#f1f5f9">Delivery guarantees</text>
+
+            <circle cx="58" cy="234" r="4.5" fill="#22c55e"/>
+            <text x="74" y="230" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">XACK fires only after the worker</text>
+            <text x="74" y="248" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">persists its result — no silent loss.</text>
+
+            <circle cx="58" cy="292" r="4.5" fill="#f59e0b"/>
+            <text x="74" y="288" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">Deliveries stay PENDING until acked;</text>
+            <text x="74" y="306" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">idle &gt; 5 min → XAUTOCLAIM loop every 60s.</text>
+
+            <circle cx="58" cy="350" r="4.5" fill="#ef4444"/>
+            <text x="74" y="346" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">After 3 failed attempts the message is</text>
+            <text x="74" y="364" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">moved to fraud:dlq (stream · group · reason).</text>
+          </g>
+
+          <!-- DLQ -->
+          <path d="M 270 420 L 270 452 L 552 452" fill="none" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#dlq-arrow)"/>
+          <g>
+            <rect x="560" y="428" width="300" height="48" rx="8" fill="#0f172a" stroke="#ef4444" stroke-width="1" stroke-dasharray="4 3"/>
+            <text x="710" y="450" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="12" font-weight="500" fill="#ef4444">DLQ · fraud:dlq</text>
+            <text x="710" y="467" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="9" fill="#f87171">MAXLEN ~10K</text>
+          </g>
+
+          <defs>
+            <marker id="stream-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+            </marker>
+            <marker id="dlq-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444"/>
+            </marker>
+          </defs>
+        </svg>
       </div>
     </section>
 
@@ -99,7 +213,7 @@
         <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
       </div>
       <div class="footer-col">
-        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:mikelromerohomobono@gmail.com">Email</a> · <a href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener">LinkedIn</a></p>
         <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
       </div>
     </div>

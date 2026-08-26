@@ -79,6 +79,31 @@
         </ul>
         <p>Each of these has a concrete owner and plan — which is exactly what separates an
         honest roadmap from a wish list.</p>
+
+        <div class="callout">
+          <span class="callout-title">Try it yourself</span>
+          <p>The whole pipeline runs locally in minutes — API, three workers, dashboard:</p>
+          <div class="formula">
+            docker compose up -d --build<br>
+            docker compose exec api python scripts/init_db.py<br>
+            docker compose exec api python scripts/seed_demo_data.py
+          </div>
+          <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Role</th><th>Email</th><th>Password</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>admin</td><td class="mono">admin@frauddetector.dev</td><td class="mono">admin123</td></tr>
+              <tr><td>analyst</td><td class="mono">analyst@frauddetector.dev</td><td class="mono">analyst123</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <p>Frontend: with Docker it is served at <code>http://localhost:3000</code>; for
+          hot-reload development run <code>cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code>
+          and open <code>http://localhost:5173</code>. Full walkthrough in the
+          <a href="https://github.com/mikelrh-dev/fraud-detector#quick-start" target="_blank" rel="noopener noreferrer">README Quick Start</a>.</p>
+        </div>
       </div>
     </section>
 
@@ -90,6 +115,23 @@
       </a>
     </nav>
 
+    <!-- Contact CTA -->
+    <section class="reveal">
+      <div class="prose">
+        <hr class="section-divider">
+        <div class="callout">
+          <span class="callout-title">Let's talk</span>
+          <p>If this case study resonates — the architecture-first thinking, the honest numbers,
+          the obsession with reliability — I'd love to hear from you.</p>
+        </div>
+        <div class="link-btn-group">
+          <a class="link-btn btn-solid" href="mailto:mikelromerohomobono@gmail.com">Email me &rarr;</a>
+          <a class="link-btn" href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener">LinkedIn &rarr;</a>
+          <a class="link-btn" href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub &rarr;</a>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <footer class="footer">
@@ -99,7 +141,7 @@
         <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
       </div>
       <div class="footer-col">
-        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">Repository on GitHub &rarr;</a></p>
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:mikelromerohomobono@gmail.com">Email</a> · <a href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener">LinkedIn</a></p>
         <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
       </div>
     </div>
