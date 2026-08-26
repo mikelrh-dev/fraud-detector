@@ -120,10 +120,10 @@ def _own_transaction(txn_id=None) -> MagicMock:
 class TestReportOwnership:
     """GET /transactions/{id}/report must enforce ownership."""
 
-    async def test_analyst_gets_404_for_foreign_report(
+    async def test_analyst_gets_403_for_foreign_report(
         self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
     ):
-        """Analyst requesting report for another user's transaction → 404."""
+        """Analyst requesting report for another user's transaction → 403."""
         mock_report = _mock_report(FOREIGN_TXN_ID)
 
         # First query: load transaction for ownership; second query: find report
@@ -137,7 +137,7 @@ class TestReportOwnership:
             f"/api/v1/transactions/{FOREIGN_TXN_ID}/report",
             headers=auth_headers,
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     async def test_admin_can_view_any_report(
         self, test_client: AsyncClient, admin_headers: dict, mock_db: AsyncMock
@@ -268,7 +268,7 @@ class TestAlertMutationOwnership:
             headers=auth_headers,
             json={"action": "review", "reason": "reviewing"},
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
 
 
 # ===========================================================================

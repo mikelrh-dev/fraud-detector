@@ -30,8 +30,8 @@ async def _check_alert_ownership(
 ) -> None:
     """Verify the current user owns the alert's underlying transaction.
 
-    Raises 404 if the transaction is not found or belongs to another user
-    (does not leak existence). Admins bypass ownership checks.
+    Raises 404 if the transaction is not found; 403 if it belongs to
+    another user. Admins bypass ownership checks.
     """
     if current_user.get("role") == "admin":
         return
@@ -40,11 +40,10 @@ async def _check_alert_ownership(
         select(Transaction).where(Transaction.id == alert.transaction_id)
     )
     txn = txn_result.scalar_one_or_none()
-    if txn is None or str(txn.user_id) != current_user["user_id"]:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Alert not found",
-        )
+    if txn is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+    if str(txn.user_id) != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 @router.get("", response_model=AlertListResponse)
@@ -122,22 +121,6 @@ async def list_alerts_endpoint(
 
     return AlertListResponse(items=items, total=total, page=page, page_size=page_size)
 
-    items = [
-        AlertResponse(
-            id=a.id,
-            transaction_id=a.transaction_id,
-            status=a.status.value if hasattr(a.status, "value") else a.status,
-            score=a.score,
-            threshold=a.threshold,
-            classification=a.classification,
-            reviewed_by=a.reviewed_by,
-            reviewed_at=a.reviewed_at,
-            created_at=a.created_at,
-        )
-        for a in alerts
-    ]
-
-    return AlertListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("/{alert_id}/review", response_model=AlertResponse)

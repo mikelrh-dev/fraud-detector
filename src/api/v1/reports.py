@@ -28,8 +28,8 @@ async def get_transaction_report(
         - 404 if no report is found for the transaction.
     """
     # --- Ownership check (R1-003 / F1): only the transaction owner or
-    # an admin may view the report.  Foreign objects → 404 to avoid
-    # leaking existence. ---
+    # an admin may view the report. Transaction not found → 404;
+    # found but owned by another user → 403. ---
     txn_result = await db.execute(
         select(Transaction).where(Transaction.id == transaction_id)
     )
@@ -44,8 +44,8 @@ async def get_transaction_report(
     user_id = str(txn.user_id)
     if not is_admin and user_id != current_user["user_id"]:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No report found for this transaction",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
         )
 
     query = select(LLMReport).where(
