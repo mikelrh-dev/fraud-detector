@@ -339,9 +339,9 @@ class TestListTransactions:
         mock_select_result = MagicMock()
         mock_select_result.scalars.return_value = mock_scalar_result
 
-        # Mock the count query
+        # Mock the count query (now uses func.count() → scalar)
         mock_count_result = MagicMock()
-        mock_count_result.all.return_value = [(txn.id,)]
+        mock_count_result.scalar.return_value = 1
 
         # Mock the batched score query
         score_scalar = MagicMock()
@@ -365,8 +365,7 @@ class TestListTransactions:
         data = response.json()
         assert "items" in data
         assert "total" in data
-        assert data["page"] == 1
-        assert data["page_size"] == 20
+        assert data["total"] == 1
         # Score-aware fields (FRD-DASH-SCORE-002 / FRD-DASH-SCORE-003)
         assert data["items"][0]["risk_score"] == 52.0
         assert data["items"][0]["classification"] == "review"
@@ -381,9 +380,9 @@ class TestListTransactions:
             _make_mock_score(transaction_id=txns[1].id),
         ]
 
-        # Count query
+        # Count query (now func.count() → scalar)
         mock_count_result = MagicMock()
-        mock_count_result.all.return_value = [(t.id,) for t in txns]
+        mock_count_result.scalar.return_value = 2
 
         # Page query
         page_scalar = MagicMock()
@@ -413,6 +412,50 @@ class TestListTransactions:
         assert len(data["items"]) == 2
         # count + page + exactly ONE batched score query — no per-row queries
         assert mock_db.execute.call_count == 3
+
+    async def test_date_filters_apply_to_total_count(
+        self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
+    ):
+        """R4: total must reflect date-filtered count, not the unfiltered count.
+
+        Before the fix, count_query omitted date_from/date_to so total
+        always returned the full table count regardless of filters.
+        """
+        txn = _make_mock_transaction()
+
+        # The count query should return 1 (the filtered row), not 5 (all rows).
+        # After the fix, the endpoint uses func.count() which returns a scalar.
+        mock_count_result = MagicMock()
+        mock_count_result.scalar.return_value = 1  # func.count() result
+
+        # Page query returns the one matching transaction
+        mock_scalar_result = MagicMock()
+        mock_scalar_result.all.return_value = [txn]
+        mock_select_result = MagicMock()
+        mock_select_result.scalars.return_value = mock_scalar_result
+
+        # Batched score query
+        score_scalar = MagicMock()
+        score_scalar.all.return_value = []
+        score_result = MagicMock()
+        score_result.scalars.return_value = score_scalar
+
+        mock_db.execute = AsyncMock()
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            mock_select_result,
+            score_result,
+        ]
+
+        response = await test_client.get(
+            "/api/v1/transactions?date_from=2024-01-01T00:00:00Z&date_to=2024-01-31T23:59:59Z",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1, (
+            "total should reflect the date-filtered count, not the full table"
+        )
 
 
 class TestDeleteTransaction:

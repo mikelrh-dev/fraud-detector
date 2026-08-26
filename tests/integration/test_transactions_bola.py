@@ -130,7 +130,8 @@ class TestGraphFeaturesOwnership:
     ):
         own_id = "00000000-0000-0000-0000-000000000001"
         with patch("src.api.v1.transactions._graph_service") as graph_service:
-            graph_service.get_graph_features = AsyncMock(
+            # get_graph_features is now sync (called via asyncio.to_thread)
+            graph_service.get_graph_features = MagicMock(
                 return_value={"is_near_fraud": False}
             )
             response = await test_client.get(

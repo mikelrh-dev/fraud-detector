@@ -213,8 +213,10 @@ async def create_and_score_transaction(
     )
     amounts = [float(a) for a in amounts_result.scalars().all()]
 
-    # 3. Graph features (async, network I/O)
-    graph_features = await _graph_service.get_graph_features(str(user_uuid))
+    # 3. Graph features — CPU-bound BFS runs off the event loop (R2)
+    graph_features = await asyncio.to_thread(
+        _graph_service.get_graph_features, str(user_uuid)
+    )
 
     # 4. Build scoring inputs
     now = datetime.now(tz=timezone.utc)
@@ -292,7 +294,8 @@ async def create_and_score_transaction(
     # 8.5. Update fraud graph: add transaction edges and mark fraudsters (async)
     # This happens AFTER classification is made
     try:
-        await _graph_service.add_transaction(
+        await asyncio.to_thread(
+            _graph_service.add_transaction,
             sender_id=str(user_uuid),
             receiver_id=f"merchant_{payload.merchant_name}",  # Treat merchant as receiver node
             card_id=payload.card_last4,
@@ -427,15 +430,21 @@ async def list_transactions_endpoint(
     if date_to:
         query = query.where(Transaction.created_at <= date_to)
 
-    # Get total count
-    count_query = select(Transaction.id).where(Transaction.deleted_at.is_(None))
+    # Get total count — apply IDENTICAL filters to the count query (R4).
+    # Use func.count() instead of len(.all()) for efficiency.
+    count_query = select(func.count()).select_from(Transaction).where(
+        Transaction.deleted_at.is_(None)
+    )
     if status_filter:
         count_query = count_query.where(Transaction.status == status_filter)
     if user_id:
         count_query = count_query.where(Transaction.user_id == user_id)
+    if date_from:
+        count_query = count_query.where(Transaction.created_at >= date_from)
+    if date_to:
+        count_query = count_query.where(Transaction.created_at <= date_to)
 
-    total_result = await db.execute(count_query)
-    total = len(total_result.all())
+    total = (await db.execute(count_query)).scalar_one()
 
     query = query.offset(skip).limit(page_size)
     result = await db.execute(query)
@@ -601,7 +610,7 @@ async def get_graph_stats(
     Returns overall graph metrics: nodes, edges, density, known fraudsters.
     """
     try:
-        stats = await _graph_service.get_stats()
+        stats = await asyncio.to_thread(_graph_service.get_stats)
         return {
             "status": "ok",
             "graph": stats,
@@ -632,7 +641,9 @@ async def get_user_graph_features(
             detail="Cannot view another user's graph features",
         )
     try:
-        features = await _graph_service.get_graph_features(user_id)
+        features = await asyncio.to_thread(
+            _graph_service.get_graph_features, user_id
+        )
         return {
             "user_id": user_id,
             "graph_features": features,

@@ -233,7 +233,11 @@ async def _handle_failed_report(
 
 
 async def _recovery_loop(redis_client: redis.Redis) -> None:
-    """Claim stale PEL entries and reprocess them (R4-003)."""
+    """Claim stale PEL entries and reprocess them (R4-003).
+
+    Claimed messages are routed through _process_message_with_retry so that
+    permanently-failing messages reach the DLQ instead of looping forever (R3).
+    """
     llm_service = LLMService()
 
     while True:
@@ -249,22 +253,83 @@ async def _recovery_loop(redis_client: redis.Redis) -> None:
 
             for claimed_id, fields in recovered:
                 logger.info("Reprocessing stale LLM message: %s", claimed_id)
-                data_json = fields.get(b"data", b"{}").decode("utf-8")
-                message_data = json.loads(data_json)
-
-                async with async_session_maker() as db:
-                    success = await process_report_request(
-                        message_data, db, llm_service
-                    )
-
-                if success:
-                    await redis_client.xack(STREAM_NAME, GROUP_NAME, claimed_id)
-                    logger.debug("Recovered LLM message ACKed: %s", claimed_id)
+                await _process_message_with_retry(
+                    redis_client, claimed_id, fields, llm_service
+                )
 
         except asyncio.CancelledError:
             break
         except Exception as exc:
             logger.error("Error in LLM recovery loop: %s", exc)
+
+
+async def _process_message_with_retry(
+    redis_client: redis.Redis,
+    message_id: bytes | str,
+    fields: dict,
+    llm_service: LLMService,
+) -> None:
+    """Process a message with automatic retry and DLQ handling (R3).
+
+    Mirrors shap_worker._process_message_with_retry: tracks retry count
+    via the message payload, sends to DLQ after MAX_RETRIES, and re-enqueues
+    with backoff for retryable failures.
+    """
+    try:
+        data_json = fields.get(b"data", b"{}").decode("utf-8")
+        message_data = json.loads(data_json)
+
+        retry_count = message_data.get("retry_count", 0)
+
+        async with async_session_maker() as db:
+            success = await process_report_request(message_data, db, llm_service)
+
+        if success:
+            await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+            logger.debug("LLM message ACKed: %s", message_id)
+        else:
+            if retry_count >= MAX_RETRIES:
+                # Max retries exceeded: send to DLQ
+                dlq_message_id = (
+                    message_id.decode("utf-8")
+                    if isinstance(message_id, bytes)
+                    else str(message_id)
+                )
+                await send_to_dlq(
+                    redis_client,
+                    STREAM_NAME,
+                    dlq_message_id,
+                    GROUP_NAME,
+                    CONSUMER_NAME,
+                    f"Max retries ({MAX_RETRIES}) exceeded",
+                    message_data,
+                )
+                await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+                logger.warning(
+                    "LLM message sent to DLQ: %s (retries: %d)",
+                    message_id,
+                    retry_count,
+                )
+            else:
+                # Retry: increment counter, back off, then re-enqueue
+                message_data["retry_count"] = retry_count + 1
+                await asyncio.sleep(_backoff_delay(retry_count))
+                await redis_client.xadd(
+                    STREAM_NAME,
+                    {"data": json.dumps(message_data)},
+                    maxlen=100000,
+                    approximate=True,
+                )
+                await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+                logger.info(
+                    "LLM message re-queued for retry: %s (attempt %d/%d)",
+                    message_id,
+                    retry_count + 1,
+                    MAX_RETRIES,
+                )
+
+    except Exception as exc:
+        logger.error("Error processing LLM message: %s", exc)
 
 
 if __name__ == "__main__":

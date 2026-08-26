@@ -3,12 +3,12 @@
 Maintains an in-memory fraud network using NetworkX. Detects if a user or card
 is connected to known fraudsters (2 hops or less), indicating potential mule accounts.
 
-Thread-Safe: Uses asyncio.Lock() to prevent race conditions on concurrent access.
+Thread-Safe: Uses threading.Lock() to prevent race conditions on concurrent access.
 Memory-Safe: Implements pruning to prevent unbounded growth.
 """
 
-import asyncio
 import logging
+import threading
 from datetime import datetime, timedelta, timezone
 
 import networkx as nx
@@ -36,12 +36,12 @@ class FraudGraphService:
         """
         self.graph = nx.DiGraph()
         self.known_fraudsters: set[str] = set()
-        self.lock = asyncio.Lock()  # Thread-safety lock
+        self.lock = threading.Lock()  # Thread-safety lock (sync, for to_thread)
         self.retention_days = retention_days
         self.last_pruned = datetime.now(tz=timezone.utc)
         logger.info("FraudGraphService initialized with empty graph (retention: %d days)", retention_days)
 
-    async def add_transaction(
+    def add_transaction(
         self,
         sender_id: str,
         receiver_id: str,
@@ -59,7 +59,7 @@ class FraudGraphService:
             card_id: Card identifier (last 4 digits or full card hash)
             is_fraud: Whether this transaction was flagged as fraud
         """
-        async with self.lock:  # Thread-safety: serialize all graph modifications
+        with self.lock:  # Thread-safety: serialize all graph modifications
             try:
                 # Add nodes if they don't exist, with timestamp for pruning
                 now = datetime.now(tz=timezone.utc)
@@ -86,12 +86,12 @@ class FraudGraphService:
                 
                 # Prune old nodes if needed (check every 1000 adds)
                 if self.graph.number_of_nodes() % 1000 == 0:
-                    await self._prune_old_nodes()
+                    self._prune_old_nodes()
 
             except Exception as exc:
                 logger.error("Failed to add transaction to graph: %s", exc)
 
-    async def get_graph_features(self, user_id: str) -> dict:
+    def get_graph_features(self, user_id: str) -> dict:
         """Get graph-based features for a user (thread-safe).
         
         Args:
@@ -104,7 +104,7 @@ class FraudGraphService:
             - shortest_path_to_fraud: Hops to nearest fraudster (999 if unreachable)
             - connected_fraudsters: Count of connected fraudsters
         """
-        async with self.lock:  # Thread-safety: serialize graph reads
+        with self.lock:  # Thread-safety: serialize graph reads
             if not self.graph.nodes():
                 # Empty graph
                 return {
@@ -127,9 +127,16 @@ class FraudGraphService:
                 # Degree centrality
                 degree_centrality = nx.degree_centrality(self.graph).get(user_id, 0.0)
 
-                # Find shortest path to any fraudster
+                # Find shortest path to any fraudster using BFS with cutoff=2.
+                # single_source_shortest_path_length returns all reachable nodes
+                # within cutoff hops in one BFS pass — O(V+E at depth≤2).
                 shortest_path = 999
                 connected_fraudsters = 0
+
+                # Fast path: BFS from user_id with depth limit
+                reachable = nx.single_source_shortest_path_length(
+                    self.graph, user_id, cutoff=2
+                )
 
                 for fraudster_id in self.known_fraudsters:
                     if fraudster_id == user_id:
@@ -138,14 +145,11 @@ class FraudGraphService:
                         connected_fraudsters += 1
                         continue
 
-                    try:
-                        path_length = nx.shortest_path_length(self.graph, user_id, fraudster_id)
+                    if fraudster_id in reachable:
+                        path_length = reachable[fraudster_id]
                         if path_length < shortest_path:
                             shortest_path = path_length
                         connected_fraudsters += 1
-                    except (nx.NetworkXNoPath, nx.NodeNotFound):
-                        # No path to this fraudster
-                        continue
 
                 # Determine if near fraud (≤2 hops)
                 is_near_fraud = 1 if shortest_path <= 2 else 0
@@ -166,9 +170,9 @@ class FraudGraphService:
                     "connected_fraudsters": 0,
                 }
 
-    async def get_stats(self) -> dict:
+    def get_stats(self) -> dict:
         """Get overall graph statistics (thread-safe)."""
-        async with self.lock:
+        with self.lock:
             return {
                 "node_count": self.graph.number_of_nodes(),
                 "edge_count": self.graph.number_of_edges(),
@@ -176,7 +180,7 @@ class FraudGraphService:
                 "graph_density": nx.density(self.graph),
             }
 
-    async def _prune_old_nodes(self) -> None:
+    def _prune_old_nodes(self) -> None:
         """Remove nodes older than retention_days (memory management).
         
         Called periodically (every 1000 adds) to prevent unbounded growth.

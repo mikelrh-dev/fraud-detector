@@ -22,7 +22,11 @@ async def get_stream_client() -> redis.Redis:
     """Get or create Redis stream client."""
     global _redis
     if _redis is None:
-        _redis = await redis.from_url(settings.redis_url)
+        _redis = await redis.from_url(
+            settings.redis_url,
+            socket_connect_timeout=2.0,
+            socket_timeout=2.0,
+        )
     return _redis
 
 

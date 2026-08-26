@@ -27,12 +27,14 @@ def get_redis() -> Redis:
     return Redis(connection_pool=redis_pool)
 
 
+# NOTE: unused, preserved for API compat
 async def enqueue(queue_name: str, message: dict[str, Any]) -> None:
     """Push a JSON-serialized message onto a Redis list (LPUSH)."""
     redis_client = get_redis()
     await redis_client.lpush(queue_name, json.dumps(message))  # type: ignore[misc]
 
 
+# NOTE: unused, preserved for API compat
 async def dequeue(queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
     """Block and pop a message from a Redis list (BRPOP).
 
@@ -46,6 +48,7 @@ async def dequeue(queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
     return json.loads(data)
 
 
+# NOTE: unused, preserved for API compat
 async def enqueue_for_retry(
     redis_client: Redis,
     message: dict[str, Any],

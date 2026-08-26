@@ -299,6 +299,108 @@ class TestWorkerDurability:
         assert routed, "claimed reports were never reprocessed"
 
     @pytest.mark.asyncio
+    async def test_recovery_loop_reroutes_failing_to_dlq(self):
+        """R3: claimed messages that fail MAX_RETRIES times go to DLQ."""
+        from src.workers import llm_worker
+
+        mock_redis = AsyncMock()
+        # Message that has already exhausted retries
+        claimed_entry = (
+            b"1700000000100-0",
+            {b"data": json.dumps({
+                "transaction_id": "t-poison",
+                "retry_count": 3,  # >= MAX_RETRIES
+            }).encode()},
+        )
+
+        with patch.object(
+            llm_worker, "RECOVERY_INTERVAL", 0.01
+        ), patch.object(
+            llm_worker,
+            "recover_pending_messages",
+            new=AsyncMock(return_value=[claimed_entry]),
+        ), patch.object(
+            llm_worker, "async_session_maker"
+        ) as mock_maker, patch.object(
+            llm_worker, "LLMService"
+        ), patch.object(
+            llm_worker,
+            "process_report_request",
+            new=AsyncMock(return_value=False),
+        ), patch.object(
+            llm_worker,
+            "send_to_dlq",
+            new=AsyncMock(),
+        ) as dlq_mock:
+            session = AsyncMock()
+            mock_maker.return_value.__aenter__ = AsyncMock(return_value=session)
+            mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            task = asyncio.create_task(llm_worker._recovery_loop(mock_redis))
+            dlq_called = await _wait_for(
+                lambda: dlq_mock.await_count > 0, timeout=2.0
+            )
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        assert dlq_called, "poison message was never sent to DLQ"
+
+    @pytest.mark.asyncio
+    async def test_recovery_loop_retries_under_max(self):
+        """R3: claimed messages under MAX_RETRIES get re-queued, not DLQ'd."""
+        from src.workers import llm_worker
+
+        mock_redis = AsyncMock()
+        # Message with retries remaining
+        claimed_entry = (
+            b"1700000000101-0",
+            {b"data": json.dumps({
+                "transaction_id": "t-retryable",
+                "retry_count": 1,  # < MAX_RETRIES
+            }).encode()},
+        )
+
+        with patch.object(
+            llm_worker, "RECOVERY_INTERVAL", 0.01
+        ), patch.object(
+            llm_worker,
+            "recover_pending_messages",
+            new=AsyncMock(return_value=[claimed_entry]),
+        ), patch.object(
+            llm_worker, "async_session_maker"
+        ) as mock_maker, patch.object(
+            llm_worker, "LLMService"
+        ), patch.object(
+            llm_worker,
+            "process_report_request",
+            new=AsyncMock(return_value=False),
+        ), patch.object(
+            llm_worker,
+            "send_to_dlq",
+            new=AsyncMock(),
+        ) as dlq_mock, patch.object(
+            llm_worker,
+            "_process_message_with_retry",
+            new=AsyncMock(),
+        ) as retry_mock:
+            session = AsyncMock()
+            mock_maker.return_value.__aenter__ = AsyncMock(return_value=session)
+            mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            task = asyncio.create_task(llm_worker._recovery_loop(mock_redis))
+            routed = await _wait_for(
+                lambda: retry_mock.await_count > 0, timeout=2.0
+            )
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        dlq_mock.assert_not_awaited(), "message with retries left should NOT go to DLQ"
+        assert routed, "claimed message was never routed through retry pipeline"
+        retry_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_main_uses_configured_redis_url(self):
         """R4-007 sibling: entry points must honor settings.redis_url."""
         from src.core.config import settings
