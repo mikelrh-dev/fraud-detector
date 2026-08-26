@@ -1,13 +1,14 @@
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { THEME } from "../lib/chart-theme";
+import { THEME, formatCompactTick } from "../lib/chart-theme";
+import { ChartTooltip } from "./ChartTooltip";
 
 interface DailyAverage {
   date: string;
@@ -34,39 +35,63 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
 
   return (
     <div className="bg-slate-900 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-slate-300 mb-3">
-        Tendencia de Score Promedio
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-slate-300">
+          Tendencia de Score Promedio
+        </h3>
+        {/* Custom legend dot — replaces recharts' default legend chrome */}
+        <span className="flex items-center gap-1.5 text-xs text-slate-400">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-risk-warn" />
+          Score Promedio
+        </span>
+      </div>
       <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke={THEME.grid} />
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={THEME.risk.warn} stopOpacity={0.18} />
+              <stop offset="100%" stopColor={THEME.risk.warn} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid
+            horizontal={true}
+            vertical={false}
+            strokeDasharray="3 3"
+            stroke={THEME.gridSoft}
+          />
           <XAxis
             dataKey="date"
             tick={{ fill: THEME.axis.tick, fontSize: 11 }}
-            axisLine={{ stroke: THEME.axis.line }}
+            axisLine={false}
             tickLine={false}
           />
           <YAxis
             domain={[0, 100]}
             tick={{ fill: THEME.axis.tick, fontSize: 11 }}
-            axisLine={{ stroke: THEME.axis.line }}
+            axisLine={false}
             tickLine={false}
+            tickFormatter={formatCompactTick}
           />
           <Tooltip
-            contentStyle={{ ...THEME.tooltip }}
-            labelFormatter={(label: string) => `Fecha: ${label}`}
-            formatter={(value: number) => [`${value.toFixed(1)}`, "Score Promedio"]}
+            cursor={{ stroke: THEME.gridSoft, strokeWidth: 1 }}
+            content={<ChartTooltip valueFormatter={(v) => v.toFixed(1)} />}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="avgScore"
-            stroke={THEME.risk.warn}
-            strokeWidth={2}
-            dot={{ fill: THEME.risk.warn, r: 3 }}
-            activeDot={{ r: 5, fill: THEME.risk.warn }}
             name="Score Promedio"
+            stroke={THEME.risk.warn}
+            strokeWidth={2.5}
+            fill="url(#trend-fill)"
+            dot={false}
+            activeDot={{
+              r: 4,
+              strokeWidth: 2,
+              stroke: THEME.pageBg,
+              fill: THEME.risk.warn,
+            }}
           />
-        </LineChart>
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

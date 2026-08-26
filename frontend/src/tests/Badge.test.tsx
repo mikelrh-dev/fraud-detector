@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { render } from "@testing-library/react";
+import { CheckCircle } from "@phosphor-icons/react";
 import { Badge, type BadgeTone } from "../components/Badge";
 
 const TONES: BadgeTone[] = ["clean", "warn", "critical", "info"];
@@ -34,20 +35,21 @@ describe("Badge primitive", () => {
     expect(getByText("Legítimo")).toBeTruthy();
   });
 
-  it("passes an icon glyph through the icon slot", () => {
+  it("passes an icon component through the icon slot", () => {
     const { container } = render(
-      <Badge tone="clean" icon="check_circle">
+      <Badge tone="clean" icon={<CheckCircle weight="fill" size={14} />}>
         Ok
       </Badge>,
     );
-    const icon = container.querySelector(".material-symbols-outlined");
+    const icon = container.querySelector("svg");
     expect(icon).toBeTruthy();
-    expect(icon!.textContent).toBe("check_circle");
+    // Icon rides in an aria-hidden wrapper slot (decorative)
+    expect(icon!.parentElement!.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("renders no icon slot when no icon is given", () => {
     const { container } = render(<Badge tone="warn">Sin icono</Badge>);
-    expect(container.querySelector(".material-symbols-outlined")).toBeNull();
+    expect(container.querySelector("svg")).toBeNull();
   });
 
   it("is a rounded-full pill", () => {

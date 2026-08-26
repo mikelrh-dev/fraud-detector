@@ -1,6 +1,8 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
+import { Eye, EyeSlash } from "@phosphor-icons/react";
 import { register } from "../api/auth";
+import { AUTH_INPUT_CLASS, AuthSplitLayout } from "../components/AuthSplitLayout";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -10,29 +12,35 @@ const PASSWORD_MIN = 8;
 
 type StrengthLevel = "weak" | "medium" | "strong";
 
+/**
+ * Segmented meter config: `segments` = filled count of the 3-segment track,
+ * tone rides the shared risk tokens (critical / warn / clean).
+ */
 const STRENGTH_CONFIG: Record<
   StrengthLevel,
-  { label: string; barClass: string; widthClass: string; textClass: string }
+  { label: string; segments: number; segmentClass: string; textClass: string }
 > = {
   weak: {
     label: "Débil",
-    barClass: "bg-red-500",
-    widthClass: "w-1/3",
-    textClass: "text-red-400",
+    segments: 1,
+    segmentClass: "bg-risk-critical",
+    textClass: "text-risk-critical",
   },
   medium: {
     label: "Media",
-    barClass: "bg-yellow-500",
-    widthClass: "w-2/3",
-    textClass: "text-yellow-400",
+    segments: 2,
+    segmentClass: "bg-risk-warn",
+    textClass: "text-risk-warn",
   },
   strong: {
     label: "Fuerte",
-    barClass: "bg-green-500",
-    widthClass: "w-full",
-    textClass: "text-green-400",
+    segments: 3,
+    segmentClass: "bg-risk-clean",
+    textClass: "text-risk-clean",
   },
 };
+
+const SEGMENT_COUNT = 3;
 
 /**
  * Password strength heuristic (frontend-only, not a policy):
@@ -57,6 +65,7 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   // Self-service registration is always analyst — the API rejects any other
   // role (audit R1-001), so no role selector is rendered.
   const [error, setError] = useState<string | null>(null);
@@ -117,150 +126,156 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        {/* Logo / Title */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-red-900/30 border border-red-800/40 mb-4">
-            <svg
-              className="w-6 h-6 text-red-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-              />
-            </svg>
+    <AuthSplitLayout>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
+        Crear cuenta
+      </h1>
+      <p className="mt-1 text-sm text-slate-500">
+        Registrá un nuevo perfil de analista
+      </p>
+
+      {success ? (
+        <div className="mt-8 space-y-4">
+          <div className="rounded-lg bg-risk-clean/10 border border-risk-clean/30 px-3 py-4 text-sm text-risk-clean">
+            <p className="font-medium">Cuenta creada exitosamente.</p>
+            <p className="mt-1 text-risk-clean/80">
+              Ya puede iniciar sesión con su email y contraseña.
+            </p>
           </div>
-          <h1 className="text-xl font-bold text-slate-100">Fraud Detector</h1>
-          <p className="text-sm text-slate-500 mt-1">Crear cuenta</p>
-        </div>
-
-        {/* Card */}
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-          {success ? (
-            <div className="space-y-4">
-              <div className="bg-green-900/20 border border-green-800/40 rounded-lg px-3 py-4 text-sm text-green-400">
-                <p className="font-medium">Cuenta creada exitosamente.</p>
-                <p className="mt-1 text-green-500/80">
-                  Ya puede iniciar sesión con su email y contraseña.
-                </p>
-              </div>
-              <Link
-                to="/login"
-                className="block w-full py-2 px-4 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg text-sm text-center transition-colors"
-              >
-                Volver a Login
-              </Link>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-              <div>
-                <label
-                  htmlFor="username"
-                  className="block text-sm font-medium text-slate-400 mb-1"
-                >
-                  Usuario
-                </label>
-                <input
-                  id="username"
-                  type="text"
-                  autoComplete="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Nombre de usuario"
-                  required
-                  minLength={USERNAME_MIN}
-                  maxLength={USERNAME_MAX}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/60 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium text-slate-400 mb-1"
-                >
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Ingrese su email"
-                  required
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/60 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-slate-400 mb-1"
-                >
-                  Contraseña
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                  required
-                  minLength={PASSWORD_MIN}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/60 transition-colors"
-                />
-
-                {/* Strength indicator */}
-                {password.length > 0 && (
-                  <div className="mt-2" role="status" aria-live="polite">
-                    <div className="h-1.5 w-full bg-slate-700/50 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${strengthConfig.barClass} ${strengthConfig.widthClass}`}
-                      />
-                    </div>
-                    <p className={`mt-1 text-xs ${strengthConfig.textClass}`}>
-                      Fortaleza: {strengthConfig.label}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {error && (
-                <div className="bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2 text-sm text-red-400">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2 px-4 bg-red-600 hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed text-white font-medium rounded-lg text-sm transition-colors"
-              >
-                {loading ? "Creando cuenta..." : "Crear Cuenta"}
-              </button>
-            </form>
-          )}
-        </div>
-
-        {/* Back to login */}
-        <p className="mt-6 text-center text-sm text-slate-500">
-          ¿Ya tiene cuenta?{" "}
           <Link
             to="/login"
-            className="text-red-400 hover:text-red-300 font-medium transition-colors"
+            className="btn-motion active:scale-[0.98] flex h-11 w-full items-center justify-center rounded-lg bg-accent hover:bg-red-500 font-medium text-white text-sm"
           >
             Volver a Login
           </Link>
-        </p>
-      </div>
-    </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-8 space-y-4" noValidate>
+          <div>
+            <label
+              htmlFor="username"
+              className="mb-1.5 block text-xs font-medium text-slate-400"
+            >
+              Usuario
+            </label>
+            <input
+              id="username"
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Nombre de usuario"
+              required
+              minLength={USERNAME_MIN}
+              maxLength={USERNAME_MAX}
+              className={AUTH_INPUT_CLASS}
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="email"
+              className="mb-1.5 block text-xs font-medium text-slate-400"
+            >
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="tu@email.com"
+              required
+              className={AUTH_INPUT_CLASS}
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="password"
+              className="mb-1.5 block text-xs font-medium text-slate-400"
+            >
+              Contraseña
+            </label>
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 8 caracteres"
+                required
+                minLength={PASSWORD_MIN}
+                className={`${AUTH_INPUT_CLASS} pr-11`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={
+                  showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                }
+                aria-pressed={showPassword}
+                className="btn-motion absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-500 hover:text-slate-300"
+              >
+                {showPassword ? (
+                  <EyeSlash size={16} aria-hidden="true" />
+                ) : (
+                  <Eye size={16} aria-hidden="true" />
+                )}
+              </button>
+            </div>
+
+            {/* Segmented strength indicator */}
+            {password.length > 0 && (
+              <div className="mt-2" role="status" aria-live="polite" data-testid="password-strength">
+                <div className="flex gap-1">
+                  {Array.from({ length: SEGMENT_COUNT }, (_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1 flex-1 rounded-full ${
+                        i < strengthConfig.segments
+                          ? strengthConfig.segmentClass
+                          : "bg-slate-700/50"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className={`mt-1.5 text-xs ${strengthConfig.textClass}`}>
+                  Fortaleza: {strengthConfig.label}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Reserved error line — rendered only when the form has an error */}
+          {error && (
+            <p role="alert" className="text-xs text-risk-critical mt-1.5">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
+          >
+            {loading ? "Creando cuenta..." : "Crear Cuenta"}
+          </button>
+        </form>
+      )}
+
+      {/* Back to login */}
+      <p className="mt-6 text-center text-sm text-slate-500">
+        ¿Ya tiene cuenta?{" "}
+        <Link
+          to="/login"
+          className="font-medium text-slate-400 hover:text-slate-200 underline-offset-4 hover:underline transition-colors"
+        >
+          Volver a Login
+        </Link>
+      </p>
+    </AuthSplitLayout>
   );
 }

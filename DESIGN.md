@@ -41,9 +41,15 @@ Professional fintech dashboard for fraud detection analysts. Dark-first, data-de
 ### Accent (primary action — risk is the product)
 | Token | Hex | Tailwind |
 |---|---|---|
-| Action base | `#dc2626` | `red-600` |
-| Action hover | `#b91c1c` | `red-700` |
+| Action base (`--color-accent`) | `#dc2626` | `red-600` / `bg-accent` |
+| Action hover | `#b91c1c` | `red-700` (CTAs use `hover:bg-red-500` legacy hover) |
 | Focus ring | `#ef4444` | `red-500`, 2px offset |
+
+**Accent contract (Phase 4):** `--color-accent` is the **brand action color**
+for primary CTAs (Login/Register/CreateTransaction submits, "Nueva
+Transacción", alert resolve). It is deliberately **independent from risk
+semantics** — `risk-critical` stays reserved for fraud states even though both
+live in the red family. Never use accent to color data or badges.
 
 ---
 
@@ -52,7 +58,7 @@ Professional fintech dashboard for fraud detection analysts. Dark-first, data-de
 - **Body / UI:** Geist Variable — self-hosted via `@fontsource-variable/geist` (imported in `src/main.tsx`, before `index.css`)
 - **Monospace** (IDs, card numbers, UUIDs): JetBrains Mono — self-hosted via `@fontsource/jetbrains-mono`
 - Declared as `--font-sans` / `--font-mono` inside the `@theme` block of `frontend/src/index.css`
-- Google Fonts CDN links for Inter/JetBrains Mono were REMOVED from `index.html` (Material Symbols Outlined stays on CDN until the icon-system phase)
+- Google Fonts CDN links for Inter/JetBrains Mono were REMOVED in Phase 0; the Material Symbols Outlined CDN was REMOVED in Phase 4 — **`index.html` makes zero external requests** (fonts + icons are fully self-hosted/local)
 
 ### Scale
 | Level | Size / Weight |
@@ -103,6 +109,28 @@ Base unit: **4px**. Common values: 4, 8, 12, 16, 24, 32, 48.
 - Title: H3, `slate-100`
 - Subtitle: Small, `slate-400`
 
+### Auth split-screen (Login / Register — `<AuthSplitLayout>`)
+
+Desktop (md+): root `min-h-dvh md:grid md:grid-cols-[1.15fr_1fr]`.
+
+- **LEFT brand panel** (`hidden md:flex`, bg-slate-950): two radial glows via
+  inline style (`rgba(239,68,68,0.07)` at ~20% 15%, `rgba(34,197,94,0.05)` at
+  ~85% 90%) — **the single sanctioned inline-gradient location in JSX**
+  (page-level gradients remain forbidden; see Don'ts). 64px `BrandShield` in
+  a `rounded-2xl border-slate-800 bg-slate-900` box, display headline with
+  "fraude" in `text-risk-critical`, and three feature rows (Scales /
+  ShieldCheck / Sparkle) in `h-9 w-9` icon boxes.
+- **RIGHT form panel**: centered `max-w-sm`; labels above inputs (`text-xs`
+  slate-400); inputs per Forms spec (h-11, focus ring risk-critical/25);
+  password fields carry an Eye/EyeSlash visibility toggle
+  ("Mostrar/Ocultar contraseña"); primary submit `bg-accent hover:bg-red-500`;
+  ghost demo button under a divider row.
+- **Register strength meter**: 3 segments (`h-1 rounded-full`), filled count
+  1/2/3 for weak/medium/strong with tones risk-critical / warn / clean.
+- **Mobile (<md)**: single column — compact brand header (`h-14`, 28px shield)
+  above the form.
+- Entrance: panels ride `.motion-stagger` with `--i` 0/1 (reduced-motion safe).
+
 ### Forms
 - Label: Small, `slate-400`, 8px above input
 - Input bg: `slate-950`
@@ -136,7 +164,13 @@ All badges render through the **`Badge` primitive** (`src/components/Badge.tsx`)
 
 ### Charts
 
-Chart colors come from **`src/lib/chart-theme.ts`** (`THEME`). Rule: **no literal hex inside chart components** — enforced by `chart-theme.test.ts`. The hex values in `THEME` must mirror the `@theme` CSS tokens in `index.css` until Tailwind exposes theme vars to JS; both sides are guarded by tests.
+Chart colors come from **`src/lib/chart-theme.ts`** (`THEME`). Rule: **no literal hex inside chart components** — enforced by `chart-theme.test.ts` (guards `ScoreHistogram`, `ScoreTrendChart` and `ChartTooltip`). The hex values in `THEME` must mirror the `@theme` CSS tokens in `index.css` until Tailwind exposes theme vars to JS; both sides are guarded by tests.
+
+Phase 4 additions:
+- **`<ChartTooltip>`** (`src/components/ChartTooltip.tsx`) — shared tooltip surface for every recharts instance via the `content={<ChartTooltip />}` pattern. Rounded-xl slate-900/95 glass panel, mono uppercase label, right-aligned mono values, per-series legend dots. Optional `valueFormatter` (e.g. `(v) => v.toFixed(1)`).
+- **Trend chart**: `AreaChart` with a vertical `linearGradient` (`id="trend-fill"`, risk-warn 0.18→0), strokeWidth 2.5, no dots, activeDot stroked with `THEME.pageBg`; horizontal-only dashed grid from `THEME.gridSoft` (slate-800); axis lines off.
+- **Histogram**: `radius={[6,6,0,0]}`, `maxBarSize={48}`, per-bucket Cell fills, Bar `background` track + slate-800/40 hover cursor.
+- **Axis ticks**: compact formatter **`formatCompactTick(v)`** from `chart-theme.ts` — values ≥ 1000 render as `N.Nk`. Pure function, unit-tested.
 
 ### Tables
 
@@ -184,12 +218,17 @@ Signature 270° dial rendered by `<ScoreGauge>` inside `ScoreResultCard`:
 
 ## Iconography
 
-- **Phosphor Icons** (`@phosphor-icons/react`) — standard for metric cards and data-driven glyphs as of Phase 1 (dashboard MetricCards). **Standard weight: `weight="regular"`** — Phosphor draws on a 256-grid with stroke 16, which is exactly **1.5px at 24px** render size; that is the house strokeWidth. Size in cards: 18px inside a consistent `h-8 w-8 rounded-lg` container tinted with the card's semantic token (`text-status-info` / `text-risk-critical` / `text-risk-clean` / `text-risk-warn`).
-- **Material Symbols Outlined** (Google Fonts) — legacy nav/sidebar glyphs, chosen by Stitch during design generation; migrates to Phosphor in the icon-system phase
-- Material Symbols default size: 20px in nav, 18-20px in cards
-- Stroke: variable, controlled by `font-variation-settings`
-- Required Material Symbols set (used by the app): `dashboard`, `payments`, `notifications_active`, `policy`, `rule`, `add`, `logout`, `arrow_forward`
-- No emojis in production UI — dashboard MetricCards use Phosphor (`CreditCard`, `ShieldWarning`, `ChartBar`, `Bell`)
+- **Phosphor Icons** (`@phosphor-icons/react`) — **the single icon system as of Phase 4.** Material Symbols Outlined was fully removed (source + CDN link). **Standard weight: `weight="regular"`** — Phosphor draws on a 256-grid with stroke 16, which is exactly **1.5px at 24px** render size; that is the house strokeWidth. Sizes: 16px nav/inline glyphs, 18px metric-card and feature-row icons.
+- Migration map applied in Phase 4 (Material Symbols → Phosphor): `dashboard→SquaresFour`, `payments→Receipt`, `notifications_active→BellRinging`, `add→Plus`, `logout→SignOut`, `menu→List`, `check_circle→CheckCircle (weight="fill")`, `info→Info`, `gavel→Scales`, `psychology→Brain`, `neurology→Circuitry`.
+- Badge icon slots take a **Phosphor component node** (`icon?: ReactNode`) rendered inside an aria-hidden wrapper — never glyph-name strings.
+- Brand mark = `<BrandShield>` (`src/components/BrandShield.tsx`): shield+check outline inheriting `currentColor`. Used in the sidebar brand, auth split-screen panel (64px) and mobile auth header (28px).
+- No emojis in production UI.
+
+## Tab identity
+
+- **Favicon:** `frontend/public/favicon.svg` (**source of truth** for shield geometry; `<BrandShield>` mirrors it) — outer shield stroke `#e2e8f0` (slate-200) on transparent, inner check filled `#ef4444` at 0.9 opacity, < 1KB. Wired via `<link rel="icon" type="image/svg+xml">`.
+- `<meta name="theme-color">` = `#020617` (page background). Title: "Fraud Detector — Consola de análisis".
+- **Sanctioned hex locations (complete list):** `frontend/src/index.css` `@theme`, `src/lib/chart-theme.ts`, `frontend/index.html` meta/favicon, `frontend/public/favicon.svg`. Anywhere else is a violation; repeated colors become tokens.
 
 ---
 
@@ -234,8 +273,9 @@ Wraps authenticated page content in a div keyed by `location.pathname`.
 Navigation swaps the key → remount → the fade-slide-up entrance replays once.
 In-page updates (filters, pagination, data refetches) never re-trigger it.
 Integrated in every Sidebar page's content area plus the standalone
-TransactionDetail. Login/Register are excluded on purpose (unauthenticated,
-full-screen centered forms).
+TransactionDetail. Login/Register are excluded (unauthenticated); since
+Phase 4 they run their own entrance through `<AuthSplitLayout>`'s staggered
+panels.
 
 ### Micro-interactions
 
@@ -289,7 +329,7 @@ animation.
 
 - No bright white backgrounds (eye strain during long analyst shifts)
 - No drop shadows for elevation (use borders + subtle bg shifts)
-- No gradient backgrounds on the page level (gauge is the only exception)
+- No gradient backgrounds on the page level — exceptions: the gauge arc fill and the auth brand-panel radial glows (see Auth split-screen)
 - No more than 2 accent colors on any one screen
 - No rounded / display fonts (geometric sans only)
 - No emojis in production UI (dev-friendly, not product-friendly)
@@ -321,6 +361,8 @@ The following custom tokens are defined in `frontend/src/index.css` via the `@th
   --color-text-muted:         #94a3b8;
   --color-text-disabled:      #64748b;
   --color-divider:            #334155;
+  /* Brand action color — primary CTAs; independent from risk semantics */
+  --color-accent:             #dc2626;
   --color-primary-container:  #dc2626;
   --color-action-hover:       #b91c1c;
   --spacing-sidebar-width:    224px;

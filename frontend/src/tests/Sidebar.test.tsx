@@ -56,10 +56,10 @@ describe("Sidebar", () => {
     expect(dashboardButton?.className).toContain("bg-slate-800");
   });
 
-  it("uses Material Symbols icons (no emoji)", () => {
+  it("uses Phosphor SVG icons (no emoji, no icon font)", () => {
     renderSidebar();
-    const materialIcons = document.querySelectorAll(".material-symbols-outlined");
-    expect(materialIcons.length).toBeGreaterThanOrEqual(4); // shield + 3 nav + logout
+    const svgIcons = document.querySelectorAll("aside svg, button svg");
+    expect(svgIcons.length).toBeGreaterThanOrEqual(4); // brand shield + 3 nav + logout + burger
   });
 
   it("renders user avatar with initials and role", () => {

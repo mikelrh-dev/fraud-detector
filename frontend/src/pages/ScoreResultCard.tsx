@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { Brain, Circuitry, Scales } from "@phosphor-icons/react";
 import type { ScoreResponse } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
 import { MotionList } from "../components/MotionList";
@@ -163,19 +165,24 @@ function BreakdownCard({
   isMlUntrained,
 }: {
   title: string;
-  icon: string;
+  icon: ReactNode;
   score: number | null;
   isMlUntrained?: boolean;
 }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-2">
-        <span className="material-symbols-outlined text-slate-400 text-base">{icon}</span>
+        <span className="inline-flex items-center text-slate-400">{icon}</span>
         <span className="text-xs text-slate-400 font-medium">{title}</span>
       </div>
       {isMlUntrained ? (
         <div className="flex items-center gap-2 mt-1">
-          <span className="material-symbols-outlined text-slate-500 text-lg">psychology</span>
+          <span
+            className="inline-flex items-center text-slate-500"
+            data-testid="ml-untrained-icon"
+          >
+            <Brain size={18} aria-hidden="true" />
+          </span>
           <div>
             <p className="text-sm text-slate-300">ML: no entrenado</p>
             <a
@@ -252,14 +259,14 @@ export function ScoreResultCard({ result, isLoading }: ScoreResultCardProps) {
 
       {/* Breakdown Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <BreakdownCard title="Reglas" icon="gavel" score={result.rule_score} />
+        <BreakdownCard title="Reglas" icon={<Scales size={16} aria-hidden="true" />} score={result.rule_score} />
         <BreakdownCard
           title="ML"
-          icon="psychology"
+          icon={<Brain size={16} aria-hidden="true" />}
           score={result.ml_score}
           isMlUntrained={!mlTrained}
         />
-        <BreakdownCard title="Ensemble" icon="neurology" score={result.ensemble_score} />
+        <BreakdownCard title="Ensemble" icon={<Circuitry size={16} aria-hidden="true" />} score={result.ensemble_score} />
       </div>
 
       {/* Fired Rules */}

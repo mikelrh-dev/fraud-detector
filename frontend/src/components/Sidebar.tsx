@@ -1,13 +1,16 @@
 import { useState, useEffect } from "react";
+import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { BellRinging, List, Receipt, SignOut, SquaresFour } from "@phosphor-icons/react";
 import { useAuthStore } from "../store/authStore";
+import { BrandShield } from "./BrandShield";
 
 interface SidebarProps {
   activeItem: "dashboard" | "transactions" | "alerts";
 }
 
 interface NavItemProps {
-  icon: string;
+  icon: ReactNode;
   label: string;
   isActive: boolean;
   onClick: () => void;
@@ -19,9 +22,9 @@ interface UserSectionProps {
 }
 
 const navItems = [
-  { key: "dashboard" as const, label: "Dashboard", icon: "dashboard", path: "/dashboard" },
-  { key: "transactions" as const, label: "Transacciones", icon: "payments", path: "/transactions" },
-  { key: "alerts" as const, label: "Alertas", icon: "notifications_active", path: "/alerts" },
+  { key: "dashboard" as const, label: "Dashboard", icon: <SquaresFour size={16} />, path: "/dashboard" },
+  { key: "transactions" as const, label: "Transacciones", icon: <Receipt size={16} />, path: "/transactions" },
+  { key: "alerts" as const, label: "Alertas", icon: <BellRinging size={16} />, path: "/alerts" },
 ];
 
 function NavItem({ icon, label, isActive, onClick }: NavItemProps) {
@@ -38,7 +41,7 @@ function NavItem({ icon, label, isActive, onClick }: NavItemProps) {
       }`}
     >
       <span aria-hidden="true" className="nav-indicator" />
-      <span className="material-symbols-outlined text-base">{icon}</span>
+      {icon}
       {label}
     </button>
   );
@@ -64,7 +67,7 @@ function UserSection({ user, onLogout }: UserSectionProps) {
         onClick={onLogout}
         className="w-full flex items-center gap-2 text-xs text-slate-500 hover:text-red-400 transition-colors py-1"
       >
-        <span className="material-symbols-outlined text-base">logout</span>
+        <SignOut size={16} aria-hidden="true" />
         Cerrar sesión
       </button>
     </div>
@@ -115,7 +118,7 @@ export function Sidebar({ activeItem }: SidebarProps) {
       {/* Brand */}
       <div className="p-4 border-b border-slate-800">
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-red-400 text-xl">shield</span>
+          <BrandShield className="h-5 w-5 text-red-400" />
           <span className="text-sm font-bold text-slate-100">Fraud Detector</span>
         </div>
       </div>
@@ -155,7 +158,7 @@ export function Sidebar({ activeItem }: SidebarProps) {
         aria-expanded={open}
         aria-label="Abrir menú de navegación"
       >
-        <span className="material-symbols-outlined text-xl">menu</span>
+        <List size={20} aria-hidden="true" />
       </button>
 
       {/* Mobile drawer */}

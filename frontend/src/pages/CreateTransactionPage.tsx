@@ -154,7 +154,7 @@ export default function CreateTransactionPage() {
           <button
             type="submit"
             disabled={!isValid || mutation.isPending}
-            className="btn-motion active:scale-[0.98] w-full bg-primary-container hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 rounded-lg"
+            className="btn-motion active:scale-[0.98] w-full bg-accent hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 rounded-lg"
           >
             {mutation.isPending ? "Procesando..." : "Crear Transacción"}
           </button>

@@ -85,9 +85,9 @@ describe("ScoreResultCard", () => {
     // Rule and ensemble scores still render (15.0 appears in gauge + card)
     expect(screen.getByText("10.0")).toBeInTheDocument();
     expect(screen.getAllByText("15.0").length).toBeGreaterThan(0);
-    // psychology icon present
-    const materialIcons = document.querySelectorAll(".material-symbols-outlined");
-    const iconTexts = Array.from(materialIcons).map((el) => el.textContent);
-    expect(iconTexts.some((t) => t === "psychology")).toBe(true);
+    // Phosphor Brain icon present (single icon system)
+    expect(
+      document.querySelector('[data-testid="ml-untrained-icon"] svg'),
+    ).not.toBeNull();
   });
 });

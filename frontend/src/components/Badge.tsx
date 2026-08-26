@@ -25,8 +25,8 @@ const SIZE_CLASSES = {
 export interface BadgeProps {
   tone: BadgeTone;
   children: ReactNode;
-  /** Material Symbols glyph name rendered inside an icon slot. */
-  icon?: string;
+  /** Icon slot — pass any Phosphor component (single icon system). */
+  icon?: ReactNode;
   /** sm = compact pills (alert status), md = standard badges (default). */
   size?: keyof typeof SIZE_CLASSES;
 }
@@ -40,7 +40,7 @@ export function Badge({ tone, children, icon, size = "md" }: BadgeProps) {
     <span
       className={`inline-flex items-center rounded-full font-medium border ${SIZE_CLASSES[size]} ${TONE_CLASSES[tone]}`}
     >
-      {icon && <span className="material-symbols-outlined text-base mr-1">{icon}</span>}
+      {icon && <span aria-hidden="true" className="mr-1 inline-flex items-center">{icon}</span>}
       {children}
     </span>
   );

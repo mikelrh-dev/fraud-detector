@@ -1,7 +1,9 @@
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Eye, EyeSlash } from "@phosphor-icons/react";
 import { login } from "../api/auth";
 import { useAuthStore } from "../store/authStore";
+import { AUTH_INPUT_CLASS, AuthSplitLayout } from "../components/AuthSplitLayout";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -14,6 +16,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -62,119 +65,114 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        {/* Logo / Title */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-red-900/30 border border-red-800/40 mb-4">
-            <svg
-              className="w-6 h-6 text-red-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
-              />
-            </svg>
-          </div>
-          <h1 className="text-xl font-bold text-slate-100">
-            Fraud Detector
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Sistema de detección de fraude
-          </p>
+    <AuthSplitLayout>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
+        Iniciar sesión
+      </h1>
+      <p className="mt-1 text-sm text-slate-500">
+        Accedé a la consola de análisis
+      </p>
+
+      <form onSubmit={handleSubmit} className="mt-8 space-y-4" noValidate>
+        <div>
+          <label
+            htmlFor="email"
+            className="mb-1.5 block text-xs font-medium text-slate-400"
+          >
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="tu@email.com"
+            required
+            className={AUTH_INPUT_CLASS}
+          />
         </div>
 
-        {/* Card */}
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-slate-400 mb-1"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Ingrese su email"
-                required
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/60 transition-colors"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-slate-400 mb-1"
-              >
-                Contraseña
-              </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Ingrese su contraseña"
-                required
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/60 transition-colors"
-              />
-            </div>
-
-            {error && (
-              <div className="bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2 text-sm text-red-400">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2 px-4 bg-red-600 hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed text-white font-medium rounded-lg text-sm transition-colors"
-            >
-              {loading ? "Ingresando..." : "Ingresar"}
-            </button>
-          </form>
-
-          {/* Demo login */}
-          <div className="mt-6">
-            <div className="flex items-center gap-3">
-              <span className="h-px flex-1 bg-slate-800" aria-hidden="true" />
-              <span className="text-xs font-medium text-slate-500">O</span>
-              <span className="h-px flex-1 bg-slate-800" aria-hidden="true" />
-            </div>
-
+        <div>
+          <label
+            htmlFor="password"
+            className="mb-1.5 block text-xs font-medium text-slate-400"
+          >
+            Contraseña
+          </label>
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              className={`${AUTH_INPUT_CLASS} pr-11`}
+            />
             <button
               type="button"
-              onClick={handleDemoLogin}
-              disabled={loading}
-              className="mt-4 w-full py-2 px-4 bg-slate-800/60 hover:bg-slate-700/60 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700 text-slate-300 font-medium rounded-lg text-sm transition-colors"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={
+                showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+              }
+              aria-pressed={showPassword}
+              className="btn-motion absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-500 hover:text-slate-300"
             >
-              Demo: Probar con Cuenta de Prueba
+              {showPassword ? (
+                <EyeSlash size={16} aria-hidden="true" />
+              ) : (
+                <Eye size={16} aria-hidden="true" />
+              )}
             </button>
           </div>
-
-          {/* Register link */}
-          <p className="mt-6 text-center text-sm text-slate-500">
-            ¿Primera vez?{" "}
-            <Link
-              to="/register"
-              className="text-red-400 hover:text-red-300 font-medium transition-colors"
-            >
-              Crear cuenta aquí
-            </Link>
-          </p>
         </div>
+
+        {/* Reserved error line — rendered only when the form has an error */}
+        {error && (
+          <p role="alert" className="text-xs text-risk-critical mt-1.5">
+            {error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
+        >
+          {loading ? "Ingresando..." : "Ingresar"}
+        </button>
+      </form>
+
+      {/* Demo login */}
+      <div className="mt-6">
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-slate-800" aria-hidden="true" />
+          <span className="text-xs text-slate-600">o</span>
+          <span className="h-px flex-1 bg-slate-800" aria-hidden="true" />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleDemoLogin}
+          disabled={loading}
+          className="btn-motion active:scale-[0.98] mt-4 h-11 w-full rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
+        >
+          Demo: Probar con Cuenta de Prueba
+        </button>
       </div>
-    </div>
+
+      {/* Register link */}
+      <p className="mt-6 text-center text-sm text-slate-500">
+        ¿Primera vez?{" "}
+        <Link
+          to="/register"
+          className="font-medium text-slate-400 hover:text-slate-200 underline-offset-4 hover:underline transition-colors"
+        >
+          Crear cuenta aquí
+        </Link>
+      </p>
+    </AuthSplitLayout>
   );
 }

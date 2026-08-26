@@ -4,11 +4,11 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { THEME } from "../lib/chart-theme";
+import { THEME, formatCompactTick } from "../lib/chart-theme";
+import { ChartTooltip } from "./ChartTooltip";
 
 interface HistogramBucket {
   range: string;
@@ -68,43 +68,45 @@ export default function ScoreHistogram({ scores }: ScoreHistogramProps) {
           <XAxis
             dataKey="range"
             tick={{ fill: THEME.axis.tick, fontSize: 12 }}
-            axisLine={{ stroke: THEME.axis.line }}
+            axisLine={false}
             tickLine={false}
           />
           <YAxis
             tick={{ fill: THEME.axis.tick, fontSize: 12 }}
-            axisLine={{ stroke: THEME.axis.line }}
+            axisLine={false}
             tickLine={false}
             allowDecimals={false}
+            tickFormatter={formatCompactTick}
           />
           <Tooltip
-            contentStyle={{ ...THEME.tooltip }}
-            formatter={(value: number) => [value, "Transacciones"]}
+            cursor={{ fill: THEME.tooltipCursor, radius: 4 }}
+            content={<ChartTooltip />}
           />
-          <Legend
-            wrapperStyle={{ fontSize: "12px", color: THEME.legendText }}
-            formatter={(value: string) => (
-              <span style={{ color: THEME.legendText }}>{value}</span>
-            )}
-          />
-          <Bar dataKey="count" name="Transacciones" radius={[4, 4, 0, 0]}>
+          <Bar
+            dataKey="count"
+            name="Transacciones"
+            radius={[6, 6, 0, 0]}
+            maxBarSize={48}
+            background={{ fill: THEME.barTrack, rx: 6, ry: 6 }}
+          >
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.color} />
             ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      {/* Custom legend dots — replaces recharts' default legend chrome */}
       <div className="flex gap-4 mt-2 text-xs text-slate-400">
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded bg-risk-clean" />
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-risk-clean" />
           Legítimo (0-40)
         </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded bg-risk-warn" />
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-risk-warn" />
           Revisión (41-80)
         </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded bg-risk-critical" />
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-risk-critical" />
           Fraude (81-100)
         </span>
       </div>

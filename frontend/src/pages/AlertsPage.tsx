@@ -447,7 +447,7 @@ export default function AlertsPage() {
               <button
                 onClick={confirmAction}
                 disabled={actionMutation.isPending}
-                className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed"
+                className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed"
               >
                 {actionMutation.isPending ? "Procesando..." : "Confirmar"}
               </button>
