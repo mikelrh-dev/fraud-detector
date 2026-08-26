@@ -83,7 +83,11 @@ class ScoringService:
         rule_score, fired_rules = self.rule_engine.evaluate(tx_data, context)
 
         features = self.feature_engine.transform(tx_data, user_history=user_history)
-        ml_score = _to_float(self.ml_service.predict(features))
+        try:
+            ml_score = _to_float(self.ml_service.predict(features))
+        except ValueError as exc:
+            logger.warning("Feature shape mismatch in ML predict — returning 0.0: %s", exc)
+            ml_score = 0.0
 
         # Compute context score from velocity signal (ML3)
         recent_txns = context.get("recent_transactions", 0) if context else 0
