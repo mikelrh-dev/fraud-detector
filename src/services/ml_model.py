@@ -3,6 +3,10 @@
 Provides a consistent scoring interface: load_model() loads a serialized
 XGBoost model via joblib, predict() converts predict_proba() output
 to a 0-100 risk score. If the model file is missing, returns 0 silently.
+
+The model artifact can be either:
+- A bare model object (legacy format) — feature count inferred from the model.
+- A dict with keys "model" and "feature_names" (new format with contract stamp).
 """
 
 import logging
@@ -31,9 +35,15 @@ class MLModelService:
         """
         self._model_path: str = model_path
         self._model = None
+        self.feature_names: list[str] | None = None
+        self.n_features: int | None = None
 
     def load_model(self) -> bool:
         """Load the serialized model from disk.
+
+        Handles two artifact formats:
+        - Dict with "model" and optionally "feature_names" keys (new format).
+        - Bare model object (legacy/backward-compatible format).
 
         Returns:
             True if the model was loaded successfully, False otherwise.
@@ -48,8 +58,28 @@ class MLModelService:
             return False
 
         try:
-            self._model = joblib.load(path)
-            logger.info("ML model loaded from %s", self._model_path)
+            artifact = joblib.load(path)
+
+            # New format: dict with "model" and optional "feature_names"
+            if isinstance(artifact, dict) and "model" in artifact:
+                self._model = artifact["model"]
+                self.feature_names = artifact.get("feature_names")
+            else:
+                # Legacy format: bare model object
+                self._model = artifact
+                self.feature_names = None
+
+            # Infer n_features from the model
+            if self._model is not None and hasattr(self._model, "n_features_in_"):
+                self.n_features = int(self._model.n_features_in_)
+            elif self.feature_names is not None:
+                self.n_features = len(self.feature_names)
+
+            logger.info(
+                "ML model loaded from %s (features=%s)",
+                self._model_path,
+                self.n_features,
+            )
             return True
         except Exception as exc:
             logger.error("Failed to load ML model from %s: %s", self._model_path, exc)
@@ -61,6 +91,10 @@ class MLModelService:
         Uses predict_proba() and returns the probability of fraud (class 1)
         scaled to 0-100. If no model is loaded, returns 0.0.
 
+        Applies an explicit shape check: if the feature vector dimension
+        doesn't match the expected count, raises ValueError instead of
+        silently returning 0.
+
         Applies smoothing to synthetic data predictions to simulate real-world
         uncertainty and avoid binary extremes (0 or 100).
 
@@ -69,9 +103,19 @@ class MLModelService:
 
         Returns:
             Risk score between 0 (normal) and 100 (highly anomalous).
+
+        Raises:
+            ValueError: If feature vector dimension doesn't match expected count.
         """
         if self._model is None:
             return 0.0
+
+        # Explicit shape check — don't silently return 0 on mismatch
+        if self.n_features is not None and features.shape[0] != self.n_features:
+            raise ValueError(
+                f"Feature shape mismatch: got {features.shape[0]}, "
+                f"expected {self.n_features}"
+            )
 
         # XGBoost.predict_proba returns [P(legit), P(fraud)]
         probability = self._model.predict_proba([features])[0, 1]
@@ -84,8 +128,6 @@ class MLModelService:
         # If prob=0.0 → stays ~0.05 (not 0)
         # If prob=0.5 → stays ~0.5 (middle)
         # If prob=1.0 → stays ~0.95 (not 1)
-        
-        import numpy as np
         
         # Apply a cubic transformation that smooths extremes
         # (prob - 0.5)^3 creates an S-curve centered at 0.5

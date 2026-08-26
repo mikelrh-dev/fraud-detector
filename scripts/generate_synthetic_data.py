@@ -9,6 +9,8 @@ import csv
 import random
 from datetime import datetime, timedelta, timezone
 
+from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
+
 # Configuration
 NUM_TRANSACTIONS = 50_000
 FRAUD_RATE = 0.05
@@ -94,12 +96,10 @@ def generate_transaction(txn_id: int, base_time: datetime) -> dict:
         amount, merchant_category, merchant_name = generate_fraudulent_tx(user)
     else:
         amount = max(1.0, round(random.gauss(user["avg_amount"], user["std_amount"]), 2))
-        category_weights = [0.7, 0.25, 0.05]  # low, medium, high risk
-        merchant_category = random.choices(
-            ["low_risk", "medium_risk", "high_risk"],
-            weights=category_weights,
-        )[0]
-        merchant_name = random.choice(MERCHANTS[merchant_category])
+        # Use realistic non-risk categories for legitimate transactions
+        normal_categories = ["groceries", "retail", "restaurant", "transport", "entertainment", "health", "education"]
+        merchant_category = random.choice(normal_categories)
+        merchant_name = random.choice(MERCHANTS["low_risk"])
 
     # Add velocity bursts for fraud
     if is_fraud and random.random() < 0.3:
@@ -111,7 +111,9 @@ def generate_transaction(txn_id: int, base_time: datetime) -> dict:
         hour_offset = random.randint(0, 720)  # Up to 30 days apart
         ts = base_time + timedelta(hours=hour_offset)
 
-    is_crypto = merchant_category == "high_risk"
+    # Resolve alias for is_crypto check
+    resolved_cat = CATEGORY_ALIASES.get(merchant_category, merchant_category)
+    is_crypto = resolved_cat == "cryptocurrency"
     is_round = amount % 100 == 0 and amount > 0
 
     if is_fraud:
@@ -148,7 +150,14 @@ def generate_fraudulent_tx(user: dict) -> tuple[float, str, str]:
         weights=[0.4, 0.3, 0.2, 0.1],
     )[0]
 
-    merchant_category = "high_risk"
+    # Use canonical risk categories (with occasional alias for realism)
+    risk_cats = ["cryptocurrency", "money_transfer", "gambling", "adult", "pharmacy"]
+    merchant_category = random.choice(risk_cats)
+    # Occasionally emit alias form so training data sees both variants
+    if random.random() < 0.15:
+        alias = CATEGORY_ALIASES.get(merchant_category)
+        if alias:
+            merchant_category = random.choice([merchant_category, alias])
 
     if pattern == "amount_outlier":
         amount = round(user["avg_amount"] + user["std_amount"] * random.uniform(5, 20), 2)

@@ -7,6 +7,8 @@ a cumulative risk score (0-100) with the list of fired rules.
 from datetime import datetime
 from typing import Any
 
+from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
+
 
 class RuleEngine:
     """Evaluates transactions against deterministic fraud rules.
@@ -26,11 +28,6 @@ class RuleEngine:
         "country_mismatch": 15,
         "near_fraud": 15,  # Graph: user ≤2 hops from known fraudster
     }
-
-    # Merchant categories considered inherently risky regardless of the name
-    RISKY_CATEGORIES: frozenset[str] = frozenset(
-        {"btc", "crypto", "gambling", "casino", "money_transfer"}
-    )
 
     # Amount threshold above which the high_amount rule fires
     HIGH_AMOUNT_THRESHOLD: float = 1000.0
@@ -66,14 +63,15 @@ class RuleEngine:
 
         # 2b. Velocity burst: > 1 tx in 5 min on a risky category
         #     Even 2 crypto/gambling txns in 5 min is anomalous (card testing pattern)
-        category = (transaction.get("merchant_category") or "").lower()
-        if recent_txns > 1 and category in self.RISKY_CATEGORIES:
+        raw_category = (transaction.get("merchant_category") or "").lower()
+        category = CATEGORY_ALIASES.get(raw_category, raw_category)
+        if recent_txns > 1 and category in MERCHANT_RISK_CATEGORIES:
             fired.append("velocity_burst")
 
         # 3. Unusual merchant: in blacklist or inherently risky category
         merchant = (transaction.get("merchant_name") or "").lower()
         blacklist = [m.lower() for m in (ctx.get("merchant_blacklist") or [])]
-        if merchant in blacklist or category in self.RISKY_CATEGORIES:
+        if merchant in blacklist or category in MERCHANT_RISK_CATEGORIES:
             fired.append("unusual_merchant")
 
         # 4. Card mismatch: card_last4 not in user's known cards
@@ -96,7 +94,7 @@ class RuleEngine:
 
         # 5b. Off-hours + crypto: night transaction on a risky category
         #     Revolut-grade: combine temporal + category signals
-        if hour is not None and 0 <= hour < 6 and category in self.RISKY_CATEGORIES:
+        if hour is not None and 0 <= hour < 6 and category in MERCHANT_RISK_CATEGORIES:
             fired.append("off_hours_crypto")
 
         # 6. Country mismatch: transaction country != home country

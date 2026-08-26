@@ -222,3 +222,90 @@ class TestMLModelAlignment:
         score = production_model_service.predict(features)
         assert isinstance(score, float)
         assert 0.0 <= score <= 100.0
+
+
+class TestMLModelFeatureContract:
+    """Feature contract — shape validation and feature name stamp (ML2)."""
+
+    def test_predict_raises_on_wrong_dimension(self, mock_model_path):
+        """predict() should raise ValueError when feature vector has wrong shape."""
+        service = MLModelService(model_path=mock_model_path)
+        service.load_model()
+
+        # 5 features instead of expected 10
+        wrong_features = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        with pytest.raises(ValueError, match="Feature shape mismatch"):
+            service.predict(wrong_features)
+
+    def test_predict_raises_on_too_many_features(self, mock_model_path):
+        """predict() should raise ValueError when feature vector has too many dims."""
+        service = MLModelService(model_path=mock_model_path)
+        service.load_model()
+
+        too_many = np.zeros(15)
+        with pytest.raises(ValueError, match="Feature shape mismatch"):
+            service.predict(too_many)
+
+    def test_predict_works_with_correct_dimension(self, mock_model_path):
+        """predict() should work normally with correct 10-feature vector."""
+        service = MLModelService(model_path=mock_model_path)
+        service.load_model()
+
+        features = np.zeros(10)
+        score = service.predict(features)
+        assert isinstance(score, float)
+        assert 0.0 <= score <= 100.0
+
+    def test_load_model_handles_new_dict_format(self):
+        """load_model() should handle dict artifact with 'model' and 'feature_names' keys."""
+        rng = np.random.RandomState(42)
+        X = np.vstack([rng.normal(50, 10, (20, 10)), rng.normal(500, 100, (20, 10))])
+        y = np.array([0] * 20 + [1] * 20)
+        model = xgb.XGBClassifier(n_estimators=5, max_depth=2, random_state=42,
+                                   use_label_encoder=False)
+        model.fit(X, y)
+
+        artifact = {"model": model, "feature_names": [f"f{i}" for i in range(10)]}
+        with tempfile.NamedTemporaryFile(suffix=".joblib", delete=False) as f:
+            path = f.name
+            joblib.dump(artifact, path)
+
+        try:
+            service = MLModelService(model_path=path)
+            result = service.load_model()
+            assert result is True
+            assert service.feature_names == [f"f{i}" for i in range(10)]
+            assert service.n_features == 10
+
+            # predict should work
+            features = np.zeros(10)
+            score = service.predict(features)
+            assert isinstance(score, float)
+        finally:
+            os.unlink(path)
+
+    def test_load_model_backward_compat_bare_model(self):
+        """load_model() should handle bare model (no dict wrapper) for backward compat."""
+        rng = np.random.RandomState(42)
+        X = np.vstack([rng.normal(50, 10, (20, 10)), rng.normal(500, 100, (20, 10))])
+        y = np.array([0] * 20 + [1] * 20)
+        model = xgb.XGBClassifier(n_estimators=5, max_depth=2, random_state=42,
+                                   use_label_encoder=False)
+        model.fit(X, y)
+
+        with tempfile.NamedTemporaryFile(suffix=".joblib", delete=False) as f:
+            path = f.name
+            joblib.dump(model, path)  # bare model, no dict wrapper
+
+        try:
+            service = MLModelService(model_path=path)
+            result = service.load_model()
+            assert result is True
+            # feature_names should be inferred from model
+            assert service.n_features == 10
+
+            features = np.zeros(10)
+            score = service.predict(features)
+            assert isinstance(score, float)
+        finally:
+            os.unlink(path)

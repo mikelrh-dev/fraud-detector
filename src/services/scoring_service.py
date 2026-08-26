@@ -6,6 +6,8 @@ and delegates computation here; CPU-bound steps run via ``asyncio.to_thread``
 at the call site so the event loop is never blocked (CV-002).
 """
 
+import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +17,8 @@ from src.services.ensemble import EnsembleScorer
 from src.services.feature_engine import FeatureEngine
 from src.services.ml_model import MLModelService
 from src.services.rule_engine import RuleEngine
+
+logger = logging.getLogger(__name__)
 
 
 def _to_float(value: object) -> float:
@@ -67,20 +71,48 @@ class ScoringService:
         tx_data: dict[str, Any],
         context: dict[str, Any],
         user_history: dict[str, Any],
+        db: Any | None = None,
+        monitoring_service: Any | None = None,
     ) -> ScoringResult:
-        """Run the full deterministic pipeline (CPU-bound; call via to_thread)."""
+        """Run the full deterministic pipeline (CPU-bound; call via to_thread).
+
+        Optionally wires monitoring to persist a model run record (ML4).
+        The tracking call is fire-and-forget — failures are logged but
+        never prevent the scoring result from being returned.
+        """
         rule_score, fired_rules = self.rule_engine.evaluate(tx_data, context)
 
         features = self.feature_engine.transform(tx_data, user_history=user_history)
         ml_score = _to_float(self.ml_service.predict(features))
+
+        # Compute context score from velocity signal (ML3)
+        recent_txns = context.get("recent_transactions", 0) if context else 0
+        context_score = min(float(recent_txns) / 10.0 * 100, 100.0)
 
         amount = tx_data.get("amount", 0)
         threshold = self.ensemble_scorer.get_threshold(amount)
         ensemble_score = self.ensemble_scorer.combine(
             rule_score=rule_score,
             ml_score=ml_score,
+            context_score=context_score,
         )
         classification = self.ensemble_scorer.classify(ensemble_score, threshold)
+
+        # ML4: fire-and-forget model run tracking
+        if monitoring_service is not None and db is not None:
+            try:
+                asyncio.create_task(
+                    self._track_model_run(
+                        monitoring_service, db,
+                        rule_score=rule_score,
+                        ml_score=ml_score,
+                        ensemble_score=ensemble_score,
+                        classification=classification,
+                    )
+                )
+            except RuntimeError:
+                # No event loop running (sync context) — skip silently
+                pass
 
         return ScoringResult(
             rule_score=rule_score,
@@ -91,3 +123,20 @@ class ScoringService:
             ensemble_score=ensemble_score,
             classification=classification,
         )
+
+    @staticmethod
+    async def _track_model_run(
+        monitoring_service: Any,
+        db: Any,
+        **scores: Any,
+    ) -> None:
+        """Persist a model run record via MonitoringService (best-effort)."""
+        try:
+            await monitoring_service.track_model_run(
+                db=db,
+                model_version="v1",
+                metrics=scores,
+                drift_detected=False,
+            )
+        except Exception as exc:
+            logger.warning("Failed to track model run: %s", exc)

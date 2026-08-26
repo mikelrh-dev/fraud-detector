@@ -34,6 +34,7 @@ import xgboost as xgb
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.services.feature_engine import FeatureEngine  # noqa: E402
+from src.core.ml_constants import MERCHANT_RISK_CATEGORIES, CATEGORY_ALIASES  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,9 +60,12 @@ def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) ->
     transactions = []
     labels = []
 
-    # Categories - some high-risk, some normal
+    # Categories - use canonical names from ml_constants + aliases for realism
     normal_categories = ["groceries", "retail", "restaurant", "transport", "entertainment", "health", "education"]
+    # Canonical risk categories for training (aliases appear naturally in data)
     risk_categories = ["cryptocurrency", "money_transfer", "gambling", "adult", "pharmacy"]
+    # Alias variants that appear in real data — include for training diversity
+    risk_category_aliases = ["crypto", "btc"]
 
     merchants_normal = [f"Store_{i}" for i in range(50)]
     merchants_risk = [f"CryptoEx_{i}" for i in range(10)] + [f"Casino_{i}" for i in range(5)]
@@ -73,6 +77,11 @@ def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) ->
             # Fraudulent transactions: higher amounts, risky categories, unusual hours, high velocity
             amount = float(rng.lognormal(mean=10.5, sigma=0.8))  # ~35k median
             category = rng.choice(risk_categories, p=[0.4, 0.3, 0.15, 0.1, 0.05])
+            # Occasionally use alias form for training diversity (realistic data)
+            if rng.random() < 0.15:
+                alias = CATEGORY_ALIASES.get(category)
+                if alias:
+                    category = rng.choice([category, alias])
             merchant = rng.choice(merchants_risk)
             hour = rng.choice(list(range(0, 6)) + list(range(22, 24)))  # Night hours
             velocity_5min = rng.randint(*VELOCITY_5MIN_FRAUD)
@@ -482,16 +491,21 @@ def main() -> None:
             best_cost, best_thr = c, thr
     logger.info("Optimal cost threshold: %.2f (expected cost %.2f)", best_thr, best_cost)
 
-    # 9. Save model
+    # 9. Save model with feature contract stamp
     Path(MODEL_PATH).parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, MODEL_PATH)
-    logger.info("Model saved to %s", MODEL_PATH)
+    engine = FeatureEngine()
+    feature_names = engine.get_feature_names()
+    artifact = {"model": model, "feature_names": feature_names}
+    joblib.dump(artifact, MODEL_PATH)
+    logger.info("Model saved to %s (with feature_names: %s)", MODEL_PATH, feature_names)
 
     # 10. Quick sanity check with production FeatureEngine
     logger.info("=== Sanity Check with Production FeatureEngine ===")
     from src.services.ml_model import MLModelService
     service = MLModelService(model_path=MODEL_PATH)
-    service.load_model()
+    loaded = service.load_model()
+    logger.info("Model loaded: %s, n_features: %s, feature_names: %s",
+                loaded, service.n_features, service.feature_names)
 
     engine = FeatureEngine()
 

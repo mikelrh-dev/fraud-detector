@@ -9,14 +9,7 @@ from datetime import datetime
 
 import numpy as np
 
-# List of known high-risk merchant categories
-HIGH_RISK_CATEGORIES: set[str] = {
-    "cryptocurrency",
-    "money_transfer",
-    "gambling",
-    "adult",
-    "pharmacy",
-}
+from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
 
 # Feature names in order — used by get_feature_names() and for model interpretation
 FEATURE_NAMES: list[str] = [
@@ -130,9 +123,10 @@ class FeatureEngine:
             except (ValueError, TypeError):
                 is_weekend = 0.0
 
-        # 8. Merchant risk level
-        category = (transaction.get("merchant_category") or "").lower()
-        f_merchant_risk = 1.0 if category in HIGH_RISK_CATEGORIES else 0.0
+        # 8. Merchant risk level (normalize aliases first)
+        raw_category = (transaction.get("merchant_category") or "").lower()
+        category = CATEGORY_ALIASES.get(raw_category, raw_category)
+        f_merchant_risk = 1.0 if category in MERCHANT_RISK_CATEGORIES else 0.0
 
         # 9. Is crypto
         f_is_crypto = 1.0 if category == "cryptocurrency" else 0.0
