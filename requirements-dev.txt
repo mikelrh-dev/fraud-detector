@@ -1,0 +1,24 @@
+# Development & CI dependencies — install ON TOP of requirements.txt:
+#   pip install -r requirements.txt -r requirements-dev.txt
+# Pinned to the versions verified against the green baseline (Wave 0):
+# ruff 0.16.4 / mypy 2.3.1 are the exact versions that make
+# `ruff check src/` and `mypy src/` exit 0 with the pyproject.toml config.
+
+# Testing
+pytest==8.4.2
+pytest-asyncio==0.25.3
+pytest-cov==6.0.0
+factory-boy==3.3.3
+Faker==33.3.1
+
+# Lint / type gates
+ruff==0.16.4
+mypy==2.3.1
+
+# Notebooks (offline analysis; never imported by src/**)
+jupyter==1.1.1
+
+# Data-science tooling used only by scripts/ + notebooks/
+# (training, synthetic data, case-study charts) — not by the API runtime.
+matplotlib==3.9.0
+seaborn==0.13.0

@@ -1,3 +1,7 @@
+# Runtime dependencies ONLY.
+# Dev/CI tooling (pytest, ruff, mypy, factory-boy, faker, jupyter,
+# matplotlib, seaborn) lives in requirements-dev.txt.
+
 # API
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
@@ -15,8 +19,9 @@ redis==5.2.0
 pydantic==2.10.0
 pydantic-settings==2.7.1
 
-# LLM
+# LLM (httpx is the async client used by src/services/llm.py)
 ollama==0.4.0
+httpx==0.27.0
 
 # Auth / Security
 python-jose[cryptography]==3.5.0
@@ -26,17 +31,7 @@ bcrypt==4.0.1
 # Email validation
 email-validator==2.3.0
 
-# Testing
-pytest==8.4.0
-pytest-asyncio==0.25.0
-pytest-cov==6.0.0
-httpx==0.27.0
-factory-boy==3.3.0
-faker==33.0.0
-
-# Data Science / ML
-matplotlib==3.9.0
-seaborn==0.13.0
+# Data Science / ML (imported by src/** — verified Wave 0)
 scikit-learn==1.5.0
 xgboost==2.1.0
 imbalanced-learn==0.12.0
@@ -47,9 +42,6 @@ shap==0.46.0
 evidently==0.4.30
 sentence-transformers==2.2.2
 networkx==3.3
-
-# Notebooks
-jupyter==1.1.1
 
 # Utils
 python-dotenv==1.1.0

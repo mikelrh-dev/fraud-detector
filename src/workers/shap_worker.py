@@ -163,11 +163,15 @@ async def worker_loop(redis_client: redis.Redis) -> None:
 
 async def _process_message_with_retry(
     redis_client: redis.Redis,
-    message_id: bytes,
+    message_id: bytes | str,
     fields: dict,
     shap_service: ShapService,
 ) -> None:
-    """Process a message with automatic retry and DLQ handling."""
+    """Process a message with automatic retry and DLQ handling.
+
+    message_id accepts bytes (raw client) or str (decode_responses=True
+    client); the DLQ path already normalizes both.
+    """
     try:
         # Decode message
         data_json = fields.get(b"data", b"{}").decode("utf-8")

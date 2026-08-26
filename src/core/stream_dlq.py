@@ -8,6 +8,7 @@ import json
 import logging
 
 import redis.asyncio as redis
+from redis.typing import FieldT
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ async def send_to_dlq(
     """
     try:
         # Add to DLQ with context
-        dlq_entry = {
+        # Annotated as dict[FieldT, FieldT] because redis-py's xadd declares
+        # invariant field types; a plain dict[str, str] is rejected by mypy.
+        dlq_entry: dict[FieldT, FieldT] = {
             "original_stream": stream_name,
             "original_message_id": str(message_id),
             "consumer_group": consumer_group,
@@ -73,7 +76,7 @@ async def recover_pending_messages(
     stream_name: str,
     consumer_group: str,
     consumer_name: str,
-) -> list[tuple[str, dict]]:
+) -> list[tuple[bytes | str, dict]]:
     """Recover messages pending for more than PENDING_TIMEOUT_MS.
     
     Uses XAUTOCLAIM to automatically transfer stuck messages from other
@@ -86,7 +89,10 @@ async def recover_pending_messages(
         consumer_name: This consumer name
     
     Returns:
-        List of (message_id, fields_dict) for recovered messages
+        List of (message_id, fields_dict) for recovered messages. Message ids
+        are bytes when the client uses decode_responses=False and str when it
+        does not (src/core/redis.py uses decode_responses=True); callers must
+        tolerate both, matching the defensive handling in the workers.
     """
     try:
         # Use XAUTOCLAIM to transfer pending messages to this consumer

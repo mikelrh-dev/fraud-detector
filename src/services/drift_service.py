@@ -9,8 +9,8 @@ import logging
 from typing import Any
 
 import pandas as pd
-from evidently.report import Report
 from evidently.metric_preset import DataDriftPreset
+from evidently.report import Report
 
 logger = logging.getLogger(__name__)
 

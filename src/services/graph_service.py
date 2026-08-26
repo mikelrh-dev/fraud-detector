@@ -35,7 +35,7 @@ class FraudGraphService:
             retention_days: Days to retain transaction nodes (default: 30)
         """
         self.graph = nx.DiGraph()
-        self.known_fraudsters = set()
+        self.known_fraudsters: set[str] = set()
         self.lock = asyncio.Lock()  # Thread-safety lock
         self.retention_days = retention_days
         self.last_pruned = datetime.now(tz=timezone.utc)

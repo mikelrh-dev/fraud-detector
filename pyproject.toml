@@ -1,0 +1,66 @@
+# Project metadata + tool configuration.
+#
+# NOTE: This is NOT an installable-package declaration on purpose. Nothing
+# pip-installs this project (CI and Docker both use `-r requirements.txt`),
+# so there is no [build-system] section: adding one would make
+# `pip install .` look supported while setuptools' auto-discovery would try
+# to package `src/`, `tests/`, `frontend/` and fail unpredictably.
+[project]
+name = "fraud-detector"
+version = "0.1.0"
+description = "Hybrid fraud detection: deterministic rule engine + local LLM explanatory reports"
+requires-python = ">=3.10"
+
+# ---------------------------------------------------------------------------
+# Ruff — lint gate (`ruff check src/`)
+# Selected for GREEN-baseline honesty, not fake-clean:
+# E/F catch real defects; I enforces import order.
+# "W" is deliberately deferred: measured on this codebase it fires 49
+# whitespace-noise findings (48x W293 blank-line-with-whitespace, 1x W292)
+# against only 9 substantive E/F/I findings — bulk churn, no defect signal.
+# Roadmap: run `ruff check --fix --select W291,W292,W293` as a dedicated
+# whitespace PR, then re-enable "W"; later add "B" (bugbear), "UP" (pyupgrade).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# src/services/llm.py holds the Spanish LLM prompt template: those lines are
+# prose fed verbatim to Ollama, so re-wrapping would change model input bytes.
+"src/services/llm.py" = ["E501"]
+
+# ---------------------------------------------------------------------------
+# mypy — type gate (`mypy src/`)
+# Baseline honesty policy: check_untyped_defs stays ON for the whole tree
+# (workers included — verified clean after fixing stream id typing).
+# looseness lives in scoped, documented exceptions only. Do NOT add blanket
+# disable_error_code cop-outs.
+#
+# Known looseness debt (tightening roadmap):
+# - ignore_missing_imports is global; narrow to per-module ignores for the
+#   few untyped deps (ollama, shap) once lint debt allows.
+# - warn_unused_ignores=false until stale `# type: ignore` comments are swept.
+# - tests are excluded from mypy entirely (runtime-verified by pytest).
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true   # untyped third-party deps (ollama, shap, ...)
+check_untyped_defs = true
+warn_unused_ignores = false     # flip to true once ignore[] debt is paid down
+warn_redundant_casts = true
+no_implicit_optional = true
+exclude = ["scripts/", "alembic/", "notebooks/"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# asyncio_mode=strict matches the suite's explicit @pytest.mark.asyncio style.
+# No --cov in addopts on purpose: keeps local runs fast; CI passes cov flags
+# explicitly (--cov=src --cov-fail-under=80, guarded by tests/ci/*).
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["tests"]

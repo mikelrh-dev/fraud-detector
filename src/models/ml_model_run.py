@@ -2,7 +2,7 @@
 
 import enum
 
-from sqlalchemy import Boolean, JSON, String
+from sqlalchemy import JSON, Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import BaseModel
