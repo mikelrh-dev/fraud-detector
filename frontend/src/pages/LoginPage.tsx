@@ -75,7 +75,7 @@ export default function LoginPage() {
         Iniciar sesión
       </h1>
       <p className="mt-1 text-sm text-slate-500">
-        Accedé a la consola de análisis
+        Accede a la consola de análisis
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-4" noValidate>

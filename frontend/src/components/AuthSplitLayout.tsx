@@ -17,7 +17,7 @@ const FEATURES = [
   {
     icon: <ShieldCheck size={18} weight="regular" aria-hidden="true" />,
     title: "Explicabilidad SHAP por transacción",
-    copy: "Mirá exactamente qué empujó cada score hacia el fraude.",
+    copy: "Mira exactamente qué empujó cada score hacia el fraude.",
   },
   {
     icon: <Sparkle size={18} weight="regular" aria-hidden="true" />,
@@ -48,7 +48,7 @@ function BrandPanel() {
         </div>
 
         <h1 className="mt-8 text-4xl lg:text-5xl font-semibold tracking-tighter leading-[1.05] text-slate-100">
-          Detectá <span className="text-risk-critical">fraude</span> antes de
+          Detecta <span className="text-risk-critical">fraude</span> antes de
           que ocurra
         </h1>
         <p className="mt-4 max-w-[42ch] text-slate-400">
