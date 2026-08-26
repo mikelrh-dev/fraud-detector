@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.v1.rate_limit import check_rate_limit
 from src.core.dependencies import get_current_user, get_db
 from src.models.fraud_alert import AlertStatus, FraudAlert
+from src.models.transaction import Transaction
 from src.schemas.alert import AlertActionRequest, AlertListResponse, AlertResponse
 from src.services.audit import AuditService
 
@@ -22,6 +23,30 @@ router = APIRouter(
 _audit_service = AuditService()
 
 
+async def _check_alert_ownership(
+    db: AsyncSession,
+    alert: FraudAlert,
+    current_user: dict,
+) -> None:
+    """Verify the current user owns the alert's underlying transaction.
+
+    Raises 404 if the transaction is not found or belongs to another user
+    (does not leak existence). Admins bypass ownership checks.
+    """
+    if current_user.get("role") == "admin":
+        return
+
+    txn_result = await db.execute(
+        select(Transaction).where(Transaction.id == alert.transaction_id)
+    )
+    txn = txn_result.scalar_one_or_none()
+    if txn is None or str(txn.user_id) != current_user["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alert not found",
+        )
+
+
 @router.get("", response_model=AlertListResponse)
 async def list_alerts_endpoint(
     status_filter: str | None = Query(None, alias="status"),
@@ -32,8 +57,14 @@ async def list_alerts_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> AlertListResponse:
-    """List fraud alerts with optional filters."""
+    """List fraud alerts with optional filters.
+
+    Non-admin users see only alerts for their own transactions; admins
+    see all alerts.
+    """
     skip = (page - 1) * page_size
+
+    is_admin = current_user.get("role") == "admin"
 
     query = select(FraudAlert)
 
@@ -44,6 +75,15 @@ async def list_alerts_endpoint(
     if date_to:
         query = query.where(FraudAlert.created_at <= date_to)
 
+    # --- Ownership scoping (F1): non-admins only see alerts for their
+    # own transactions via a subquery on the transactions table. ---
+    if not is_admin:
+        own_txns = select(Transaction.id).where(
+            Transaction.user_id == uuid.UUID(current_user["user_id"]),
+            Transaction.deleted_at.is_(None),
+        )
+        query = query.where(FraudAlert.transaction_id.in_(own_txns))
+
     count_query = select(FraudAlert.id)
     if status_filter:
         count_query = count_query.where(FraudAlert.status == status_filter)
@@ -51,6 +91,12 @@ async def list_alerts_endpoint(
         count_query = count_query.where(FraudAlert.created_at >= date_from)
     if date_to:
         count_query = count_query.where(FraudAlert.created_at <= date_to)
+    if not is_admin:
+        own_txns_count = select(Transaction.id).where(
+            Transaction.user_id == uuid.UUID(current_user["user_id"]),
+            Transaction.deleted_at.is_(None),
+        )
+        count_query = count_query.where(FraudAlert.transaction_id.in_(own_txns_count))
 
     total_result = await db.execute(count_query)
     total = len(total_result.all())
@@ -58,6 +104,23 @@ async def list_alerts_endpoint(
     query = query.order_by(FraudAlert.created_at.desc()).offset(skip).limit(page_size)
     result = await db.execute(query)
     alerts = list(result.scalars().all())
+
+    items = [
+        AlertResponse(
+            id=a.id,
+            transaction_id=a.transaction_id,
+            status=a.status.value if hasattr(a.status, "value") else a.status,
+            score=a.score,
+            threshold=a.threshold,
+            classification=a.classification,
+            reviewed_by=a.reviewed_by,
+            reviewed_at=a.reviewed_at,
+            created_at=a.created_at,
+        )
+        for a in alerts
+    ]
+
+    return AlertListResponse(items=items, total=total, page=page, page_size=page_size)
 
     items = [
         AlertResponse(
@@ -92,6 +155,8 @@ async def review_alert_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Alert not found",
         )
+
+    await _check_alert_ownership(db, alert, current_user)
 
     previous_status = alert.status.value if hasattr(alert.status, "value") else alert.status
     alert.status = AlertStatus.REVIEWED
@@ -138,6 +203,8 @@ async def false_positive_alert_endpoint(
             detail="Alert not found",
         )
 
+    await _check_alert_ownership(db, alert, current_user)
+
     previous_status = alert.status.value if hasattr(alert.status, "value") else alert.status
     alert.status = AlertStatus.RESOLVED
     alert.reviewed_by = uuid.UUID(current_user["user_id"])
@@ -182,6 +249,8 @@ async def revert_alert_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Alert not found",
         )
+
+    await _check_alert_ownership(db, alert, current_user)
 
     previous_status = alert.status.value if hasattr(alert.status, "value") else alert.status
     alert.status = AlertStatus.OPEN

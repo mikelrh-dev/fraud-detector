@@ -161,6 +161,9 @@ async def create_and_score_transaction(
         )
 
     # 1. Create the transaction
+    # F2: Always use the authenticated user's identity — ignore payload.user_id
+    # (IDOR prevention). The payload field is deprecated and ignored.
+    user_uuid = _current_user_uuid(current_user)
     try:
         txn = await create_transaction(
             db=db,
@@ -169,7 +172,7 @@ async def create_and_score_transaction(
             merchant_name=payload.merchant_name,
             merchant_category=payload.merchant_category,
             card_last4=payload.card_last4,
-            user_id=payload.user_id,
+            user_id=user_uuid,
         )
     except Exception:
         logger.exception("Failed to create transaction")
@@ -179,15 +182,15 @@ async def create_and_score_transaction(
         )
 
     # 2. Velocity counters (Redis ZSET with PG fallback)
-    await velocity_store.record_transaction(payload.user_id, txn.id, txn.created_at)
-    velocity_counts = await velocity_store.get_counts(payload.user_id, db)
+    await velocity_store.record_transaction(user_uuid, txn.id, txn.created_at)
+    velocity_counts = await velocity_store.get_counts(user_uuid, db)
 
     # 2.5. User history via SQL aggregates (CV-004): push known_cards
     # (DISTINCT) and avg_amount to the database.  std_amount is computed
     # Python-side because SQLite (test runner) lacks func.stddev — this
     # keeps the test suite portable while still reducing data transfer.
     base_filter = (
-        Transaction.user_id == payload.user_id,
+        Transaction.user_id == user_uuid,
         Transaction.deleted_at.is_(None),
     )
 
@@ -211,7 +214,7 @@ async def create_and_score_transaction(
     amounts = [float(a) for a in amounts_result.scalars().all()]
 
     # 3. Graph features (async, network I/O)
-    graph_features = await _graph_service.get_graph_features(str(payload.user_id))
+    graph_features = await _graph_service.get_graph_features(str(user_uuid))
 
     # 4. Build scoring inputs
     now = datetime.now(tz=timezone.utc)
@@ -220,7 +223,7 @@ async def create_and_score_transaction(
         "merchant_name": payload.merchant_name,
         "merchant_category": payload.merchant_category,
         "card_last4": payload.card_last4,
-        "user_id": str(payload.user_id),
+        "user_id": str(user_uuid),
         "timestamp": now.isoformat(),
         "country": "AR",  # simulate home country for demo purposes
     }
@@ -290,7 +293,7 @@ async def create_and_score_transaction(
     # This happens AFTER classification is made
     try:
         await _graph_service.add_transaction(
-            sender_id=str(payload.user_id),
+            sender_id=str(user_uuid),
             receiver_id=f"merchant_{payload.merchant_name}",  # Treat merchant as receiver node
             card_id=payload.card_last4,
             is_fraud=(classification == "fraud"),
@@ -303,7 +306,7 @@ async def create_and_score_transaction(
         db=db,
         action_type="transaction_scored",
         transaction_id=txn.id,
-        user_id=payload.user_id,
+        user_id=user_uuid,
         details={
             "rule_score": rule_score,
             "ml_score": ml_score,

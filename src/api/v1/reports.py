@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.dependencies import get_current_user, get_db
 from src.models.llm_report import LLMReport, LLMReportStatus
+from src.models.transaction import Transaction
 from src.schemas.report import ReportResponse
 
 router = APIRouter(prefix="/transactions", tags=["reports"])
@@ -26,6 +27,27 @@ async def get_transaction_report(
         - 202 if the report is still pending (in queue).
         - 404 if no report is found for the transaction.
     """
+    # --- Ownership check (R1-003 / F1): only the transaction owner or
+    # an admin may view the report.  Foreign objects → 404 to avoid
+    # leaking existence. ---
+    txn_result = await db.execute(
+        select(Transaction).where(Transaction.id == transaction_id)
+    )
+    txn = txn_result.scalar_one_or_none()
+    if txn is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No report found for this transaction",
+        )
+
+    is_admin = current_user.get("role") == "admin"
+    user_id = str(txn.user_id)
+    if not is_admin and user_id != current_user["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No report found for this transaction",
+        )
+
     query = select(LLMReport).where(
         LLMReport.transaction_id == transaction_id
     )

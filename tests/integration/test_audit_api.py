@@ -1,5 +1,6 @@
 """Audit API integration tests — transaction audit trail, analyst activity, export."""
 
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,9 +13,18 @@ class TestTransactionAuditEndpoint:
     @pytest.mark.asyncio
     async def test_get_audit_trail_returns_200(self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock):
         """GET /audit/transactions/{id} should return 200 with audit entries."""
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        # Mock: first query loads the transaction for ownership check,
+        # second query returns audit entries.
+        txn = MagicMock()
+        txn.user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")  # matches auth_headers user
+
+        txn_result = MagicMock()
+        txn_result.scalar_one_or_none.return_value = txn
+
+        entries_result = MagicMock()
+        entries_result.scalars.return_value.all.return_value = []
+
+        mock_db.execute = AsyncMock(side_effect=[txn_result, entries_result])
 
         response = await test_client.get(
             "/api/v1/audit/transactions/00000000-0000-0000-0000-000000000001",

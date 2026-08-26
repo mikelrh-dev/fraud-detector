@@ -3,10 +3,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.dependencies import get_current_user, get_db, require_role
+from src.models.transaction import Transaction
 from src.schemas.audit import (
     AuditEntryResponse,
     AuditExportRequest,
@@ -26,7 +28,29 @@ async def get_transaction_audit_trail(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> AuditListResponse:
-    """Get the complete audit trail for a specific transaction."""
+    """Get the complete audit trail for a specific transaction.
+
+    Non-admin users can only access audit trails for their own transactions.
+    """
+    # --- Ownership check (R1-003 / F1): load the transaction and verify
+    # the current user owns it (or is admin). ---
+    txn_result = await db.execute(
+        select(Transaction).where(Transaction.id == transaction_id)
+    )
+    txn = txn_result.scalar_one_or_none()
+    if txn is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found",
+        )
+
+    is_admin = current_user.get("role") == "admin"
+    if not is_admin and str(txn.user_id) != current_user["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: not your transaction",
+        )
+
     entries = await _audit_service.get_entries_for_transaction(
         db=db,
         transaction_id=transaction_id,

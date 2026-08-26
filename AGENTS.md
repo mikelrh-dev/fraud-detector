@@ -7,6 +7,7 @@ Sistema híbrido de detección de fraude. Motor de reglas determinista + LLM loc
 ```bash
 # Desarrollo
 docker compose up -d
+pip install -r requirements-dev.txt
 uvicorn src.api.main:app --reload
 
 # Tests

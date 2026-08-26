@@ -14,7 +14,10 @@ class TransactionCreate(BaseModel):
     merchant_name: str = Field(..., min_length=1, max_length=255)
     merchant_category: str | None = Field(None, max_length=100)
     card_last4: str = Field(..., min_length=4, max_length=4, description="Last 4 digits of card")
-    user_id: uuid.UUID
+    # DEPRECATED: user_id is ignored server-side (F2). The authenticated
+    # user's identity is always used. Kept for backward compatibility with
+    # existing clients; will be removed in a future version.
+    user_id: uuid.UUID | None = Field(None, deprecated="Ignored — server uses authenticated user identity")
 
 
 class ShapContribution(BaseModel):

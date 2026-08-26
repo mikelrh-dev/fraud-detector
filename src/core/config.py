@@ -100,8 +100,10 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     # Proxy
-    # Trust X-Forwarded-For / X-Real-IP headers for client identity.
+    # Trust X-Real-IP / X-Forwarded-For headers for client identity.
     # Enable ONLY behind a trusted reverse proxy (nginx, ALB, Cloudflare).
+    # X-Real-IP is preferred (single-value, set by proxy); X-Forwarded-For
+    # leftmost is used as fallback.
     # When False (default), request.client.host is used directly — spoof-proof.
     trust_proxy_headers: bool = False
 

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 RATE_LIMITS: dict[str, tuple[int, float]] = {
     "/api/v1/auth/login": (10, 60.0),  # 10 attempts per 60 seconds
     "/api/v1/auth/register": (10, 60.0),  # 10 attempts per 60 seconds
+    "/api/v1/auth/refresh": (5, 60.0),  # 5 attempts per 60 seconds (F5)
     "/api/v1/transactions": (100, 60.0),
     "/api/v1/alerts": (60, 60.0),
 }
@@ -31,13 +32,18 @@ RATE_LIMITS: dict[str, tuple[int, float]] = {
 def _get_client_ip(request: Request) -> str:
     """Extract client IP from request.
 
-    Uses ``request.client.host`` by default (spoof-proof).  When
-    ``settings.trust_proxy_headers`` is ``True``, the left-most entry
-    of ``X-Forwarded-For`` is honored (the original client as recorded
-    by the trusted proxy) — only safe behind a proxy that overwrites
-    the header.
+    When ``settings.trust_proxy_headers`` is ``True``, reads the
+    ``X-Real-IP`` header first (a single-value header set by a trusted
+    reverse proxy like nginx — not spoofable by clients). Falls back to
+    the leftmost ``X-Forwarded-For`` entry if ``X-Real-IP`` is absent.
+
+    When ``trust_proxy_headers`` is ``False`` (default), uses
+    ``request.client.host`` directly — spoof-proof.
     """
     if settings.trust_proxy_headers:
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             return forwarded.split(",")[0].strip()

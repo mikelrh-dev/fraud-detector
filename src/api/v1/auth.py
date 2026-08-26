@@ -78,6 +78,7 @@ async def refresh_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
+    _rate_limit: None = Depends(check_rate_limit),
 ) -> TokenResponse:
     """Refresh an access token using a refresh token.
 
@@ -138,7 +139,12 @@ async def logout_endpoint(
     current_user: dict = Depends(get_current_user),
     redis_client: Redis = Depends(get_redis),
 ) -> None:
-    """Logout and blacklist the current access token."""
+    """Logout and blacklist the current access token.
+
+    Optionally also revokes the refresh token if provided via the
+    ``X-Refresh-Token`` header.  Clients that don't send it still get
+    a successful 204 (graceful degradation).
+    """
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.removeprefix("Bearer ")
 
@@ -152,3 +158,20 @@ async def logout_endpoint(
         await blacklist_token(redis_client, jti, ttl)
     except Exception:
         logger.warning("Best-effort token blacklisting failed on logout")
+
+    # F4: Also revoke the refresh token if provided.
+    refresh_token = request.headers.get("X-Refresh-Token")
+    if refresh_token:
+        try:
+            refresh_payload = decode_refresh_token(refresh_token)
+            if refresh_payload.get("typ") == "refresh":
+                refresh_jti = refresh_payload["jti"]
+                # Refresh tokens live 24h; use remaining TTL or 86400s.
+                try:
+                    refresh_exp = int(refresh_payload.get("exp", 0))
+                    refresh_ttl = max(refresh_exp - int(time.time()), 60)
+                except (TypeError, ValueError):
+                    refresh_ttl = 86400
+                await blacklist_token(redis_client, refresh_jti, refresh_ttl)
+        except Exception:
+            logger.warning("Best-effort refresh token blacklisting failed on logout")
