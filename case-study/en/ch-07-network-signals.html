@@ -67,11 +67,12 @@
         one transaction.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/network-graph.png" alt="Directed network graph of a synthetic fraud ring: four red nodes mark known fraudsters and stolen cards flagged by the production service, an amber node marks a legitimate user sitting exactly two hops from a fraudster through a mule account, slate circles are legitimate users, slate squares are card nodes, thin slate arrows show transaction direction." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/network-graph.png" alt="Directed network graph of a synthetic fraud ring: two red circles mark known fraudster senders and two red squares their flagged stolen cards, an amber node marks a legitimate user sitting exactly two hops from a fraudster through a mule account, slate circles are legitimate users, slate squares are clean card nodes, thin slate arrows show transaction direction." width="1440" height="750">
           <figcaption><strong>Synthetic ring, real detection:</strong> every node, edge and
           fraudster flag above was created by calling the production
           <code>FraudGraphService.add_transaction()</code> — the exact code path each API request
-          exercises. Fraudulent transactions mark senders and cards as known fraudsters (red);
+          exercises. Fraudulent transactions mark senders (red circles) and their
+          cards (red squares) as known fraudsters;
           <span class="tone-warn">victim_bridge</span> (amber) simply pays a mule account and
           lands exactly 2 directed hops from one, so <code>get_graph_features()</code> returns
           <code>is_near_fraud=1</code> and the <code>near_fraud</code> rule fires (+15). The
@@ -122,7 +123,7 @@
         <p>Built as an AI/ML portfolio project. Every number on these pages traces back to a real artifact in the repository.</p>
       </div>
       <div class="footer-col">
-        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:mikelromerohomobono@gmail.com">Email</a> · <a href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener">LinkedIn</a></p>
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:mikelromerohomobono@gmail.com">Email</a> · <a href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener noreferrer">LinkedIn</a></p>
         <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
       </div>
     </div>

@@ -287,7 +287,8 @@ def build_network_graph(metrics_out: dict) -> None:
     draw_group([n for n in users if n not in fraud_nodes and n != NEAR_NODE], "o", 520, slate_face, slate_edge)
     draw_group([n for n in users if n in fraud_nodes], "o", 620, RED, "#fca5a5")
     draw_group([NEAR_NODE], "o", 620, AMBER, "#fde68a")
-    draw_group(cards, "s", 340, "#334155", slate_edge)
+    draw_group([c for c in cards if c not in fraud_nodes], "s", 340, "#334155", slate_edge)
+    draw_group([c for c in cards if c in fraud_nodes], "s", 430, RED, "#fca5a5")
 
     nx.draw_networkx_labels(G, pos, labels={n: n for n in G.nodes()}, font_size=8.2,
                             font_family=MONO, font_color=TEXT, ax=ax)
@@ -301,6 +302,8 @@ def build_network_graph(metrics_out: dict) -> None:
                markeredgecolor=slate_edge, label="legitimate user"),
         Line2D([], [], marker="s", linestyle="", markersize=8, markerfacecolor="#334155",
                markeredgecolor=slate_edge, label="card node"),
+        Line2D([], [], marker="s", linestyle="", markersize=8, markerfacecolor=RED,
+               markeredgecolor="#fca5a5", label="stolen card (flagged)"),
     ]
     ax.legend(handles=handles, loc="upper left", frameon=False)
 

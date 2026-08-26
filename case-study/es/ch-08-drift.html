@@ -61,7 +61,7 @@
         </ul>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Gráfico de barras horizontales del Population Stability Index por feature bajo un escenario de drift simulado: amount se dispara a 0.634, muy por encima de la línea crítica roja en 0.25, mientras velocity_5min muestra una pequeña suba en 0.016 y user_avg_amount, user_std_amount y velocity_1h quedan planos cerca de cero; líneas punteadas ámbar y roja marcan los umbrales convencionales warn 0.10 y critical 0.25." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Gráfico de barras horizontales del Population Stability Index por feature bajo un escenario de drift simulado: amount se dispara a 0,634, muy por encima de la línea crítica roja en 0,25, mientras velocity_5min muestra una pequeña suba en 0,016 y user_avg_amount, user_std_amount y velocity_1h quedan planos cerca de cero; líneas punteadas ámbar y roja marcan los umbrales convencionales warn 0,10 y critical 0,25." width="1440" height="750">
           <figcaption><strong>Escenario de drift simulado:</strong> PSI calculado con numpy puro
           entre dos ventanas reales de <code>data/synthetic_transactions.csv</code> — filas
           0&ndash;24.999 de referencia intactas contra filas 25.000&ndash;49.999 actuales llevando
@@ -69,8 +69,8 @@
           &times;1,6 sobre toda la ventana actual; <code>velocity_5min</code> &times;3 sobre su
           último 15%, la columna del CSV detrás de la feature de producción
           <code>tx_count_last_5min</code>). Resultado: amount rebasa con creces el umbral crítico
-          convencional mientras las features intactas se pegan a cero — exactamente lo que un
-          ataque real de inflación de importes se vería ante este detector. Las líneas
+          convencional mientras las features intactas se pegan a cero — exactamente cómo
+          se vería un ataque real de inflación de importes ante este detector. Las líneas
           0,10 / 0,25 son las lecturas convencionales de la industria para PSI (warn / critical),
           no alarmas específicas del proyecto. Artefacto:
           <code>case-study/assets/feature-drift.png</code>, generado por
@@ -109,7 +109,7 @@
         <p>Proyecto de portfolio de IA/ML. Cada número de estas páginas se remonta a un artefacto real del repositorio.</p>
       </div>
       <div class="footer-col">
-        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:mikelromerohomobono@gmail.com">Email</a> · <a href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener">LinkedIn</a></p>
+        <p><a href="https://github.com/mikelrh-dev/fraud-detector" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:mikelromerohomobono@gmail.com">Email</a> · <a href="https://www.linkedin.com/in/mikel-romero-homobono-760878337" target="_blank" rel="noopener noreferrer">LinkedIn</a></p>
         <p>Stack: FastAPI · XGBoost · SHAP · Redis Streams · Ollama · React 19</p>
       </div>
     </div>
