@@ -87,29 +87,35 @@
         keeps scoring with rules + context. Degradation is explicit, never a crash.</p>
 
         <h3>Inside the trained artifact</h3>
-        <p>The production model is a serialized XGBClassifier whose own hyperparameters tell the
-        imbalance story:</p>
+        <p>The production model is a <code>CalibratedClassifierCV</code> wrapper around five
+        sigmoid-calibrated XGBoost folds — its own hyperparameters tell the training story:</p>
         <table class="data-table">
           <thead>
             <tr><th>Hyperparameter</th><th>Value</th><th>What it means</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">n_estimators</td><td class="weight">500</td><td>boosted trees in the ensemble</td></tr>
-            <tr><td class="mono">max_depth</td><td class="weight">6</td><td>interaction depth kept shallow against overfitting</td></tr>
+            <tr><td class="mono">n_estimators</td><td class="weight">200 × 5</td><td>boosted trees per fold; the calibrated ensemble averages five of them</td></tr>
+            <tr><td class="mono">max_depth</td><td class="weight">4</td><td>shallower trees than the first attempt — capacity traded for generalization</td></tr>
             <tr><td class="mono">learning_rate</td><td class="weight">0.1</td><td>conservative step size per tree</td></tr>
-            <tr><td class="mono">subsample</td><td class="weight">0.8</td><td>row sampling per tree — built-in randomness</td></tr>
-            <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 99.8</td><td>one fraud example weighs like ~100 legitimate ones — the mathematical answer to class imbalance</td></tr>
+            <tr><td class="mono">subsample</td><td class="weight">0.7</td><td>row sampling per tree — built-in randomness</td></tr>
+            <tr><td class="mono">colsample_bytree</td><td class="weight">0.7</td><td>column sampling per tree</td></tr>
+            <tr><td class="mono">reg_alpha</td><td class="weight">1.0</td><td>L1 regularization pushing uninformative split gains to zero</td></tr>
+            <tr><td class="mono">reg_lambda</td><td class="weight">2.0</td><td>L2 regularization smoothing leaf weights</td></tr>
+            <tr><td class="mono">calibration</td><td class="weight">sigmoid, cv=5</td><td>each fold&rsquo;s probabilities are remapped so <code>predict_proba</code> means what it says</td></tr>
+            <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 19.7</td><td>matched to this dataset&rsquo;s real 4.84% fraud rate — not an assumed ~1%</td></tr>
           </tbody>
         </table>
 
         <figure class="figure">
-          <img src="../assets/feature-importance.png" alt="Horizontal bar chart of feature importances from the trained XGBoost model: merchant risk level dominates at 0.655, followed by 5-minute velocity at 0.264 and amount at 0.081; remaining features contribute near zero." width="1440" height="810">
+          <img src="../assets/feature-importance.png" alt="Horizontal bar chart of feature importances from the trained calibrated XGBoost ensemble: 1-hour transaction count leads at 0.428, followed by 5-minute velocity at 0.374 and amount-versus-user-standard-deviation at 0.179; remaining features contribute near zero." width="1440" height="810">
           <figcaption><strong>Figure 1 — Real feature importances</strong>, extracted directly from
-          the trained <code>xgboost_paysim_v1.joblib</code>. Three features carry essentially all
-          the signal: merchant risk category (65.5%), 5-minute burst velocity (26.4%) and raw
-          amount (8.1%). The near-zero features are not mistakes: their information largely
-          overlaps with what the rule layer already expresses, so gradient boosting found little
-          marginal gain left to extract.</figcaption>
+          the trained <code>xgboost_paysim_v1.joblib</code> (mean gain across the five calibrated
+          folds; regenerated from the current artifact after the aligned retrain). Three features
+          carry essentially all the signal: sustained 1-hour velocity (42.8%), 5-minute burst
+          velocity (37.4%) and amount relative to the user&rsquo;s own history (17.9%). The
+          near-zero features are not mistakes: their information largely overlaps with what the
+          rule layer already expresses, so gradient boosting found little marginal gain left to
+          extract.</figcaption>
         </figure>
 
         <h3>Training discipline</h3>
@@ -143,12 +149,16 @@
         synthetic generator (50k transactions, ~5% fraud rate) with a documented mapping path to PaySim
         when that file is present. There is no dataset versioning yet (no DVC-style pinning); the CSV in
         <code>data/</code> acts as the de-facto snapshot. A proper data card is on the roadmap.</p>
-        <p><strong>How the hyperparameters were chosen.</strong> Honestly: by hand. 500 trees, depth 6,
-        learning rate 0.1 plus L1/L2 regularization follow defaults-plus-judgment for tabular problems,
-        and the saved artifact&rsquo;s <code>scale_pos_weight &asymp; 99.8</code> reflects its training
-        run&rsquo;s imbalance. No grid search or Optuna study backs them yet &mdash; a randomized search is
-        queued as roadmap work, and the next chapter shows why even perfect parameters cannot rescue
-        unrealistic data.</p>
+        <p><strong>How the hyperparameters were chosen.</strong> Radical honesty: the original
+        artifact was tuned by hand <em>and misconfigured</em> — its <code>scale_pos_weight</code>
+        near 100 assumed a ~1% fraud rate while this dataset&rsquo;s real rate is 4.84%, so a fraud
+        example was weighted like ~100 legitimate ones when it should weigh like ~20. That artifact
+        has been replaced by a reproducible retrain through <code>scripts/train_xgboost_aligned.py</code>,
+        which routes training through the exact production <code>FeatureEngine</code> so train-time
+        and serving-time features cannot diverge; the script is committed next to the artifact.
+        What is still true: no grid search or Optuna study picked these values — a randomized
+        search remains queued as roadmap work, and the next chapter shows why even perfect
+        parameters cannot rescue unrealistic data.</p>
         <p><strong>Reproduce it:</strong> <code>scripts/train_xgboost_aligned.py</code> (full documented
         pipeline), <code>notebooks/01-paysim-fraud-detection.ipynb</code> (exploration).</p>
       </div>

@@ -21,7 +21,7 @@ Every transaction gets a 0–100 risk score, a classification (`legitimate | rev
 - **Immutable audit trail** with SHA-256 checksums on every scoring decision and analyst action
 - **JWT auth** (access + refresh + blacklist), role-based access (user/admin), per-route rate limiting
 - **React 19 dashboard** with score trends, SHAP cards and alert workflow
-- **337 tests** (unit + integration), CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build)
+- **422 backend tests** (unit + integration), CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build)
 
 ## Architecture
 
@@ -223,7 +223,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (Redis Streams consumers)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 7 components, vitest + MSW)
-├── tests/                  # unit + integration (337 tests)
+├── tests/                  # unit + integration (422 backend tests)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # PaySim exploration / training notebooks
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -234,7 +234,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (337 tests)
+# Backend (422 tests)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # unit only
 pytest tests/integration -v     # integration only (needs postgres + redis)
@@ -317,4 +317,4 @@ Portfolio project by [mikelrh-dev](https://github.com/mikelrh-dev) demonstrating
 - ML in production: feature engineering aligned between training and serving, SHAP explainability, drift monitoring, retraining triggers
 - Reliable async pipelines: Redis Streams, consumer groups, retries, DLQ
 - Security: JWT with refresh + blacklist, RBAC, rate limiting, immutable SHA-256 audit trail
-- Testing discipline: 337 backend tests + frontend vitest suite, 5-job CI
+- Testing discipline: 422 backend tests + frontend vitest suite (164 tests), 5-job CI

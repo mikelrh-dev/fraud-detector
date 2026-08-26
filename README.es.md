@@ -21,7 +21,7 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 - **Audit trail inmutable** con checksums SHA-256 en cada decisión de scoring y acción de analista
 - **Auth JWT** (access + refresh + blacklist), acceso por roles (user/admin), rate limiting por ruta
 - **Dashboard React 19** con tendencias de score, tarjetas SHAP y flujo de trabajo de alertas
-- **337 tests** (unitarios + integración), CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker)
+- **422 tests de backend** (unitarios + integración), CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker)
 
 ## Arquitectura
 
@@ -223,7 +223,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (consumidores Redis Streams)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 páginas, 7 componentes, vitest + MSW)
-├── tests/                  # unitarios + integración (337 tests)
+├── tests/                  # unitarios + integración (422 tests de backend)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # notebooks de exploración/entrenamiento con PaySim
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -234,7 +234,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (337 tests)
+# Backend (422 tests)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # solo unitarios
 pytest tests/integration -v     # solo integración (requiere postgres + redis)
@@ -317,4 +317,4 @@ Proyecto de portfolio de [mikelrh-dev](https://github.com/mikelrh-dev) que demue
 - ML en producción: feature engineering alineado entre entrenamiento y serving, explicabilidad SHAP, monitoreo de drift, triggers de reentrenamiento
 - Pipelines async confiables: Redis Streams, consumer groups, reintentos, DLQ
 - Seguridad: JWT con refresh + blacklist, RBAC, rate limiting, audit trail inmutable con SHA-256
-- Disciplina de testing: 337 tests de backend + suite vitest de frontend, CI de 5 jobs
+- Disciplina de testing: 422 tests de backend + suite vitest de frontend (164 tests), CI de 5 jobs
