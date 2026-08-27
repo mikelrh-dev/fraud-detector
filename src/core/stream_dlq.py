@@ -147,20 +147,33 @@ async def get_consumer_group_status(
                 "consumers": [],
             }
         
-        # pending: [count, min_id, max_id, [consumers]]
+        # pending response format from redis-py is a dict with keys pending/min/max/consumers
+        # consumers is a list of dicts: [{"name": "...", "pending": ..., "idle": ...}, ...]
         pending_count = pending.get("pending", 0)
         min_id = pending.get("min", "")
         max_id = pending.get("max", "")
         consumers = pending.get("consumers", [])
-        
+
         # Format consumers info
-        formatted_consumers = [
-            {
-                "name": consumer_name,
-                "pending": int(consumer_data.get("pending", 0)),
-            }
-            for consumer_name, consumer_data in consumers.items()
-        ]
+        if isinstance(consumers, list):
+            formatted_consumers = [
+                {
+                    "name": c.get("name"),
+                    "pending": int(c.get("pending", 0)),
+                }
+                for c in consumers
+                if isinstance(c, dict)
+            ]
+        elif isinstance(consumers, dict):
+            formatted_consumers = [
+                {
+                    "name": consumer_name,
+                    "pending": int(consumer_data.get("pending", 0)),
+                }
+                for consumer_name, consumer_data in consumers.items()
+            ]
+        else:
+            formatted_consumers = []
         
         return {
             "stream": stream_name,
