@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.v1.health import router as health_router
 from src.api.v1.router import router as v1_router
 from src.core.config import settings
 from src.core.database import engine
@@ -49,6 +50,9 @@ app.add_middleware(
 
 # Mount v1 router
 app.include_router(v1_router)
+
+# Mount health router (no prefix — endpoints are /health/ready, /health/workers, /metrics)
+app.include_router(health_router)
 
 
 @app.get("/health", tags=["health"])

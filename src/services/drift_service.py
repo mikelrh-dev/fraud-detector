@@ -1,4 +1,4 @@
-"""Data Drift Detection Service using Evidently AI.
+"""Data Drift Detection Service using PSI (Population Stability Index).
 
 Monitors if the distribution of fraud transaction features drifts from a
 reference dataset. If drift is detected, it indicates the model may be
@@ -11,9 +11,8 @@ and service restarts.
 import logging
 from typing import Any
 
+import numpy as np
 import pandas as pd
-from evidently.metric_preset import DataDriftPreset
-from evidently.report import Report
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,18 +109,35 @@ class DataDriftService:
         self.is_initialized = True
         logger.info("Reference dataset set: %d rows", len(data))
 
+    def _compute_psi(self, reference: np.ndarray, current: np.ndarray, bins: int = 10) -> float:
+        """Compute Population Stability Index between two distributions.
+
+        PSI = sum((P_i - Q_i) * ln(P_i / Q_i)) for each bin i.
+        A PSI < 0.1 = no significant shift, 0.1-0.25 = moderate, > 0.25 = significant.
+        """
+        all_vals = np.concatenate([reference, current])
+        if np.all(all_vals == all_vals[0]):
+            return 0.0
+
+        edges = np.unique(np.quantile(all_vals, np.linspace(0, 1, bins + 1)))
+        edges[0], edges[-1] = -np.inf, np.inf
+        ref_pct = np.histogram(reference, bins=edges)[0] / len(reference)
+        cur_pct = np.histogram(current, bins=edges)[0] / len(current)
+        eps = 1e-6
+        return float(np.sum((cur_pct - ref_pct) * np.log((cur_pct + eps) / (ref_pct + eps))))
+
     def evaluate_drift(self, current_data: pd.DataFrame) -> dict[str, Any]:
-        """Evaluate data drift between current and reference data.
-        
+        """Evaluate data drift between current and reference data using PSI.
+
         Args:
             current_data: DataFrame with current transaction features.
-        
+
         Returns:
             Dict with keys:
                 - drift_detected: bool
                 - features_drifted: list of feature names with drift
                 - drift_share: float (0-1) of features that drifted
-                - report: Evidently report dict
+                - report: dict with per-feature PSI values
         """
         if not self.is_initialized or self.reference_data is None:
             logger.warning("Drift service not initialized with reference data")
@@ -143,25 +159,21 @@ class DataDriftService:
             }
 
         try:
-            # Run Evidently drift detection
-            report = Report(metrics=[DataDriftPreset()])
-            report.run(
-                reference_data=self.reference_data,
-                current_data=current_data,
-            )
-
-            # Extract drift results
-            report_dict = report.as_dict()
-            metrics = report_dict.get("metrics", [])
-
-            # Collect drifted features
+            # Compute PSI for each feature
             drifted_features = []
-            for metric in metrics:
-                metric_result = metric.get("result", {})
-                if metric_result.get("is_drift"):
-                    feature_name = metric_result.get("feature_name")
-                    if feature_name:
-                        drifted_features.append(feature_name)
+            psi_values = {}
+
+            for col in self.reference_data.columns:
+                if col not in current_data.columns:
+                    continue
+                ref_vals = self.reference_data[col].dropna().values
+                cur_vals = current_data[col].dropna().values
+                if len(ref_vals) == 0 or len(cur_vals) == 0:
+                    continue
+                psi = self._compute_psi(ref_vals, cur_vals)
+                psi_values[col] = round(psi, 4)
+                if psi > 0.25:
+                    drifted_features.append(col)
 
             drift_share = len(drifted_features) / max(len(self.reference_data.columns), 1)
             drift_detected = len(drifted_features) > 0
@@ -177,7 +189,7 @@ class DataDriftService:
                 "drift_detected": drift_detected,
                 "features_drifted": drifted_features,
                 "drift_share": drift_share,
-                "report": report_dict,
+                "report": {"psi_values": psi_values},
             }
 
         except Exception as exc:

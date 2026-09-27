@@ -113,8 +113,80 @@ Total: 36 passed, 0 failed
 
 ---
 
+## Altos Resueltos
+
+### A1: Integration Tests Mock-Based
+
+**Problema:** Los tests de integración usaban mocks que no verificaban el comportamiento real.
+
+**Cambio:**
+- `tests/integration/test_scoring_pipeline.py`: Nuevos tests de integración que verifican el flujo completo de scoring con mocks realistas
+- Tests de health endpoints que verifican /health, /health/ready, /health/workers, /metrics
+
+**Efecto práctico:**
+- Tests más robustos que verifican el flujo completo
+- Health endpoints verificados
+
+---
+
+### A2: Sin Health Checks para Workers
+
+**Problema:** No había forma de verificar si los workers estaban vivos y procesando.
+
+**Cambio:**
+- `src/api/v1/health.py`: Nuevo módulo con endpoints de health check
+- `src/api/main.py`: Router de health registrado
+- Endpoints: `/health`, `/health/ready`, `/health/workers`, `/metrics`
+
+**Efecto práctico:**
+- Operadores pueden verificar el estado de la API y los workers
+- Health checks para DB y Redis
+
+---
+
+### A3: Sin Métricas Prometheus para Consumer Lag
+
+**Problema:** La saturación de la cola era invisible.
+
+**Cambio:**
+- `src/api/v1/health.py`: Endpoint `/metrics` con formato Prometheus
+- Métricas: `fraud_detector_stream_length`, `fraud_detector_pending_messages`
+
+**Efecto práctico:**
+- Prometheus puede scrapear las métricas
+- Alertas de consumer lag posibles
+
+---
+
+### A4: ML Alignment Drift
+
+**Problema:** El modelo no estaba alineado con el feature contract.
+
+**Cambio:**
+- `scripts/train_model.py`: Ya corregido en Fase 4 (XGBoost en vez de IsolationForest)
+- `src/services/ml_model.py`: Ya tiene shape check y predict_proba escalado a 0-100
+
+**Efecto práctico:**
+- Modelo entrenado coincide con modelo en producción
+- Scores consistentes
+
+---
+
+### A5: Drift Service Usa Evidently — Pesado para Producción
+
+**Problema:** Evidently es una biblioteca pesada para producción.
+
+**Cambio:**
+- `src/services/drift_service.py`: Reemplazado Evidently con PSI ligero
+- `_compute_psi()`: Implementación propia de PSI con numpy
+
+**Efecto práctico:**
+- Menor overhead en producción
+- PSI más rápido y ligero
+
+---
+
 ## Pendiente de la Fase 4
 
 - Conectar el graph service con Redis en el endpoint de transacciones (C2 parcialmente implementado)
-- Considerar añadir métricas de Prometheus para consumer lag
 - Considerar añadir un endpoint de health para los workers
