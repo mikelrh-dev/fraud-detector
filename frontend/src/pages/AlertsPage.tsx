@@ -10,6 +10,7 @@ import {
 import { Sidebar } from "../components/Sidebar";
 import { AlertStatusBadge } from "../components/AlertStatusBadge";
 import { BellLineArt, EmptyState } from "../components/EmptyState";
+import { AlertLineArt, ErrorState } from "../components/ErrorState";
 import { MotionList } from "../components/MotionList";
 import { PageTransition } from "../components/PageTransition";
 import { RiskMeter } from "../components/RiskMeter";
@@ -42,7 +43,7 @@ export default function AlertsPage() {
   const [actionReason, setActionReason] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["alerts", { page, status: statusFilter }],
     queryFn: () =>
       listAlerts({
@@ -114,7 +115,19 @@ export default function AlertsPage() {
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold text-slate-100">Alertas</h1>
             <span className="text-xs text-slate-500">
-              {data?.total || 0} alertas
+              {/* A failed query must not read as "0 alertas": on a fraud
+                  alerting surface that is a hard false negative. The same
+                  applies while loading — `data?.total ?? 0` rendered a
+                  confident zero before the request had even resolved. */}
+              {isError ? (
+                <span className="text-risk-critical" data-testid="alerts-total-error">
+                  No disponible
+                </span>
+              ) : isLoading || !data ? (
+                <span data-testid="alerts-total-pending">&mdash;</span>
+              ) : (
+                <span data-testid="alerts-total">{data.total} alertas</span>
+              )}
             </span>
           </div>
 
@@ -150,6 +163,19 @@ export default function AlertsPage() {
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="h-24 bg-slate-800 animate-pulse rounded-lg" />
                 ))}
+              </div>
+            ) : isError ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-risk-critical/30 bg-slate-900"
+              >
+                <ErrorState
+                  icon={<AlertLineArt />}
+                  title="No se pudieron cargar las alertas"
+                  hint="Puede que las alertas no se estén mostrando. Reintentá la carga."
+                  onRetry={() => void refetch()}
+                  compact
+                />
               </div>
             ) : data?.items.length === 0 ? (
               <EmptyState
@@ -273,6 +299,23 @@ export default function AlertsPage() {
                       <tr>
                         <td colSpan={6} className="p-8 text-center text-slate-500">
                           Cargando...
+                        </td>
+                      </tr>
+                    ) : isError ? (
+                      <tr>
+                        <td colSpan={6}>
+                          <div
+                            role="alert"
+                            className="rounded-xl border border-risk-critical/30 bg-slate-900"
+                          >
+                            <ErrorState
+                              icon={<AlertLineArt />}
+                              title="No se pudieron cargar las alertas"
+                              hint="Puede que las alertas no se estén mostrando. Reintentá la carga."
+                              onRetry={() => void refetch()}
+                              compact
+                            />
+                          </div>
                         </td>
                       </tr>
                     ) : data?.items.length === 0 ? (

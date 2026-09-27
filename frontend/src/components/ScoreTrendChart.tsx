@@ -12,7 +12,8 @@ import { ChartTooltip } from "./ChartTooltip";
 
 interface DailyAverage {
   date: string;
-  avgScore: number;
+  /** null means "no transactions that day" — never 0, which reads as a real score. */
+  avgScore: number | null;
 }
 
 interface ScoreTrendChartProps {
@@ -20,7 +21,12 @@ interface ScoreTrendChartProps {
 }
 
 export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
-  if (data.length === 0) {
+  // "No data" means no day in the window had a score, not "every score was 0".
+  // Counting the nulls keeps a partially-populated window renderable while an
+  // empty one reaches the designed message below.
+  const hasData = data.some((d) => d.avgScore !== null);
+
+  if (!hasData) {
     return (
       <div className="bg-slate-900 rounded-lg p-4">
         <h3 className="text-sm font-semibold text-slate-300 mb-3">
@@ -84,6 +90,10 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
             strokeWidth={2.5}
             fill="url(#trend-fill)"
             dot={false}
+            // Break the line across days with no data instead of interpolating
+            // through a fabricated point. A zero here would render as a real
+            // "risk 0" measurement.
+            connectNulls={false}
             activeDot={{
               r: 4,
               strokeWidth: 2,
@@ -113,7 +123,9 @@ export function buildDailyAverages(
   const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
   for (const tx of transactions) {
-    if (!tx.risk_score) continue;
+    // `risk_score` of 0 is a legitimate score, so test for null explicitly —
+    // a falsy check dropped the safest transactions from the trend.
+    if (tx.risk_score === null || tx.risk_score === undefined) continue;
     const d = new Date(tx.created_at);
     if (d < cutoff) continue;
     const key = d.toISOString().slice(0, 10);
@@ -131,7 +143,9 @@ export function buildDailyAverages(
       const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
       result.push({ date: key, avgScore: Math.round(avg * 10) / 10 });
     } else {
-      result.push({ date: key, avgScore: 0 });
+      // A day without transactions is a gap, not a score of zero. Returning 0
+      // made a failed query render as a flat "risk 0" line with no error shown.
+      result.push({ date: key, avgScore: null });
     }
   }
 

@@ -20,28 +20,43 @@ interface ScoreHistogramProps {
   scores: number[];
 }
 
+// Contiguous half-open intervals [min, max). The previous definition used
+// inclusive bounds with a one-unit step (0-20, 21-40, ...), which silently
+// dropped every score in a float gap: 20.5, 40.5, 60.5 and 80.5 matched no
+// bucket, so the bars did not sum to the transaction count and nothing on the
+// chart contradicted the discrepancy.
 const BUCKETS = [
   { min: 0, max: 20, label: "0-20" },
-  { min: 21, max: 40, label: "21-40" },
-  { min: 41, max: 60, label: "41-60" },
-  { min: 61, max: 80, label: "61-80" },
-  { min: 81, max: 100, label: "81-100" },
+  { min: 20, max: 40, label: "20-40" },
+  { min: 40, max: 60, label: "40-60" },
+  { min: 60, max: 80, label: "60-80" },
+  { min: 80, max: 101, label: "80-100" },
 ];
 
-function getBucketColor(label: string): string {
-  // legitimate (clean) for low scores, review (warn) for mid, fraud (critical) for high
-  if (label === "0-20" || label === "21-40") return THEME.risk.clean;
-  if (label === "41-60" || label === "61-80") return THEME.risk.warn;
-  return THEME.risk.critical;
+/** Buckets are coloured by position so the palette cannot drift from the ranges. */
+const BUCKET_TONES: readonly string[] = [
+  THEME.risk.clean,
+  THEME.risk.clean,
+  THEME.risk.warn,
+  THEME.risk.warn,
+  THEME.risk.critical,
+];
+
+function getBucketColor(index: number): string {
+  return BUCKET_TONES[index] ?? THEME.risk.clean;
 }
 
-function buildBuckets(scores: number[]): HistogramBucket[] {
+export function buildBuckets(scores: number[]): HistogramBucket[] {
   const counts = new Array(BUCKETS.length).fill(0);
 
-  for (const score of scores) {
+  for (const raw of scores) {
+    if (!Number.isFinite(raw)) continue;
+    // Clamp into range so an out-of-contract value is still counted rather
+    // than dropped, and never falls through every bucket.
+    const score = Math.min(100, Math.max(0, raw));
     for (let i = 0; i < BUCKETS.length; i++) {
       const { min, max } = BUCKETS[i];
-      if (score >= min && score <= max) {
+      if (score >= min && score < max) {
         counts[i]++;
         break;
       }
@@ -51,7 +66,7 @@ function buildBuckets(scores: number[]): HistogramBucket[] {
   return BUCKETS.map((bucket, i) => ({
     range: bucket.label,
     count: counts[i],
-    color: getBucketColor(bucket.label),
+    color: getBucketColor(i),
   }));
 }
 

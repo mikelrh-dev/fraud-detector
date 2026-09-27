@@ -6,7 +6,7 @@ import { ClassificationBadge } from "../components/ClassificationBadge";
 import { MotionList } from "../components/MotionList";
 import { formatScore, isMLTrained } from "../lib/score";
 import type { RiskTone } from "../lib/risk";
-import { RISK_THRESHOLDS, riskTone } from "../lib/risk";
+import { RISK_THRESHOLDS } from "../lib/risk";
 import { classificationToTone } from "../components/RiskMeter";
 import {
   GAUGE_START_ANGLE_DEG,

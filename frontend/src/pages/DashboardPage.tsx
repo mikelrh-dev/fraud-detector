@@ -10,6 +10,7 @@ import TransactionTable from "../components/TransactionTable";
 import { MotionList } from "../components/MotionList";
 import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
+import { AlertLineArt, ErrorState } from "../components/ErrorState";
 import { useCountUp } from "../hooks/useCountUp";
 import type { Icon } from "@phosphor-icons/react";
 import { Bell, ChartBar, CreditCard, ShieldWarning } from "@phosphor-icons/react";
@@ -43,20 +44,35 @@ export default function DashboardPage() {
   >(undefined);
 
   // Metrics
-  const { data: metrics, isLoading: metricsLoading } = useQuery({
+  const {
+    data: metrics,
+    isLoading: metricsLoading,
+    isError: metricsError,
+    refetch: refetchMetrics,
+  } = useQuery({
     queryKey: ["dashboard-metrics"],
     queryFn: fetchDashboardMetrics,
     refetchInterval: 30_000,
   });
 
   // Recent transactions list (first page for histogram + trend)
-  const { data: recentData, isLoading: recentLoading } = useQuery({
+  const {
+    data: recentData,
+    isLoading: recentLoading,
+    isError: recentError,
+    refetch: refetchRecent,
+  } = useQuery({
     queryKey: ["transactions", { page: 1, page_size: 100 }],
     queryFn: () => listTransactions({ page: 1, page_size: 100 }),
   });
 
   // Filtered/sorted transactions
-  const { data: filteredData, isLoading: filteredLoading } = useQuery({
+  const {
+    data: filteredData,
+    isLoading: filteredLoading,
+    isError: filteredError,
+    refetch: refetchFiltered,
+  } = useQuery({
     queryKey: [
       "transactions",
       { page, page_size: RECENT_PAGE_SIZE, status: classificationFilter },
@@ -73,8 +89,13 @@ export default function DashboardPage() {
       }),
   });
 
-  // Build score histogram and trend from recent data
-  const allTransactions = recentData?.items || [];
+  // Build score histogram and trend from recent data.
+  // Memoised because `recentData?.items || []` allocates a new array on every
+  // render, which made both downstream useMemos recompute on every render.
+  const allTransactions = useMemo(
+    () => recentData?.items ?? [],
+    [recentData],
+  );
   const scores = useMemo(
     () =>
       allTransactions
@@ -121,6 +142,20 @@ export default function DashboardPage() {
       <main className="flex-1 overflow-auto p-6">
         <PageTransition>
           <div className="max-w-7xl mx-auto space-y-6">
+            {/* Failure banner — a failed metrics query used to render as four
+                permanent em-dashes, indistinguishable from genuinely zero. */}
+            {metricsError && (
+              <div className="rounded-lg border border-risk-critical/30 bg-risk-critical/5">
+                <ErrorState
+                  icon={<AlertLineArt />}
+                  title="No se pudieron cargar las métricas"
+                  hint="Los valores mostrados pueden estar incompletos. Reintentá la carga."
+                  onRetry={() => void refetchMetrics()}
+                  compact
+                />
+              </div>
+            )}
+
             {/* Metric cards */}
             <MotionList className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
@@ -174,6 +209,23 @@ export default function DashboardPage() {
                   className="pointer-events-none h-[200px] rounded-xl border border-slate-800 bg-slate-900 animate-shimmer"
                 />
               </>
+            ) : recentError ? (
+              // Previously this fell through to the charts with an empty
+              // dataset, which drew a flat line at zero: a failed request was
+              // rendered as "fraud risk is currently zero".
+              <div
+                role="alert"
+                data-testid="chart-error"
+                className="lg:col-span-2 rounded-xl border border-risk-critical/30 bg-slate-900"
+              >
+                <ErrorState
+                  icon={<AlertLineArt />}
+                  title="No se pudieron cargar los gráficos"
+                  hint="Sin estos datos no se puede evaluar la tendencia de riesgo."
+                  onRetry={() => void refetchRecent()}
+                  compact
+                />
+              </div>
             ) : (
               <>
                 <ScoreHistogram scores={scores} />
@@ -187,6 +239,24 @@ export default function DashboardPage() {
             <h2 className="text-sm font-semibold text-slate-300 mb-3">
               Últimas Transacciones
             </h2>
+            {filteredError && (
+              <div
+                role="alert"
+                data-testid="table-error"
+                className="mb-3 rounded-lg border border-risk-critical/30 bg-risk-critical/5 px-4 py-3"
+              >
+                <p className="text-sm text-slate-300">
+                  No se pudieron cargar las transacciones.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void refetchFiltered()}
+                  className="btn-motion active:scale-[0.98] mt-2 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
             <TransactionTable
               transactions={sortedTransactions}
               total={filteredData?.total || 0}
