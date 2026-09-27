@@ -52,15 +52,6 @@ class TestRuleEngineSingleRule:
         assert "unusual_merchant" in fired
         assert score == 20
 
-    def test_card_mismatch_rule_fires(self):
-        """Card_last4 not in known cards should fire card_mismatch (weight 20)."""
-        engine = RuleEngine()
-        tx = {"amount": 100, "card_last4": "9999"}
-        context = {"known_cards": ["1234", "5678"]}
-        score, fired = engine.evaluate(tx, context=context)
-        assert "card_mismatch" in fired
-        assert score == 20
-
     def test_unusual_hours_rule_fires(self):
         """Transaction between 00:00-06:00 should fire unusual_hours (weight 10)."""
         engine = RuleEngine()
@@ -77,16 +68,6 @@ class TestRuleEngineSingleRule:
         tx = {"amount": 100, "timestamp": "2024-01-15T06:00:00+00:00"}
         score, fired = engine.evaluate(tx)
         assert "unusual_hours" not in fired
-
-    def test_country_mismatch_rule_fires(self):
-        """Transaction country different from home should fire country_mismatch (weight 15)."""
-        engine = RuleEngine()
-        tx = {"amount": 100, "merchant_name": "Store", "country": "RU"}
-        context = {"home_country": "US"}
-        score, fired = engine.evaluate(tx, context=context)
-        assert "country_mismatch" in fired
-        assert score == 15
-
 
 class TestRuleEngineMerchantCategory:
     """unusual_merchant fires on risky merchant categories (RULE-MERCH-001..004).
@@ -227,12 +208,11 @@ class TestRuleEngineMultipleRules:
         score, fired = engine.evaluate(tx, context=context)
         assert "high_amount" in fired
         assert "unusual_merchant" in fired
-        assert "card_mismatch" in fired
         assert "unusual_hours" in fired
         assert "off_hours_crypto" in fired
-        # 25 (high_amount) + 20 (unusual_merchant) + 20 (card_mismatch)
-        # + 10 (unusual_hours) + 25 (off_hours_crypto) = 100 (capped)
-        assert score == 100
+        # 35 (high_amount) + 20 (unusual_merchant)
+        # + 10 (unusual_hours) + 25 (off_hours_crypto) = 90
+        assert score == 90
 
     def test_all_six_rules_fire_capped(self):
         """All rules firing should be capped at 100."""
@@ -240,6 +220,7 @@ class TestRuleEngineMultipleRules:
         tx = {
             "amount": 100000,
             "merchant_name": "Bad Shop",
+            "merchant_category": "cryptocurrency",
             "card_last4": "9999",
             "user_id": "user-1",
             "timestamp": "2024-01-15T03:00:00+00:00",
@@ -252,7 +233,7 @@ class TestRuleEngineMultipleRules:
             "home_country": "US",
         }
         score, fired = engine.evaluate(tx, context=context)
-        # Total possible: 30 + 25 + 20 + 20 + 10 + 15 = 120
+        # Total possible: 35 + 25 + 30 + 20 + 10 + 25 = 145 (capped at 100)
         assert len(fired) == 6
         assert score == 100  # capped
 

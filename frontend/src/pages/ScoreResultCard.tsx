@@ -7,6 +7,7 @@ import { MotionList } from "../components/MotionList";
 import { formatScore, isMLTrained } from "../lib/score";
 import type { RiskTone } from "../lib/risk";
 import { RISK_THRESHOLDS, riskTone } from "../lib/risk";
+import { classificationToTone } from "../components/RiskMeter";
 import {
   GAUGE_START_ANGLE_DEG,
   polarToPoint,
@@ -59,7 +60,7 @@ function ScoreGauge({
   classification: string;
 }) {
   const clamped = Math.min(Math.max(score, 0), 100);
-  const tone = riskTone(clamped);
+  const tone = classificationToTone(classification);
   const circumference = 2 * Math.PI * GAUGE_RADIUS;
   const arcLength = totalArcLength(GAUGE_RADIUS);
 

@@ -22,10 +22,8 @@ class RuleEngine:
         "high_velocity": 25,
         "velocity_burst": 30,
         "unusual_merchant": 20,
-        "card_mismatch": 20,
         "unusual_hours": 10,
         "off_hours_crypto": 25,
-        "country_mismatch": 15,
         "near_fraud": 15,  # Graph: user ≤2 hops from known fraudster
     }
 
@@ -74,18 +72,13 @@ class RuleEngine:
         if merchant in blacklist or category in MERCHANT_RISK_CATEGORIES:
             fired.append("unusual_merchant")
 
-        # 4. Card mismatch: card_last4 not in user's known cards
-        card_last4 = transaction.get("card_last4", "")
-        known_cards = ctx.get("known_cards") or []
-        if known_cards and card_last4 and card_last4 not in known_cards:
-            fired.append("card_mismatch")
-
-        # 5. Unusual hours: transaction between 00:00 and 06:00
+        # 4. Unusual hours: transaction between 00:00 and 06:00
         ts_str = transaction.get("timestamp")
         hour: int | None = None
         if ts_str:
             try:
-                dt = datetime.fromisoformat(ts_str)
+                # Python 3.10 fromisoformat doesn't accept 'Z' suffix
+                dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
                 hour = dt.hour
                 if 0 <= hour < 6:
                     fired.append("unusual_hours")
@@ -97,13 +90,7 @@ class RuleEngine:
         if hour is not None and 0 <= hour < 6 and category in MERCHANT_RISK_CATEGORIES:
             fired.append("off_hours_crypto")
 
-        # 6. Country mismatch: transaction country != home country
-        tx_country = transaction.get("country")
-        home_country = ctx.get("home_country")
-        if tx_country and home_country and tx_country != home_country:
-            fired.append("country_mismatch")
-
-        # 7. Near fraud: user or card is ≤2 hops from known fraudster (graph network)
+        # 6. Near fraud: user or card is ≤2 hops from known fraudster (graph network)
         graph_features = ctx.get("graph_features") or {}
         if graph_features.get("is_near_fraud"):
             fired.append("near_fraud")

@@ -11,11 +11,26 @@ const FILL_CLASSES: Record<RiskTone, string> = {
   critical: "bg-risk-critical",
 };
 
+/**
+ * Map backend classification to RiskTone.
+ * Backend uses dynamic thresholds; this is the canonical mapping.
+ */
+export function classificationToTone(
+  classification: string
+): RiskTone {
+  if (classification === "fraud") return "critical";
+  if (classification === "review") return "warn";
+  return "clean";
+}
+
 export interface RiskMeterProps {
   /** Risk score 0–100. Values outside the range are clamped.
    *  null/undefined renders nothing — never draw a fake 0-width bar next
    *  to an em-dash placeholder (honest-data rule). */
   value?: number | null;
+  /** Backend classification (legitimate/review/fraud). Takes precedence
+   *  over score-based tone when provided. */
+  classification?: string;
   /** Tailwind width utility for the track. Defaults to w-16. */
   widthClass?: string;
 }
@@ -25,10 +40,12 @@ export interface RiskMeterProps {
  * boundaries (45% / 60%). Single source for every score bar in the app —
  * replaces per-page inline-styled divs.
  */
-export function RiskMeter({ value, widthClass = "w-16" }: RiskMeterProps) {
+export function RiskMeter({ value, classification, widthClass = "w-16" }: RiskMeterProps) {
   if (value === null || value === undefined) return null;
   const clamped = Math.min(Math.max(value, 0), 100);
-  const tone = riskTone(clamped);
+  const tone = classification
+    ? classificationToTone(classification)
+    : riskTone(clamped);
   return (
     <div
       role="meter"

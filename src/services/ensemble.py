@@ -38,10 +38,25 @@ class EnsembleScorer:
             "ml": settings.ensemble_ml_weight,
             "context": settings.ensemble_context_weight,
         }
-        total = (
-            rule_score * w.get("rule", 0)
-            + ml_score * w.get("ml", 0)
-            + context_score * w.get("context", 0)
+
+        # Get active scores and their weights
+        scores = {
+            "rule": rule_score,
+            "ml": ml_score,
+            "context": context_score,
+        }
+
+        # Only include layers with non-zero weight
+        active_weights = {k: w.get(k, 0) for k in scores if w.get(k, 0) > 0}
+        total_weight = sum(active_weights.values())
+
+        if total_weight == 0:
+            return 0.0
+
+        # Normalize weights to sum to 1.0, then compute weighted average
+        total = sum(
+            scores[k] * (active_weights[k] / total_weight)
+            for k in active_weights
         )
         return min(max(total, 0.0), 100.0)
 

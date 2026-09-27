@@ -103,25 +103,21 @@ class FeatureEngine:
         # 5. Transaction count last 1 hour
         f_tx_1h = float(history.get("tx_count_last_1h", 0) or 0)
 
-        # 6. Hour of day
+        # 6. Hour of day + 7. Is weekend (parse once, derive both)
         ts_str = transaction.get("timestamp")
         hour = 0
-        if ts_str:
-            try:
-                dt = datetime.fromisoformat(str(ts_str))
-                hour = dt.hour
-            except (ValueError, TypeError):
-                hour = 0
-        f_hour = float(hour)
-
-        # 7. Is weekend
         is_weekend = 0.0
         if ts_str:
             try:
-                dt = datetime.fromisoformat(str(ts_str))
+                # Python 3.10 fromisoformat doesn't accept 'Z' suffix
+                dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+                hour = dt.hour
                 is_weekend = 1.0 if dt.weekday() >= 5 else 0.0
             except (ValueError, TypeError):
+                # On parse failure, use neutral defaults (not midnight)
+                hour = 12
                 is_weekend = 0.0
+        f_hour = float(hour)
 
         # 8. Merchant risk level (normalize aliases first)
         raw_category = (transaction.get("merchant_category") or "").lower()
