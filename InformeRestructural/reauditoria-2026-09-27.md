@@ -271,3 +271,76 @@ Los 3 ingredientes que faltan y que habrían atrapado **todos** los críticos:
 
 Y una cuarta, la más barata: un test que afirme que la variable de entorno de
 producción es la que el código realmente lee.
+
+---
+
+# REMEDIACIÓN — 5 waves, spec → build → verify
+
+Todo lo verificado con `ruff`, `mypy`, `pytest --cov-fail-under=80`, `tsc`,
+`eslint` y `vitest` en la frontera de cada wave. Ninguna wave avanzó sin pasar
+los gates.
+
+| Wave | Commits | Qué |
+|---|---|---|
+| W1 | `4db8533` | C1, A8, A9 |
+| W2 | `2b6b8c8` | C2, C3, A13 |
+| W3 | `f9899ab` | C4, C9, A20 |
+| W4 | `0dbc2a0` | C5, A29, + 2 errores de lint que rompían CI |
+| W5 | `a8d0f6d` | C8 (y el drift que el test destapó) |
+
+## Estado final
+
+```
+Backend   ruff ✅   mypy ✅ (64 files)   pytest 573 passed   coverage 86.07% (gate 80%)
+Frontend  eslint ✅ 0 errors   tsc ✅   vitest 181 passed   vite build ✅
+```
+
+**Tests añadidos: 78** (15 production-posture, 33 non-finite, 18 worker
+failure-path, 12 honest-data, 5 alerts-error) — todos sobre ramas que antes no
+tenían ninguna cobertura.
+
+## Críticos resueltos
+
+| # | Resuelto en | Cómo |
+|---|---|---|
+| C1 `API_ENV` muerta | W1 | Alias `ENVIRONMENT` + test que prueba que el guard dispara por **ambos** nombres |
+| C2 NaN → `legitimate` | W2 | `combine()` y `classify()` fallan cerrados; productor (`recent_transactions`) arreglado en origen |
+| C3 `amount=inf` aceptado | W2 | `le` + `allow_inf_nan=False`; `get_threshold` no elige tier por accidente |
+| C4 `UnboundLocalError` | W3 | `message_data` ligado antes del `try`; JSON no-dict coercionado |
+| C5 fallo de API = riesgo 0 | W4 | `isError` en las 3 queries del dashboard y en alertas; `ErrorState` compartido |
+| C8 autogenerate destructivo | W5 | Modelo registrado + **test de drift de migraciones** |
+
+## Lo que el test de drift destapó al escribirlo
+
+Escribí `test_migration_drift.py` esperando que pasara. Falló inmediatamente:
+**7 índices de performance y `uq_llm_reports_transaction_id` existían solo en
+las migraciones**, así que `autogenerate` habría emitido `drop_constraint` sobre
+justo la constraint de la que depende la idempotencia del worker LLM (C9). Eso
+no lo había detectado nadie porque el test anterior comparaba el conjunto
+derivado consigo mismo.
+
+## Un defecto que-metí-y-corregí
+
+Al delegar `_process_message_with_retry` en `_process_message_safe` (para matar
+el `except` que se tragaba todo), **rompí temporalmente la ruta de reintento**:
+`_process_message_safe` no tenía rama para `success=False`, así que el mensaje
+quedaba sin ACK **y** sin requeue. Lo detectó un test que ya existía
+(`test_recovery_loop_reroutes_failing_to_dlq`). La lección: delegar para
+eliminar duplicación también cambia comportamiento, y el test existente fue el
+que me detuvo.
+
+## Pendiente (no tocado, por decisión)
+
+- **C6/C7** (embedding-worker no arranca, `allkeys-lru` evicta las colas) —
+  requieren tocar `requirements.txt` y `docker-compose.yml`; C6 necesita
+  desinstalar el shim de `sentence_transformers` en `tests/workers/conftest.py`,
+  lo que hará fallar la suite hasta reinstalar la dependencia.
+- **A1–A3** (token path sin BD, rotación TOCTOU, bypass de rate limit) —
+  cambios de diseño en el flujo de auth, no parches.
+- **A10/A11** (el ensemble no alcanza `fraud` bajo $1000; umbrales que bajan con
+  el monto) — requieren **recalibrar el modelo**, y eso cambia scores en
+  producción. Decisión de negocio, no mía.
+- **V-01 a V-25** (visuales) — 4 mapas de color ya divergidos, `pending` verde,
+  moneda inconsistente, tabla solo-ratón. Son cambios de bajo riesgo y sin
+  efecto en el backend; el mejor siguiente paso es V-01/V-02/V-04, que son los
+  que más erosionan la confianza del usuario.
