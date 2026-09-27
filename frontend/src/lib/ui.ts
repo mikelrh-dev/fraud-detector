@@ -45,7 +45,7 @@ export const BTN_VARIANTS = {
   primary: "bg-accent text-white hover:bg-action-hover",
   secondary: "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700",
   ghost: "text-slate-300 hover:bg-slate-800",
-  danger: "bg-risk-critical text-white hover:bg-red-500",
+  danger: "bg-risk-critical text-white hover:bg-risk-critical-hover",
 } as const;
 
 export const BTN_SIZES = {

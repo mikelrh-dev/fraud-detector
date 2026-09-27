@@ -7,6 +7,11 @@
   --color-risk-clean: #22c55e;    /* = green-500 */
   --color-risk-warn: #f59e0b;     /* = amber-500 */
   --color-risk-critical: #ef4444; /* = red-500 */
+  /* One step darker than the tone itself, so a destructive control has a
+     visible hover. Previously this was `hover:bg-red-500`, which is the same
+     value as risk-critical — the hover rendered and changed nothing.
+     Deliberately NOT action-hover: risk and accent are separate families. */
+  --color-risk-critical-hover: #dc2626; /* = red-600 */
 
   --color-fraud-legitimate: #22c55e;
   --color-fraud-review: #f59e0b;
