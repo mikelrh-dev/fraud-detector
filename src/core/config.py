@@ -41,14 +41,14 @@ class Settings(BaseSettings):
 
     # Database
     db_user: str = "fraud"
-    # pi-lens-ignore: S105
-    db_password: str = "fraud_secret"
+    db_password: str  # No default — must be injected via env (security)
     db_name: str = "fraud_detector"
     db_host: str = "localhost"
     db_port: int = 5432
 
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_password: str = "fraud_redis_secret"
+    redis_url: str = "redis://:fraud_redis_secret@localhost:6379/0"
 
     # Ollama
     ollama_host: str = "http://localhost:11434"
@@ -66,23 +66,23 @@ class Settings(BaseSettings):
     ensemble_ml_weight: float = 0.25
     ensemble_context_weight: float = 0.15
 
-    # Threshold Tiers
+    # Threshold Tiers (half-open intervals [min, max) to avoid boundary gaps)
     threshold_tiers: list[dict] = [
-        {"min_amount": 0, "max_amount": 1000, "threshold": 70, "label": "low"},
+        {"min_amount": 0, "max_amount": 1000.01, "threshold": 70, "label": "low"},
         {
-            "min_amount": 1001,
-            "max_amount": 10000,
+            "min_amount": 1000.01,
+            "max_amount": 10000.01,
             "threshold": 50,
             "label": "medium",
-        },  # Lowered from 60
+        },
         {
-            "min_amount": 10001,
-            "max_amount": 50000,
+            "min_amount": 10000.01,
+            "max_amount": 50000.01,
             "threshold": 45,
             "label": "high",
-        },  # Lowered from 50 for consistency
+        },
         {
-            "min_amount": 50001,
+            "min_amount": 50000.01,
             "max_amount": math.inf,
             "threshold": 40,
             "label": "critical",

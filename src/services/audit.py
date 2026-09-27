@@ -130,12 +130,16 @@ class AuditService:
         self,
         db: Any,
         transaction_id: Any,
+        offset: int = 0,
+        limit: int = 100,
     ) -> list[Any]:
-        """Retrieve all audit entries for a specific transaction.
+        """Retrieve audit entries for a specific transaction.
 
         Args:
             db: Async database session.
             transaction_id: Transaction UUID to filter by.
+            offset: Number of entries to skip (for pagination).
+            limit: Maximum number of entries to return.
 
         Returns:
             List of AuditEntry instances in chronological order.
@@ -144,6 +148,8 @@ class AuditService:
             select(AuditEntry)
             .where(AuditEntry.transaction_id == transaction_id)
             .order_by(AuditEntry.created_at.asc())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all())
 
@@ -151,12 +157,16 @@ class AuditService:
         self,
         db: Any,
         user_id: Any,
+        offset: int = 0,
+        limit: int = 100,
     ) -> list[Any]:
-        """Retrieve all audit entries for a specific analyst.
+        """Retrieve audit entries for a specific analyst.
 
         Args:
             db: Async database session.
             user_id: User UUID to filter by.
+            offset: Number of entries to skip (for pagination).
+            limit: Maximum number of entries to return.
 
         Returns:
             List of AuditEntry instances in chronological order.
@@ -165,6 +175,8 @@ class AuditService:
             select(AuditEntry)
             .where(AuditEntry.user_id == user_id)
             .order_by(AuditEntry.created_at.asc())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all())
 
@@ -173,6 +185,8 @@ class AuditService:
         db: Any,
         start_date: datetime,
         end_date: datetime,
+        offset: int = 0,
+        limit: int = 100,
     ) -> list[Any]:
         """Export audit entries within a date range.
 
@@ -180,6 +194,8 @@ class AuditService:
             db: Async database session.
             start_date: Start of date range (inclusive).
             end_date: End of date range (inclusive).
+            offset: Number of entries to skip (for pagination).
+            limit: Maximum number of entries to return.
 
         Returns:
             List of AuditEntry instances in the date range.
@@ -189,5 +205,7 @@ class AuditService:
             .where(AuditEntry.created_at >= start_date)
             .where(AuditEntry.created_at <= end_date)
             .order_by(AuditEntry.created_at.asc())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all())

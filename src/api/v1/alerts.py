@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
@@ -83,7 +83,7 @@ async def list_alerts_endpoint(
         )
         query = query.where(FraudAlert.transaction_id.in_(own_txns))
 
-    count_query = select(FraudAlert.id)
+    count_query = select(func.count()).select_from(FraudAlert)
     if status_filter:
         count_query = count_query.where(FraudAlert.status == status_filter)
     if date_from:
@@ -97,8 +97,7 @@ async def list_alerts_endpoint(
         )
         count_query = count_query.where(FraudAlert.transaction_id.in_(own_txns_count))
 
-    total_result = await db.execute(count_query)
-    total = len(total_result.all())
+    total = (await db.execute(count_query)).scalar_one()
 
     query = query.order_by(FraudAlert.created_at.desc()).offset(skip).limit(page_size)
     result = await db.execute(query)

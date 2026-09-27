@@ -91,9 +91,14 @@ def _to_float(value: object) -> float:
 
 
 def _determine_friction_level(
-    score: float, classification: str
+    score: float, classification: str, threshold: float
 ) -> tuple[str, str | None]:
     """Determine dynamic friction level and action based on risk score and classification.
+
+    Args:
+        score: Ensemble risk score (0-100).
+        classification: Fraud classification string.
+        threshold: Dynamic threshold for the transaction's amount tier.
 
     Returns:
         (friction_level, action) tuple where:
@@ -106,12 +111,12 @@ def _determine_friction_level(
 
     if classification == "review":
         # Grey zone: challenge user
-        # In production, this would be configurable (3D Secure, SMS, biometric)
-        if score >= 60:
-            # Higher risk in review zone: require stronger authentication
+        # Use the midpoint of the review band [threshold*0.75, threshold]
+        # to decide between stronger (3D Secure) and lighter (SMS) friction.
+        review_midpoint = threshold * 0.875
+        if score >= review_midpoint:
             return "challenge", "request_3d_secure"
         else:
-            # Lower risk in review zone: SMS is sufficient
             return "challenge", "request_sms"
 
     # Legitimate: no friction
@@ -376,7 +381,7 @@ async def create_and_score_transaction(
         logger.exception("Failed to publish embedding event")
 
     # 13. Determine dynamic friction level based on score and classification
-    friction_level, action = _determine_friction_level(ensemble_score, classification)
+    friction_level, action = _determine_friction_level(ensemble_score, classification, threshold)
 
     return ScoreResponse(
         transaction_id=txn.id,
@@ -446,6 +451,8 @@ async def list_transactions_endpoint(
 
     total = (await db.execute(count_query)).scalar_one()
 
+    # Stable ordering: created_at DESC with id DESC as tiebreaker
+    query = query.order_by(Transaction.created_at.desc(), Transaction.id.desc())
     query = query.offset(skip).limit(page_size)
     result = await db.execute(query)
     transactions = list(result.scalars().all())

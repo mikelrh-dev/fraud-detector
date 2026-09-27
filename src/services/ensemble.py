@@ -50,12 +50,14 @@ class EnsembleScorer:
 
         Uses the configured threshold tiers:
             - Low: $0-1000 → 70
-            - Medium: $1001-10000 → 60
-            - High: $10001-50000 → 50
+            - Medium: $1000.01-10000 → 50
+            - High: $10000.01-50000 → 45
             - Critical: > $50000 → 40
+
+        Uses half-open intervals [min, max) to avoid gaps at boundaries.
         """
         for tier in settings.threshold_tiers:
-            if tier["min_amount"] <= amount <= tier["max_amount"]:
+            if tier["min_amount"] <= amount < tier["max_amount"]:
                 return float(tier["threshold"])
         return 70.0  # default low tier
 

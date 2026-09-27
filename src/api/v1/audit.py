@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,10 +25,12 @@ _audit_service = AuditService()
 @router.get("/transactions/{transaction_id}", response_model=AuditListResponse)
 async def get_transaction_audit_trail(
     transaction_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> AuditListResponse:
-    """Get the complete audit trail for a specific transaction.
+    """Get the audit trail for a specific transaction.
 
     Non-admin users can only access audit trails for their own transactions.
     """
@@ -51,9 +53,12 @@ async def get_transaction_audit_trail(
             detail="Access denied: not your transaction",
         )
 
+    offset = (page - 1) * page_size
     entries = await _audit_service.get_entries_for_transaction(
         db=db,
         transaction_id=transaction_id,
+        offset=offset,
+        limit=page_size,
     )
     items = [
         AuditEntryResponse(
@@ -75,13 +80,18 @@ async def get_transaction_audit_trail(
 @router.get("/analysts/{user_id}", response_model=AuditListResponse)
 async def get_analyst_activity(
     user_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_role("admin")),
 ) -> AuditListResponse:
-    """Get all audit entries for a specific analyst (admin only)."""
+    """Get audit entries for a specific analyst (admin only)."""
+    offset = (page - 1) * page_size
     entries = await _audit_service.get_entries_for_analyst(
         db=db,
         user_id=user_id,
+        offset=offset,
+        limit=page_size,
     )
     items = [
         AuditEntryResponse(
@@ -103,14 +113,19 @@ async def get_analyst_activity(
 @router.post("/export", response_model=AuditExportResponse)
 async def export_audit_trail(
     payload: AuditExportRequest,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_role("admin")),
 ) -> AuditExportResponse:
     """Export audit entries within a date range (admin only)."""
+    offset = (page - 1) * page_size
     entries = await _audit_service.export(
         db=db,
         start_date=payload.start_date,
         end_date=payload.end_date,
+        offset=offset,
+        limit=page_size,
     )
     items = [
         AuditEntryResponse(
