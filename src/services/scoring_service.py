@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from src.core.counters import degraded_ml_layer
 from src.services.ensemble import EnsembleScorer
 from src.services.feature_engine import FeatureEngine
 from src.services.ml_model import MLModelService
@@ -53,6 +54,10 @@ class ScoringResult:
     threshold: float = 0.0
     ensemble_score: float = 0.0
     classification: str = "legitimate"
+    # A15: which layers actually contributed to this score. Recorded so a score
+    # computed with a missing layer is distinguishable from a full one after the
+    # fact, instead of being a number that is quietly 25 points low.
+    layers_used: tuple[str, ...] = ("rule", "ml", "context")
 
 
 class ScoringService:
@@ -97,12 +102,31 @@ class ScoringService:
         never prevent the scoring result from being returned.
         """
         # CPU-bound: rule engine + feature engine + ML predict
-        def _compute() -> tuple[float, list[str], np.ndarray, float]:
+        def _compute() -> tuple[float, list[str], np.ndarray, float | None]:
             rule_score, fired_rules = self.rule_engine.evaluate(tx_data, context)
             features = self.feature_engine.transform(tx_data, user_history=user_history)
+
+            # A15: a layer with no signal must be reported as None, not 0.0.
+            # When the model is not loaded, `predict` returns 0.0, which is
+            # indistinguishable from "the model ran and this looks legitimate".
+            # Passing 0.0 through consumed the ML layer's 0.25 weight anyway, so
+            # every score lost 25 points with the model down — silently, and
+            # worst exactly when the system was already degraded. None tells
+            # the ensemble to redistribute that weight to the layers that did
+            # produce a value.
+            if not self.ml_service.is_available:
+                logger.warning(
+                    "ML model not loaded — reporting the ML layer as absent so "
+                    "its weight is redistributed instead of lost"
+                )
+                return rule_score, fired_rules, features, None
+
             try:
                 ml_score = _to_float(self.ml_service.predict(features))
             except ValueError as exc:
+                # A shape mismatch is a real failure of a layer that *is*
+                # present, so it is not "no signal": keep the weight and report
+                # the zero, and let the operator see the warning.
                 logger.warning("Feature shape mismatch in ML predict — returning 0.0: %s", exc)
                 ml_score = 0.0
             return rule_score, fired_rules, features, ml_score
@@ -127,13 +151,30 @@ class ScoringService:
         )
         classification = self.ensemble_scorer.classify(ensemble_score, threshold)
 
+        # A15: the ML layer is absent from the arithmetic but its stored value
+        # stays a float, because FraudScore.ml_score is a non-nullable column
+        # and turning this into None would mean a migration. The gap between the
+        # two is recorded in `layers_used` instead of being invisible.
+        persisted_ml_score = ml_score if ml_score is not None else 0.0
+        layers_used = tuple(
+            name
+            for name, value in (
+                ("rule", rule_score),
+                ("ml", ml_score),
+                ("context", context_score),
+            )
+            if value is not None
+        )
+        if ml_score is None:
+            degraded_ml_layer.inc()
+
         # ML4: model run tracking (awaited, not fire-and-forget)
         if monitoring_service is not None and db is not None:
             try:
                 await self._track_model_run(
                     monitoring_service, db,
                     rule_score=rule_score,
-                    ml_score=ml_score,
+                    ml_score=persisted_ml_score,
                     ensemble_score=ensemble_score,
                     classification=classification,
                 )
@@ -144,10 +185,11 @@ class ScoringService:
             rule_score=rule_score,
             fired_rules=list(fired_rules),
             features=features,
-            ml_score=ml_score,
+            ml_score=persisted_ml_score,
             threshold=threshold,
             ensemble_score=ensemble_score,
             classification=classification,
+            layers_used=layers_used,
         )
 
     @staticmethod

@@ -64,3 +64,10 @@ class _CounterHandle:
 #: model file, explainer init failure). All three are environmental
 #: misconfigurations, not per-transaction errors.
 shap_skipped_unavailable = _CounterHandle("shap_skipped_unavailable")
+
+#: A15: transactions scored while the ML layer was absent, so the ensemble
+#: redistributed its weight. These scores are systematically different from
+#: full-pipeline scores, and nothing downstream could previously tell them
+#: apart: `FraudScore.ml_score` is a non-nullable column, so a missing layer was
+#: stored as a plain 0.0 and looked like a model that ran and found nothing.
+degraded_ml_layer = _CounterHandle("degraded_ml_layer")
