@@ -17,27 +17,17 @@
 /**
  * Merge class fragments, dropping falsy entries.
  *
- * Accepts nested fragments and maps because callers hold objects: variant and
- * size maps are objects of strings, so `cn(BTN_VARIANTS[variant])` has to type
- * check or every call site drifts back to a hand-rolled join.
+ * DELIBERATELY does not accept a map of fragments. `BTN_VARIANTS` structurally
+ * satisfies `{ [k: string]: string }`, so a map-accepting signature would let
+ * `cn(BTN_VARIANTS)` compile — and that emits every variant at once, several
+ * conflicting `bg-*` and `text-*` utilities that Tailwind resolves by
+ * stylesheet order rather than attribute order. The button would render
+ * arbitrarily. Index first (`cn(BTN_VARIANTS[variant])`), which passes a plain
+ * string. `cn.test.ts` pins this with `@ts-expect-error`.
  */
-type ClassValue =
-  | string
-  | false
-  | null
-  | undefined
-  | readonly string[]
-  | Readonly<Record<string, string | false | undefined>>;
+type ClassValue = string | false | null | undefined | readonly ClassValue[];
 export const cn = (...parts: ClassValue[]): string =>
-  parts
-    .flatMap((p) => {
-      if (!p) return [];
-      if (typeof p === "string") return [p];
-      if (Array.isArray(p)) return [...p];
-      return Object.values(p).map((v) => v ?? "");
-    })
-    .filter((p) => Boolean(p))
-    .join(" ");
+  parts.flat(1).filter((p): p is string => Boolean(p)).join(" ");
 
 // --- tables ---
 

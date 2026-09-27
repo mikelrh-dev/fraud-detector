@@ -30,7 +30,13 @@ const EXPECTED_VARIANTS: readonly ButtonVariant[] = [
 ];
 const EXPECTED_SIZES: readonly ButtonSize[] = ["sm", "md"];
 
-const RAW_CHROME_PALETTE = /\b(red|rose|green|amber|emerald)-\d/;
+// Raw risk/accent hues. `orange` is in the list because it sits between red-500
+// and amber-500 and is the closest hue to `--color-risk-warn` (#f59e0b);
+// leaving it out would be a hole in exactly the concern this guards.
+// `slate` is deliberately NOT here: neutral surface chrome legitimately uses
+// the slate palette across this codebase, and minting slate tokens is a
+// separate change with a much wider blast radius.
+const RAW_CHROME_PALETTE = /\b(red|rose|green|amber|orange|lime|teal|emerald)-\d/;
 
 describe("ui class constants", () => {
   it("focus ring uses focus-visible, never focus:", () => {
@@ -87,8 +93,7 @@ describe("ui class constants", () => {
     }
   });
 
-  it("no variant's hover fires while the button is disabled", () => {
-    // `BTN_BASE` sets `disabled:opacity-50`, so a disabled control is visibly
+  it("no variant's hover fires while the button is disabled", () => {    // `BTN_BASE` sets `disabled:opacity-50`, so a disabled control is visibly
     // inert — but a bare `hover:` still swapped its background under the
     // cursor, which reads as "pressable". `enabled:hover:` gates it to the
     // enabled state only.
@@ -245,13 +250,30 @@ describe("cn", () => {
     expect(cn("a", "")).toBe("a");
   });
 
-  it("flattens nested fragments", () => {
-    // Variant maps are objects of strings, so a caller holding a map needs to
-    // be able to spread it in. A signature that only took `string` made
-    // `cn(BTN_VARIANTS[variant])` a type error and pushed every call site
-    // toward a hand-rolled `[...].filter().join()`.
-    expect(cn("a", { b: "x", c: "y" })).toBe("a x y");
+  it("accepts an array of fragments, including conditionals", () => {
+    // The conditional-array idiom is the reason a join helper exists at all.
+    // `[a, cond && b].filter(Boolean).join(" ")` hand-rolled per call site is
+    // where an unguarded separator leaks in as a stray double space.
     expect(cn(["a", "b"], "c")).toBe("a b c");
-    expect(cn("a", { b: false, c: "y" })).toBe("a y");
+    expect(cn(["a", false, "b"])).toBe("a b");
+    expect(cn(["a", null, "b"])).toBe("a b");
+    expect(cn(["a", undefined, "b"])).toBe("a b");
+    expect(cn(["a", false && "b", "c"])).toBe("a c");
+  });
+
+  it("refuses a whole variant or size map at compile time", () => {
+    // `cn` deliberately does NOT accept an object of fragments. `BTN_VARIANTS`
+    // structurally satisfies `{ [k: string]: string }`, so a map-accepting
+    // signature would let `cn(BTN_VARIANTS)` compile — and that emits every
+    // variant at once: 3 conflicting `bg-*` and 4 conflicting `text-*`
+    // utilities, which Tailwind resolves by STYLESHEET order rather than
+    // attribute order, so the button would render arbitrarily.
+    //
+    // Indexing first, `cn(BTN_VARIANTS[variant])`, is the intended form and
+    // passes a plain string. Asserted at runtime; the compile-time half is
+    // `@ts-expect-error` below, which fails the build if cn ever widens again.
+    expect(cn(BTN_VARIANTS.primary, BTN_SIZES.md)).toBeTruthy();
+    // @ts-expect-error cn must not accept a map — see above
+    cn(BTN_VARIANTS);
   });
 });
