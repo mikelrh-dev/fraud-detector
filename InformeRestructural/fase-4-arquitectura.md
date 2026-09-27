@@ -214,6 +214,20 @@ Total: 36 passed, 0 failed
 
 ---
 
+### M3: Sin Documentación de Deployment
+
+**Problema:** No había documentación de deployment.
+
+**Cambio:**
+- `docs/deployment.md`: Guía completa de deployment con Docker Compose, health checks, troubleshooting, rollback y monitoreo
+
+**Efecto práctico:**
+- Onboarding más rápido para ops
+- Troubleshooting documentado
+- Health checks documentados
+
+---
+
 ### M4: Sin Rate Limiting en Monitoring Endpoints
 
 **Problema:** Los endpoints de monitoring no tenían rate limiting.
@@ -230,4 +244,3 @@ Total: 36 passed, 0 failed
 ## Pendiente de la Fase 4
 
 - Conectar el graph service con Redis en el endpoint de transacciones (C2 parcialmente implementado)
-- M3: Sin documentación de deployment
