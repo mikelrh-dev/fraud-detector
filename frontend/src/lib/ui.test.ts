@@ -233,7 +233,13 @@ describe("cn", () => {
     expect(cn("a", false, "b")).toBe("a b");
     expect(cn("a", null, "b")).toBe("a b");
     expect(cn("a", undefined, "b")).toBe("a b");
-    expect(cn("a", false && "b", null, undefined, "")).toBe("a");
+    // A real condition in both states, so this exercises the same runtime path
+    // a caller hits with `cond && "class"` — not a constant literal, which the
+    // linter rightly flags as a tautology and which proves nothing.
+    let cond = true;
+    expect(cn("a", cond && "b")).toBe("a b");
+    cond = false;
+    expect(cn("a", cond && "b")).toBe("a");
   });
 
   it("returns an empty string for no input", () => {
@@ -258,7 +264,10 @@ describe("cn", () => {
     expect(cn(["a", false, "b"])).toBe("a b");
     expect(cn(["a", null, "b"])).toBe("a b");
     expect(cn(["a", undefined, "b"])).toBe("a b");
-    expect(cn(["a", false && "b", "c"])).toBe("a c");
+    let cond = true;
+    expect(cn(["a", cond && "b", "c"])).toBe("a b c");
+    cond = false;
+    expect(cn(["a", cond && "b", "c"])).toBe("a c");
   });
 
   it("refuses a whole variant or size map at compile time", () => {

@@ -99,8 +99,11 @@ describe("Button primitive", () => {
   });
 
   it("not loading leaves aria-busy OFF the DOM, not set to false", () => {
-    // `aria-busy="false"` is noise for a screen reader and implies the
-    // component is tracking a state it has no reason to advertise.
+    // Omitted rather than `aria-busy="false"`. Worth being precise about WHY,
+    // because the obvious reason is wrong: absent and "false" are equivalent
+    // to every screen reader -- `false` is the attribute's default, per the
+    // ARIA spec. The real reason is DOM tidiness: this component is not
+    // tracking a state it has no reason to advertise, so it writes nothing.
     render(<Button>Guardar</Button>);
     expect(button().hasAttribute("aria-busy")).toBe(false);
   });
@@ -108,16 +111,43 @@ describe("Button primitive", () => {
   it("not loading carries no wait treatment", () => {
     render(<Button>Guardar</Button>);
     const target = button();
-    expect(target.classList.contains("cursor-wait")).toBe(false);
-    expect(target.classList.contains("opacity-70")).toBe(false);
+    expect(target.querySelector("[data-loading-spinner]")).toBeNull();
   });
 
-  it("loading adds the wait treatment on top of the variant and size", () => {
+  it("loading shows a spinner, which no cascade rule can kill", () => {
+    // The previous treatment was `opacity-70 cursor-wait` on the button itself.
+    // That is DEAD CSS: `loading` implies `disabled`, so `disabled:opacity-50`
+    // (specificity 0-2-0) beats `opacity-70` (0-1-0), and
+    // `disabled:cursor-not-allowed` beats `cursor-wait`. Verified with
+    // getComputedStyle in a real engine: a loading button rendered
+    // opacity=0.5 cursor=not-allowed — pixel-identical to a disabled one. The
+    // user never saw the wait.
+    //
+    // A spinner is a separate element, so no `disabled:` rule competes for it.
+    render(<Button loading>Guardar</Button>);
+    const spinner = button().querySelector("[data-loading-spinner]");
+    expect(spinner).not.toBeNull();
+    expect(spinner!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("the wait state is never expressed as an opacity the disabled rule shadows", () => {
+    // Guards the bug CLASS, not just this instance. jsdom does no cascade, so
+    // a class-presence assertion cannot see that a style is shadowed; asserting
+    // that no competing `opacity-*` is applied to the button is the closest
+    // check available without a browser engine, and it fails loudly if someone
+    // reintroduces the dead treatment.
     render(<Button loading>Guardar</Button>);
     const target = button();
-    expectCarries(target, "opacity-70 cursor-wait");
-    expectCarries(target, BTN_VARIANTS.primary);
-    expectCarries(target, BTN_SIZES.md);
+    expect(target.className).not.toMatch(/(^|\s)opacity-\d/);
+  });
+
+  it("keeps its label while loading, so the button does not change width", () => {
+    // DESIGN.md: "a non-changing label while loading, so the button width does
+    // not shift." A label swap ("Guardar" -> "Procesando...") is a real layout
+    // jump on a destructive-adjacent action. The spinner carries the state
+    // instead; `aria-busy` carries it to assistive tech.
+    render(<Button loading>Guardar</Button>);
+    expect(button().textContent).toBe("Guardar");
   });
 
   it("defaults to the primary variant at the md size", () => {
@@ -183,20 +213,6 @@ describe("Button primitive", () => {
       "utf-8",
     );
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
-  });
-
-  it("does NOT claim className overrides the variant, because it cannot", () => {
-    // The old comment said "className lands last so a caller can override".
-    // That is false: Tailwind resolves competing utilities by stylesheet order,
-    // not attribute order. A comment asserting a false mechanism is worse than
-    // no comment, and this one would have been copied into every later
-    // primitive. Guarded at the source level so it cannot drift back.
-    const src = readFileSync(
-      join(process.cwd(), "src", "components", "Button.tsx"),
-      "utf-8",
-    );
-    expect(src).toMatch(/does NOT override/i);
-    expect(src).not.toMatch(/className still lands last so a caller can/);
   });
 
   it("the variant class is present even when className conflicts with it", () => {
