@@ -393,10 +393,10 @@ tabla es la fuente de verdad.
 
 | Estado | Hallazgos |
 |---|---|
-| **Resuelto** | A1, A2, A3, A4, A5, A6, A7, A12, A14, A15, A16, A17, A18, A21, A22, A23, A24, A25, A26, A28, A30, A31 |
+| **Resuelto** | A1, A2, A3, A4, A5, A6, A7, A12, A14, A15, A16, A17, A18, A19, A21, A22, A23, A24, A25, A26, A28, A30, A31 |
 | **Ya estaba resuelto antes** | A8 (`4db8533`), A9 (W1), A20 (W3), A29 / V-03 (W4) |
 | **Verificado y NO es un defecto** | A13 (contenido por tres capas: sanitizador en `feature_engine.py:153`, fail-closed en `ensemble.py:65`, y el único caller pasa floats validados por pydantic) |
-| **Pendiente, requiere decisión de diseño** | A19 (outbox), A27 (cookies httpOnly + CSRF) |
+| **Pendiente, requiere decisión de diseño** | A27 (cookies httpOnly + CSRF) |
 | **Diferido por decisión de negocio** | A10, A11 (recalibrar el ensemble: cambia scores en producción) |
 | **Diferido por impacto** | C6, C7 |
 
@@ -476,12 +476,15 @@ Gates tras el loop: `ruff check src` limpio, `mypy` limpio en 64 ficheros,
      los navegadores rechazan para requests con credenciales. Habría que pasar a
      una lista explícita de orígenes.
   Además choca con A28: el interceptor lee el token del storage.
-- **A19 (outbox)** — los tres `publish_event` son fire-and-forget. Cerrar el hueco
-  de pérdida pide una tabla outbox en la misma sesión y un relay que la drene a
-  los tres streams. Además cierra una condición de carrera que el verificador
-  encontró: los eventos se publican **antes** del commit real (que ocurre en el
-  teardown de `get_db`) y las tablas consumidoras tienen FK a `transactions.id`,
-  así que un worker que recoge el mensaje en esa ventana falla con violación de FK.
+
+### Cerrado en el último loop
+
+**A19 (outbox)** — resuelto en `aa76dc8`. Cada evento es ahora una fila en
+`outbox_events` escrita en la misma sesión que la transacción, así que commitea
+atómicamente con ella; un relay en el proceso de la API la publica después y
+borra al publicar. El camino de la petición ya **no abre conexión a Redis**, así
+que no queda modo de fallo que defender. También cierra la carrera pre-commit con
+la FK que el verificador encontró.
 
 ### Diferido por decisión de negocio
 
@@ -514,3 +517,18 @@ Gates tras el loop: `ruff check src` limpio, `mypy` limpio en 64 ficheros,
   `CreateTransactionPage` afirmaba que el input oculto `user_id` debía existir.
   Los cuatro se invirtieron. Un test que pasa con y sin el defecto no es una red,
   es decoración.
+- **Escribir el codigo correcto no significa escribir el codigo correcto.** El
+  relay del outbox, en mi primera versión, capturaba el `TimeoutError` builtin.
+  En Python 3.10 `asyncio.TimeoutError` es **otra clase**, así que el timeout
+  se propagaba fuera del bucle y el relay moría tras **una** iteración. Para un
+  outbox ese es el peor síntoma posible: un solo blip paraba toda la entrega de
+  eventos, en silencio, hasta el siguiente deploy. Lo cazó un test que exigía
+  que el relay sobreviviera a un fallo — y la clase de bug es exactamente la
+  razón por la que ese test existe.
+- **Un mock no puede verificar SQL.** El filtro `attempts < MAX` y el `LIMIT` de
+  lote son cláusulas de base de datos. Dos intentos de comprobarlos con una
+  sesión mockeada "pasaron" sin demostrar nada, porque un mock devuelve las filas
+  que le des sin mirar el `WHERE` ni el `LIMIT`. Esos cuatro tests corren contra
+  SQLite real. Un test verde sobre un mock que no puede fallar es peor que no
+  tener test: da confianza falsa.
+
