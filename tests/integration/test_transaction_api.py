@@ -623,9 +623,12 @@ class TestCreateTransactionShapEnqueue:
             "classify",
             lambda score, threshold: classification,
         )
-        publish_mock = AsyncMock()
-        monkeypatch.setattr(transactions_api, "publish_event", publish_mock)
-        return publish_mock
+        # A19: the endpoint no longer publishes to Redis directly; it stages a
+        # row in the same transaction. The property under test is unchanged —
+        # which stream, with which payload — so only the seam moves.
+        enqueue_mock = MagicMock()
+        monkeypatch.setattr(transactions_api, "enqueue_event", enqueue_mock)
+        return enqueue_mock
 
     async def _post(self, test_client: AsyncClient, auth_headers: dict):
         return await test_client.post(
@@ -645,16 +648,16 @@ class TestCreateTransactionShapEnqueue:
     ):
         """Fraud/review must publish a shap_attribution event with the scored vector snapshot."""
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
-        publish_mock = self._patch_scoring(monkeypatch, classification)
+        staged_mock = self._patch_scoring(monkeypatch, classification)
 
         response = await self._post(test_client, auth_headers)
 
         assert response.status_code == 201
         shap_calls = [
-            call for call in publish_mock.call_args_list if call.args[0] == "fraud:shap"
-        ]
+            call for call in staged_mock.call_args_list if call.args[1] == "fraud:shap"
+            ]
         assert len(shap_calls) == 1
-        message = shap_calls[0].args[1]
+        message = shap_calls[0].args[2]
         assert message["transaction_id"] == response.json()["transaction_id"]
         assert message["classification"] == classification
         # Snapshot equals the exact vector used at scoring time (FD-SHP-001)
@@ -671,47 +674,52 @@ class TestCreateTransactionShapEnqueue:
     ):
         """Legitimate classification must NOT publish a shap_attribution event (FD-SHP-001)."""
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
-        publish_mock = self._patch_scoring(monkeypatch, "legitimate")
+        staged_mock = self._patch_scoring(monkeypatch, "legitimate")
 
         response = await self._post(test_client, auth_headers)
 
         assert response.status_code == 201
         assert not any(
-            call.args[0] == "fraud:shap" for call in publish_mock.call_args_list
+            call.args[1] == "fraud:shap" for call in staged_mock.call_args_list
         )
 
-    async def test_enqueue_failure_keeps_201(
+    async def test_scoring_never_touches_redis(
         self,
         test_client: AsyncClient,
         mock_db: AsyncMock,
         auth_headers: dict,
         monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
     ):
-        """Redis unreachable during publish must not fail the request — HTTP 201 (FD-SHP-001)."""
+        """A19: Redis being down cannot affect the request, by construction.
+
+        This replaces `test_enqueue_failure_keeps_201`, which simulated a Redis
+        outage and asserted the request still returned 201. That was a real
+        guarantee, but it was *defensive*: it held because a try/except swallowed
+        the failure, and the cost was three silently lost events per
+        transaction.
+
+        The outbox inverts it. The request path never opens a Redis connection,
+        so there is no failure mode left to defend against — the guarantee is
+        structural rather than a catch block. Publishing failures now happen in
+        the relay, out of the request's way, and the event is still durable in
+        the database.
+        """
         mock_db.execute = AsyncMock(return_value=_empty_scalars_result())
-        monkeypatch.setattr(
-            transactions_api._feature_engine,
-            "transform",
-            lambda transaction, user_history=None: self._KNOWN_VECTOR,
-        )
-        monkeypatch.setattr(
-            transactions_api._ml_service,
-            "predict",
-            lambda features: 80.0,
-        )
-        monkeypatch.setattr(
-            transactions_api._ensemble_scorer,
-            "classify",
-            lambda score, threshold: "fraud",
-        )
-        monkeypatch.setattr(
-            transactions_api,
-            "publish_event",
-            AsyncMock(side_effect=ConnectionError("redis down")),
+        staged_mock = self._patch_scoring(monkeypatch, "fraud")
+
+        # If the module still exposed publish_event, patching it would prove the
+        # call site never reaches Redis. Under the outbox the stronger statement
+        # is available and simpler: the symbol does not exist in the scoring
+        # module at all, so there is nothing to call.
+        assert not hasattr(transactions_api, "publish_event"), (
+            "the scoring module must not publish to Redis directly; that is the "
+            "outbox relay's job"
         )
 
         response = await self._post(test_client, auth_headers)
 
         assert response.status_code == 201
-        assert any("shap" in r.message.lower() for r in caplog.records)
+        # The event was staged instead, so it survives a Redis outage.
+        assert any(
+            call.args[1] == "fraud:shap" for call in staged_mock.call_args_list
+        )

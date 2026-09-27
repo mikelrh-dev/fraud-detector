@@ -9,7 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.v1.health import router as health_router
 from src.api.v1.router import router as v1_router
 from src.core.config import settings
-from src.core.database import engine
+from src.core.database import async_session_maker, engine
+from src.services.outbox import OutboxRelay
+
+# A19: the relay that publishes staged outbox rows into the Redis streams.
+# Module-level so tests can reach it and stop it; started in the lifespan.
+_outbox_relay = OutboxRelay(async_session_maker)
 
 
 @asynccontextmanager
@@ -22,10 +27,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         print(f"⚠️  Database connection failed: {e}")
 
-    yield
+    _outbox_relay.start()
 
-    # Shutdown: dispose engine
-    await engine.dispose()
+    try:
+        yield
+    finally:
+        # Stop the relay before disposing the engine, otherwise it can be
+        # mid-drain when the pool goes away and log a spurious failure on every
+        # shutdown.
+        await _outbox_relay.stop()
+        await engine.dispose()
 
 
 _is_production = settings.environment == "production"

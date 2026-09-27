@@ -6,11 +6,8 @@ persistence, using realistic mocks that simulate actual DB behavior.
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import numpy as np
 import pytest
 from httpx import AsyncClient
-
-from src.models.fraud_score import FraudClassification
 
 
 class TestScoringPipelineIntegration:
@@ -117,7 +114,7 @@ class TestScoringPipelineIntegration:
 
         with patch("src.api.v1.transactions.get_redis", return_value=mock_redis), \
              patch("src.api.v1.transactions.get_velocity_store") as mock_velocity_store, \
-             patch("src.api.v1.transactions.publish_event", return_value=None):
+             patch("src.api.v1.transactions.enqueue_event"):
 
             mock_velocity_store.return_value.record_transaction = AsyncMock()
             mock_velocity_store.return_value.get_counts = AsyncMock(

@@ -29,7 +29,6 @@ from src.core.dependencies import (
     require_role,
 )
 from src.core.redis import get_redis as get_shared_redis
-from src.core.stream_publisher import publish_event
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
 from src.models.shap_attribution import ShapAttribution
@@ -47,6 +46,7 @@ from src.services.ensemble import EnsembleScorer
 from src.services.feature_engine import FeatureEngine
 from src.services.graph_service import FraudGraphService
 from src.services.ml_model import MLModelService
+from src.services.outbox import enqueue_event
 from src.services.rule_engine import RuleEngine
 from src.services.scoring_service import ScoringService
 from src.services.shap_service import ShapService
@@ -341,60 +341,66 @@ async def create_and_score_transaction(
         },
     )
 
-    # 10. Publish LLM report event to Redis Stream (best-effort, non-blocking)
-    try:
-        await publish_event(
-            "fraud:llm",
-            {
-                "transaction_id": str(txn.id),
-                "score_breakdown": {
-                    "rule_score": rule_score,
-                    "ml_score": ml_score,
-                    "ensemble_score": ensemble_score,
-                    "threshold": threshold,
-                    "classification": classification,
-                    "fired_rules": fired_rules,
-                },
-                "transaction": {
-                    "id": str(txn.id),
-                    "amount": payload.amount,
-                    "currency": payload.currency,
-                    "merchant_name": payload.merchant_name,
-                    "merchant_category": payload.merchant_category,
-                },
+    # 10. Stage the LLM report event (A19: transactional outbox).
+    #
+    # These used to be three fire-and-forget publish_event calls wrapped in
+    # try/except, so a Redis blip left a committed, fully-scored transaction
+    # with no report, no SHAP attribution and no embedding — and nothing could
+    # ever find the gap. Staging a row in this same session makes the event
+    # commit atomically with the transaction, and the relay publishes it after.
+    #
+    # It also removes a race the audit did not name: publication happened
+    # *before* the commit (the real commit is in the get_db teardown, after this
+    # handler returns), and all three consumer tables have a hard FK to
+    # transactions.id, so a worker picking the message up in that window hit a
+    # foreign key violation and burned its retries.
+    enqueue_event(
+        db,
+        "fraud:llm",
+        {
+            "transaction_id": str(txn.id),
+            "score_breakdown": {
+                "rule_score": rule_score,
+                "ml_score": ml_score,
+                "ensemble_score": ensemble_score,
+                "threshold": threshold,
+                "classification": classification,
+                "fired_rules": fired_rules,
             },
-        )
-    except Exception:
-        logger.exception("Failed to publish LLM event")
-
-    # 11. Publish SHAP attribution event to Redis Stream (best-effort, only for fraud/review)
-    # Snapshots the EXACT feature vector used for scoring
-    if classification in ("fraud", "review"):
-        try:
-            await publish_event(
-                "fraud:shap",
-                {
-                    "transaction_id": str(txn.id),
-                    "classification": classification,
-                    "features": features.tolist(),
-                    "feature_names": _feature_engine.get_feature_names(),
-                    "model_fingerprint": _shap_service.model_fingerprint(),
-                },
-            )
-        except Exception:
-            logger.exception("Failed to publish SHAP event")
-
-    # 12. Publish merchant embedding event for spoofing detection (best-effort)
-    try:
-        await publish_event(
-            "fraud:embeddings",
-            {
-                "transaction_id": str(txn.id),
+            "transaction": {
+                "id": str(txn.id),
+                "amount": payload.amount,
+                "currency": payload.currency,
                 "merchant_name": payload.merchant_name,
+                "merchant_category": payload.merchant_category,
+            },
+        },
+    )
+
+    # 11. Stage the SHAP attribution event (only for fraud/review).
+    # Snapshots the EXACT feature vector used for scoring.
+    if classification in ("fraud", "review"):
+        enqueue_event(
+            db,
+            "fraud:shap",
+            {
+                "transaction_id": str(txn.id),
+                "classification": classification,
+                "features": features.tolist(),
+                "feature_names": _feature_engine.get_feature_names(),
+                "model_fingerprint": _shap_service.model_fingerprint(),
             },
         )
-    except Exception:
-        logger.exception("Failed to publish embedding event")
+
+    # 12. Stage the merchant embedding event for spoofing detection.
+    enqueue_event(
+        db,
+        "fraud:embeddings",
+        {
+            "transaction_id": str(txn.id),
+            "merchant_name": payload.merchant_name,
+        },
+    )
 
     # 13. Determine dynamic friction level based on score and classification
     friction_level, action = _determine_friction_level(ensemble_score, classification, threshold)
