@@ -252,11 +252,9 @@ async def create_and_score_transaction(
         "graph_features": graph_features,
     }
 
-    # 5. Scoring pipeline (CV-001 in service; CV-002 in worker thread
-    # to keep the event loop free during CPU-bound rule/ML/ensemble work)
-    score = await asyncio.to_thread(
-        _scoring_service.compute_scores, tx_data, context, user_history
-    )
+    # 5. Scoring pipeline (CV-001 in service; CV-002 CPU-bound steps
+    # are offloaded to a thread inside compute_scores)
+    score = await _scoring_service.compute_scores(tx_data, context, user_history)
     rule_score, fired_rules = score.rule_score, score.fired_rules
     features = score.features
     ml_score = score.ml_score

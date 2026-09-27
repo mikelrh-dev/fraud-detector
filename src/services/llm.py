@@ -132,7 +132,8 @@ class LLMService:
         """Generate a fraud analysis report via Ollama.
 
         Calls the Ollama /api/generate endpoint with a structured prompt
-        in Spanish. Handles connection errors and timeouts gracefully.
+        in Spanish. Raises exceptions on failure so the worker can apply
+        retry/DLQ logic.
 
         Args:
             transaction_id: UUID of the transaction being analyzed.
@@ -141,7 +142,13 @@ class LLMService:
             _client: Optional injected client for testing.
 
         Returns:
-            Report text string, or error message if generation fails.
+            Report text string.
+
+        Raises:
+            httpx.ConnectError: If Ollama is unreachable.
+            httpx.TimeoutException: If generation exceeds timeout.
+            httpx.HTTPStatusError: If Ollama returns an error status.
+            Exception: On unexpected errors.
         """
         prompt = self.build_prompt(
             score_breakdown,
@@ -170,36 +177,27 @@ class LLMService:
                 "Ollama connection refused for transaction %s",
                 transaction_id,
             )
-            return (
-                "Error: No se pudo conectar con el servicio Ollama. "
-                "Verifique que el servicio esté disponible."
-            )
+            raise
         except httpx.TimeoutException:
             logger.error(
                 "Ollama timeout for transaction %s (timeout=%ss)",
                 transaction_id,
                 self._timeout,
             )
-            return (
-                f"Error: La generación del reporte excedió el tiempo "
-                f"máximo de {self._timeout} segundos."
-            )
+            raise
         except httpx.HTTPStatusError as exc:
             logger.error(
                 "Ollama HTTP error for transaction %s: %s",
                 transaction_id,
                 exc,
             )
-            return (
-                f"Error: El servicio Ollama respondió con código "
-                f"{exc.response.status_code}."
-            )
-        except Exception as exc:
+            raise
+        except Exception:
             logger.exception(
                 "Unexpected error generating LLM report for transaction %s",
                 transaction_id,
             )
-            return f"Error inesperado al generar el reporte: {exc}"
+            raise
         finally:
             if _client is None:
                 await client.aclose()

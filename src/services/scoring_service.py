@@ -66,7 +66,7 @@ class ScoringService:
             "std_amount": _to_float(np.std(values)) if len(values) > 1 else 0.0,
         }
 
-    def compute_scores(
+    async def compute_scores(
         self,
         tx_data: dict[str, Any],
         context: dict[str, Any],
@@ -74,20 +74,27 @@ class ScoringService:
         db: Any | None = None,
         monitoring_service: Any | None = None,
     ) -> ScoringResult:
-        """Run the full deterministic pipeline (CPU-bound; call via to_thread).
+        """Run the full deterministic pipeline.
+
+        CPU-bound steps (feature engineering, ML predict) are offloaded to
+        a thread. Model run tracking is awaited after scoring completes.
 
         Optionally wires monitoring to persist a model run record (ML4).
-        The tracking call is fire-and-forget — failures are logged but
+        The tracking call is best-effort — failures are logged but
         never prevent the scoring result from being returned.
         """
-        rule_score, fired_rules = self.rule_engine.evaluate(tx_data, context)
+        # CPU-bound: rule engine + feature engine + ML predict
+        def _compute() -> tuple[float, list[str], np.ndarray, float]:
+            rule_score, fired_rules = self.rule_engine.evaluate(tx_data, context)
+            features = self.feature_engine.transform(tx_data, user_history=user_history)
+            try:
+                ml_score = _to_float(self.ml_service.predict(features))
+            except ValueError as exc:
+                logger.warning("Feature shape mismatch in ML predict — returning 0.0: %s", exc)
+                ml_score = 0.0
+            return rule_score, fired_rules, features, ml_score
 
-        features = self.feature_engine.transform(tx_data, user_history=user_history)
-        try:
-            ml_score = _to_float(self.ml_service.predict(features))
-        except ValueError as exc:
-            logger.warning("Feature shape mismatch in ML predict — returning 0.0: %s", exc)
-            ml_score = 0.0
+        rule_score, fired_rules, features, ml_score = await asyncio.to_thread(_compute)
 
         # Compute context score from velocity signal (ML3)
         recent_txns = context.get("recent_transactions", 0) if context else 0
@@ -102,21 +109,18 @@ class ScoringService:
         )
         classification = self.ensemble_scorer.classify(ensemble_score, threshold)
 
-        # ML4: fire-and-forget model run tracking
+        # ML4: model run tracking (awaited, not fire-and-forget)
         if monitoring_service is not None and db is not None:
             try:
-                asyncio.create_task(
-                    self._track_model_run(
-                        monitoring_service, db,
-                        rule_score=rule_score,
-                        ml_score=ml_score,
-                        ensemble_score=ensemble_score,
-                        classification=classification,
-                    )
+                await self._track_model_run(
+                    monitoring_service, db,
+                    rule_score=rule_score,
+                    ml_score=ml_score,
+                    ensemble_score=ensemble_score,
+                    classification=classification,
                 )
-            except RuntimeError:
-                # No event loop running (sync context) — skip silently
-                pass
+            except Exception as exc:
+                logger.warning("Failed to track model run: %s", exc)
 
         return ScoringResult(
             rule_score=rule_score,

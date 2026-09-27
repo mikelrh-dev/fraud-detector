@@ -45,66 +45,53 @@ async def process_report_request(
     """Process a single report request from the stream.
 
     Returns:
-        True if processed (success or permanent failure),
-        False if should retry.
+        True if processed successfully.
+    Raises:
+        Exception: On any failure (LLM error, DB error). The caller is
+            responsible for retry/DLQ handling.
     """
     transaction_id = message.get("transaction_id", "unknown")
     score_breakdown = message.get("score_breakdown", {})
     transaction = message.get("transaction", {})
 
-    try:
-        report_text = await llm_service.generate_report(
+    report_text = await llm_service.generate_report(
+        transaction_id=transaction_id,
+        score_breakdown=score_breakdown,
+        transaction=transaction,
+    )
+
+    # Persist report
+    report = LLMReport(
+        transaction_id=transaction_id,
+        report_text=report_text,
+        model_name=llm_service._model,
+        status=LLMReportStatus.COMPLETED,
+        generation_time_ms=None,
+        retry_count=0,
+    )
+
+    async with async_session_maker() as session:
+        session.add(report)
+
+        # Audit entry
+        audit = AuditService()
+        await audit.create_entry(
+            db=session,
+            action_type="report_generated",
             transaction_id=transaction_id,
-            score_breakdown=score_breakdown,
-            transaction=transaction,
+            details={
+                "model": llm_service._model,
+                "status": LLMReportStatus.COMPLETED.value,
+            },
         )
 
-        # Determine status
-        is_error = report_text.startswith("Error:")
-        status = LLMReportStatus.FAILED if is_error else LLMReportStatus.COMPLETED
+        await session.commit()
 
-        # Persist report
-        report = LLMReport(
-            transaction_id=transaction_id,
-            report_text=report_text,
-            model_name=llm_service._model,
-            status=status,
-            generation_time_ms=None,
-            retry_count=0,
-        )
-
-        async with async_session_maker() as session:
-            session.add(report)
-
-            # Audit entry
-            audit = AuditService()
-            action = "report_failed" if is_error else "report_generated"
-            await audit.create_entry(
-                db=session,
-                action_type=action,
-                transaction_id=transaction_id,
-                details={
-                    "model": llm_service._model,
-                    "status": status.value,
-                },
-            )
-
-            await session.commit()
-
-        logger.info(
-            "LLM report %s for transaction %s",
-            status.value,
-            transaction_id,
-        )
-        return True
-
-    except Exception as exc:
-        logger.exception(
-            "LLM report generation failed for transaction %s: %s",
-            transaction_id,
-            exc,
-        )
-        return False  # Retry
+    logger.info(
+        "LLM report generated for transaction %s",
+        transaction_id,
+    )
+    return True
 
 
 async def worker_loop(redis_client: redis.Redis) -> None:
@@ -127,48 +114,68 @@ async def _consume_loop(redis_client: redis.Redis, llm_service: LLMService) -> N
     while True:
         try:
             # XREADGROUP: blocking read from consumer group
+            # count=10 for concurrency: process multiple messages in parallel
             messages = await redis_client.xreadgroup(
                 GROUP_NAME,
                 CONSUMER_NAME,
                 {STREAM_NAME: ">"},  # ">" means new messages only
-                count=1,
+                count=10,
                 block=1000,  # 1 second timeout
             )
 
             if not messages:
                 continue
 
-            # Process each message
+            # Process each message concurrently with bounded parallelism
+            tasks = []
             for stream_name, msg_list in messages:
                 for message_id, fields in msg_list:
-                    try:
-                        # Decode message
-                        data_json = fields.get(b"data", b"{}").decode("utf-8")
-                        message_data = json.loads(data_json)
+                    tasks.append(
+                        _process_message_safe(redis_client, message_id, fields, llm_service)
+                    )
 
-                        # Process
-                        async with async_session_maker() as db:
-                            success = await process_report_request(
-                                message_data,
-                                db,
-                                llm_service,
-                            )
-
-                        # ACK if success
-                        if success:
-                            await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
-                            logger.debug("LLM message ACKed: %s", message_id)
-                        else:
-                            await _handle_failed_report(
-                                redis_client, message_id, message_data
-                            )
-
-                    except Exception as exc:
-                        logger.error("Error processing LLM message: %s", exc)
+            # Wait for all messages in this batch to complete
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as exc:
             logger.error("Error in LLM worker loop: %s", exc)
             await asyncio.sleep(1)  # Backoff
+
+
+async def _process_message_safe(
+    redis_client: redis.Redis,
+    message_id: bytes | str,
+    fields: dict,
+    llm_service: LLMService,
+) -> None:
+    """Process a message with full error handling and DLQ routing.
+
+    Any exception during processing is caught and routed to retry/DLQ.
+    This prevents poison-pill infinite loops.
+    """
+    try:
+        # Decode message
+        data_json = fields.get(b"data", b"{}").decode("utf-8")
+        message_data = json.loads(data_json)
+
+        # Process
+        async with async_session_maker() as db:
+            success = await process_report_request(
+                message_data,
+                db,
+                llm_service,
+            )
+
+        # ACK on success
+        if success:
+            await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
+            logger.debug("LLM message ACKed: %s", message_id)
+
+    except Exception as exc:
+        logger.error("Error processing LLM message %s: %s", message_id, exc)
+        # Route to retry/DLQ instead of leaving in PEL forever
+        await _handle_failed_report(redis_client, message_id, message_data)
 
 
 async def main() -> None:
@@ -234,12 +241,29 @@ async def _recovery_loop(redis_client: redis.Redis) -> None:
 
     Claimed messages are routed through _process_message_with_retry so that
     permanently-failing messages reach the DLQ instead of looping forever (R3).
+    Also monitors consumer lag and alerts when the stream is backing up.
     """
     llm_service = LLMService()
 
     while True:
         try:
             await asyncio.sleep(RECOVERY_INTERVAL)
+
+            # Monitor consumer lag
+            try:
+                stream_len = await redis_client.xlen(STREAM_NAME)
+                pending = await redis_client.xpending(
+                    STREAM_NAME, GROUP_NAME, CONSUMER_NAME
+                )
+                pending_count = pending.get("pending", 0) if isinstance(pending, dict) else 0
+                if stream_len > 50000 or pending_count > 100:
+                    logger.warning(
+                        "LLM stream backing up: stream_len=%d, pending=%d",
+                        stream_len,
+                        pending_count,
+                    )
+            except Exception:
+                pass  # Don't let monitoring break recovery
 
             recovered = await recover_pending_messages(
                 redis_client,

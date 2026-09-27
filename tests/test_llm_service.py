@@ -194,9 +194,9 @@ class TestLLMServiceGenerate:
         assert "Análisis completo de riesgo." in result
 
     @pytest.mark.asyncio
-    async def test_ollama_unavailable_returns_error(self):
-        """When Ollama is unavailable, should return error message, not crash."""
-        service = LLMService(ollama_url="http://nonexistent:11434")
+    async def test_ollama_unavailable_raises_connect_error(self):
+        """When Ollama is unavailable, should raise ConnectError for retry/DLQ."""
+        service = LLMService(ollama_url="http://test:11434", timeout=1)
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.__aenter__.return_value = mock_client
@@ -212,18 +212,17 @@ class TestLLMServiceGenerate:
             "threshold": 70.0,
         }
 
-        result = await service.generate_report(
-            transaction_id="test-uuid",
-            score_breakdown=score_breakdown,
-            transaction={"amount": 1000.0},
-            _client=mock_client,
-        )
-        assert isinstance(result, str)
-        assert "error" in result.lower() or "no disponible" in result.lower()
+        with pytest.raises(httpx.ConnectError):
+            await service.generate_report(
+                transaction_id="test-uuid",
+                score_breakdown=score_breakdown,
+                transaction={"amount": 1000.0},
+                _client=mock_client,
+            )
 
     @pytest.mark.asyncio
-    async def test_timeout_returns_error_message(self):
-        """When Ollama times out, should return error message, not crash."""
+    async def test_timeout_raises_timeout_exception(self):
+        """When Ollama times out, should raise TimeoutException for retry/DLQ."""
         service = LLMService(ollama_url="http://test:11434", timeout=1)
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -240,11 +239,10 @@ class TestLLMServiceGenerate:
             "threshold": 70.0,
         }
 
-        result = await service.generate_report(
-            transaction_id="test-uuid",
-            score_breakdown=score_breakdown,
-            transaction={"amount": 1000.0},
-            _client=mock_client,
-        )
-        assert isinstance(result, str)
-        assert len(result) > 0
+        with pytest.raises(httpx.TimeoutException):
+            await service.generate_report(
+                transaction_id="test-uuid",
+                score_breakdown=score_breakdown,
+                transaction={"amount": 1000.0},
+                _client=mock_client,
+            )

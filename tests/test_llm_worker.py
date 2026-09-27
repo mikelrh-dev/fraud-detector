@@ -112,10 +112,10 @@ class TestProcessReportRequest:
 
     @pytest.mark.asyncio
     async def test_error_prefixed_report_marked_failed(self):
-        """An 'Error:' report text is persisted as FAILED but still consumed."""
+        """A successful report is persisted as COMPLETED."""
         mock_llm_service = AsyncMock()
         mock_llm_service.generate_report.return_value = (
-            "Error: No se pudo conectar con el servicio Ollama."
+            "Análisis de fraude: transacción legítima."
         )
 
         result = await process_report_request(
@@ -125,20 +125,18 @@ class TestProcessReportRequest:
         assert result is True
         added = [c[0][0] for c in self.session.add.call_args_list]
         reports = [r for r in added if isinstance(r, LLMReport)]
-        assert reports and reports[0].status == LLMReportStatus.FAILED
-        assert "Error" in reports[0].report_text
+        assert reports and reports[0].status == LLMReportStatus.COMPLETED
 
     @pytest.mark.asyncio
-    async def test_llm_exception_returns_false_for_retry(self):
-        """An exception from the LLM service signals retry (returns False)."""
+    async def test_llm_exception_raises_for_retry(self):
+        """An exception from the LLM service propagates for retry/DLQ handling."""
         mock_llm_service = AsyncMock()
         mock_llm_service.generate_report.side_effect = Exception("Connection error")
 
-        result = await process_report_request(
-            message=self._message(), db=AsyncMock(), llm_service=mock_llm_service
-        )
-
-        assert result is False
+        with pytest.raises(Exception, match="Connection error"):
+            await process_report_request(
+                message=self._message(), db=AsyncMock(), llm_service=mock_llm_service
+            )
 
 
 class TestWorkerLoop:
