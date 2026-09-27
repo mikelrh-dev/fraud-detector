@@ -54,9 +54,9 @@ it. Pages stop restating class strings.
 |---|---|---|
 | `Button` | 20 uses of `btn-motion` | new |
 | `Input` + `Field` | 8 duplicated input class strings | new |
-| `Badge` | `Badge`, `ClassificationBadge`, `AlertStatusBadge` | merge 3 into 1 |
 | `Modal` | `ConfirmDialog` | promote, unchanged behaviour |
 | `State` | `EmptyState`, `ErrorState` | merge 2 into 1, variant prop |
+| `Badge` | — | **already exists**, see below |
 
 #### Button
 
@@ -95,15 +95,22 @@ encodes the label/control association, `aria-invalid`, `aria-describedby`
 pointing at whichever of hint or error is present, the error rendered adjacent to
 the control with `role="alert"`, and the `sr-only` label variant.
 
-#### Badge
+#### Badge — already done, no work
 
-```tsx
-<Badge tone="clean">Legítimo</Badge>
-```
+`components/Badge.tsx` is already the single primitive, and its own comment says
+so: *"Single primitive for classification and alert status badges — consumes
+semantic tokens only."* `TONE_CLASSES` maps the tone vocabulary to tokens with no
+hardcoded hex.
 
-Tones come from the semantic vocabulary already in `lib/classification.ts`. The
-domain-value-to-tone mapping stays there, so classification colour cannot drift
-again — which is what V-01 was.
+`ClassificationBadge` and `AlertStatusBadge` are **domain adapters**, not
+duplicates. They own the mapping from a domain value to a tone, a label and an
+icon — `classification → clean/warn/critical` and `open/reviewed/resolved →
+warn/info/clean`. That mapping is exactly what must stay centralized to prevent
+V-01 from recurring, so deleting it in favour of inline `<Badge tone={...}>` at
+each call site would reintroduce the drift the primitive exists to prevent.
+
+An earlier draft of this spec listed "merge 3 badges into 1" as a task. Reading
+the code showed there is nothing to merge.
 
 #### Modal
 
@@ -138,17 +145,20 @@ Each step ships and verifies independently.
 | 1 | `lib/ui.ts` grows the class constants | `tsc`, `eslint`, existing suite |
 | 2 | `Button`, `Input`, `Field` primitives | new unit tests per primitive |
 | 3 | **`CreateTransactionPage` migrated** — the proving case | its 6 existing tests + new a11y assertions |
-| 4 | Three badges merged | `src/lib/score.test.ts`, `src/lib/gauge.test.ts` keep passing |
-| 5 | `Modal` from `ConfirmDialog` | `confirm-dialog.a11y.test.tsx` unchanged |
-| 6 | Routes lazy | build output shows split chunks, `recharts` absent from the entry chunk |
-| 7 | Mechanical guideline fixes | audit re-run reports clean for the touched rules |
+| 4 | `Modal` from `ConfirmDialog` | `confirm-dialog.a11y.test.tsx` unchanged |
+| 5 | Routes lazy | build output shows split chunks, `recharts` absent from the entry chunk |
+| 6 | `State` merge, then the mechanical fixes | audit re-run reports clean for the touched rules |
 
 Step 3 comes early and deliberately. It concentrates the two worst findings — the
 submit button disabled before the request starts, and five duplicated inputs. If
 the primitives do not simplify the most complex form, they will not simplify the
 others, and it is better to find that out on one page than six.
 
-## Step 7, itemised
+`State` is last of the component work because it is the lowest value: the two
+components are not duplicated, they are two variants of the same layout, and
+merging them buys tidiness rather than correctness.
+
+## Step 6, itemised
 
 - `…` instead of `...` in the five user-visible strings.
 - `lib/datetime.ts` with a single `Intl.DateTimeFormat` formatter, replacing five
