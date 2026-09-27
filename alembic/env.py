@@ -6,10 +6,15 @@ from sqlalchemy import pool
 from alembic import context
 
 # Import models and config
+# Every mapped model must be imported here (or via src.models) so it registers
+# on Base.metadata before autogenerate compares it against the live schema. A
+# model missing from this list is invisible to autogenerate, which then emits
+# drop_table/drop_constraint for the objects the migrations actually created.
 from src.models.base import Base
 from src.models import (
     User, Transaction, FraudScore, FraudAlert,
-    RuleMetadata, LLMReport, MLModelRun, AuditEntry
+    RuleMetadata, LLMReport, MLModelRun, AuditEntry,
+    DriftReferenceData,
 )
 from src.core.config import settings
 

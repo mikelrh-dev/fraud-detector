@@ -3,7 +3,7 @@
 import enum
 import uuid
 
-from sqlalchemy import Float, ForeignKey, String
+from sqlalchemy import Float, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,11 @@ class FraudScore(BaseModel):
     """Persisted fraud scoring breakdown for a transaction."""
 
     __tablename__ = "fraud_scores"
+
+    # Declared on the model so autogenerate can see it; see transactions.
+    __table_args__ = (
+        Index("ix_fraud_scores_transaction_id", "transaction_id"),
+    )
 
     transaction_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

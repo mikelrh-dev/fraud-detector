@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,12 @@ class FraudAlert(BaseModel):
     """Alert record for transactions that exceed the fraud threshold."""
 
     __tablename__ = "fraud_alerts"
+
+    # Declared on the model so autogenerate can see them; see transactions.
+    __table_args__ = (
+        Index("ix_fraud_alerts_status_created_at", "status", "created_at"),
+        Index("ix_fraud_alerts_transaction_id", "transaction_id"),
+    )
 
     transaction_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

@@ -3,7 +3,7 @@
 import enum
 import uuid
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,13 @@ class Transaction(BaseModel):
     """Financial transaction record."""
 
     __tablename__ = "transactions"
+
+    # Declared on the model, not only in the migration: an index that exists
+    # solely in a migration is invisible to autogenerate, which then emits
+    # drop_index for it on the next `alembic revision`.
+    __table_args__ = (
+        Index("ix_transactions_user_id_deleted_at", "user_id", "deleted_at"),
+    )
 
     amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)

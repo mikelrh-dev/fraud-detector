@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,12 @@ class AuditEntry(Base):
     """
 
     __tablename__ = "audit_entries"
+
+    # Declared on the model so autogenerate can see them; see transactions.
+    __table_args__ = (
+        Index("ix_audit_entries_transaction_id", "transaction_id"),
+        Index("ix_audit_entries_user_id", "user_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
