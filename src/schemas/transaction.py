@@ -9,7 +9,16 @@ from pydantic import BaseModel, Field
 class TransactionCreate(BaseModel):
     """Payload for creating a new transaction."""
 
-    amount: float = Field(..., gt=0, description="Transaction amount")
+    # Upper bound mirrors the Numeric(12,2) column. Without it, `inf` was
+    # accepted, matched no threshold tier (the test is `amount < max_amount`
+    # and the last tier's max is math.inf), and scored as legitimate.
+    amount: float = Field(
+        ...,
+        gt=0,
+        le=9_999_999_999.99,
+        allow_inf_nan=False,
+        description="Transaction amount",
+    )
     currency: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code")
     merchant_name: str = Field(..., min_length=1, max_length=255)
     merchant_category: str | None = Field(None, max_length=100)

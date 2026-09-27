@@ -5,11 +5,14 @@ custom transformers that extract domain-specific features from transaction
 dictionaries. The output is always a 10-dimensional feature vector.
 """
 
+import logging
 from datetime import datetime
 
 import numpy as np
 
 from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
+
+logger = logging.getLogger(__name__)
 
 # Feature names in order — used by get_feature_names() and for model interpretation
 FEATURE_NAMES: list[str] = [
@@ -130,7 +133,7 @@ class FeatureEngine:
         # 10. Amount is round number (multiple of 100)
         f_round = 1.0 if amount > 0 and amount % 100 == 0 else 0.0
 
-        return np.array([
+        vector = np.array([
             f_amount,
             f_amount_vs_avg,
             f_amount_vs_std,
@@ -142,6 +145,21 @@ class FeatureEngine:
             f_is_crypto,
             f_round,
         ])
+
+        # The `> 0` guards above protect against negative/zero divisors, not
+        # against non-finite inputs: a NaN std or an inf amount slipped through
+        # and every downstream comparison against it is False. Sanitize at the
+        # boundary so the model contract is "always 10 finite floats".
+        if not np.isfinite(vector).all():
+            logger.error(
+                "Non-finite feature values for transaction %s — sanitizing: %s",
+                transaction.get("id", "<unknown>"),
+                dict(zip(FEATURE_NAMES, np.where(np.isfinite(vector), vector, np.nan))),
+            )
+            vector = np.nan_to_num(
+                vector, nan=0.0, posinf=0.0, neginf=0.0
+            )
+        return vector
 
     def get_feature_names(self) -> list[str]:
         """Return the list of feature names in order.

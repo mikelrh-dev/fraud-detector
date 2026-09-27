@@ -8,6 +8,7 @@ at the call site so the event loop is never blocked (CV-002).
 
 import asyncio
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +28,18 @@ def _to_float(value: object) -> float:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 0.0
+
+
+def _to_finite_float(value: object) -> float:
+    """Like ``_to_float`` but also maps NaN/±inf to 0.0.
+
+    ``_to_float`` happily returns NaN because ``float("nan")`` succeeds, and a
+    NaN then poisons every downstream comparison. Use this for values that
+    reach arithmetic (velocity counts, history stats) rather than for values
+    that are only compared.
+    """
+    result = _to_float(value)
+    return result if math.isfinite(result) else 0.0
 
 
 @dataclass
@@ -96,9 +109,14 @@ class ScoringService:
 
         rule_score, fired_rules, features, ml_score = await asyncio.to_thread(_compute)
 
-        # Compute context score from velocity signal (ML3)
-        recent_txns = context.get("recent_transactions", 0) if context else 0
-        context_score = min(float(recent_txns) / 10.0 * 100, 100.0)
+        # Compute context score from velocity signal (ML3).
+        # recent_transactions feeds arithmetic, so it must be finite: a NaN here
+        # propagated into the ensemble and classified the transaction as
+        # legitimate, because every `NaN > threshold` comparison is False.
+        recent_txns = _to_finite_float(
+            context.get("recent_transactions", 0) if context else 0
+        )
+        context_score = min(recent_txns / 10.0 * 100, 100.0)
 
         amount = tx_data.get("amount", 0)
         threshold = self.ensemble_scorer.get_threshold(amount)
