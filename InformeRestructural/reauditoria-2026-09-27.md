@@ -393,37 +393,72 @@ tabla es la fuente de verdad.
 
 | Estado | Hallazgos |
 |---|---|
-| **Pendiente verificado** | A1, A2, A3, A4, A5, A6, A12, A15, A25, A27, A31 |
-| **Resuelto** | A8 (`4db8533`, con `require_any_role`), A9 (W1), A20 (W3), A26 (`922dcf5`), A28 (`ca3c2bf`), A29 / V-03 (W4) |
+| **Resuelto en el loop de bloqueantes** | A1 (`e172665`), A3 (`e635863`), A4 (`e635863`), A26 (`922dcf5`), A28 (`ca3c2bf`) |
+| **Ya estaba resuelto antes** | A8 (`4db8533`, con `require_any_role`), A9 (W1), A20 (W3), A29 / V-03 (W4) |
+| **Pendiente verificado** | A2, A5, A6, A12, A15, A25, A27, A31 |
 | **Sin contabilidad en este documento** | A7, A13, A14, A16–A24, A30 |
 | **Diferido por decisión** | A10, A11 (recalibrar el ensemble: cambia scores en producción) |
 
-Evidencia de cada pendiente, por lectura directa del código:
+### Loop de bloqueantes — resultado
 
-- **A1** — `auth.py:105-125` lee `role = payload["role"]` y lo reutiliza para
-  `create_access_token`. No hay `select` ni `db.execute` en el endpoint.
+Cinco hallazgos del lote de "bloqueantes reales", en el orden acordado, cada uno
+con su commit y sus tests:
+
+| # | Qué cambió | Commit |
+|---|---|---|
+| A26 | `ErrorBoundary` de clase en dos capas: por ruta con `resetKeys=[pathname]`, y global en `main.tsx` para los providers. El mensaje de error **no** se renderiza (filtraría nombres de tabla y queries), va a `logRenderError` | `922dcf5` |
+| A28 | El 401 dispara refresh silencioso y replay del request, en vez de `window.location.href`. Refresh de un solo vuelo, sin recursión, y `logout()` ahora revoca en el servidor vía `X-Refresh-Token` | `ca3c2bf` |
+| A8 | **No se tocó: ya estaba arreglado.** Se verificó y se documentó | `4db8533` |
+| A4 + A3 | Prefijos `/api/v1/audit` y `/api/v1/auth/logout` en `RATE_LIMITS`, dependencia del limiter en los routers de audit y reports, y el puerto de la API deja de publicarse (nginx queda como único ingress, con `TRUST_PROXY_HEADERS=true`) | `e635863` |
+| A1 | `/auth/refresh` carga el usuario: exige fila existente, no borrada y activa, y emite con el rol vigente de BD | `e172665` |
+
+Tres cosas que solo se ven al implementarlas, y que el informe no anticipó:
+
+1. **La trampa de foco estaba rota también en producción.** Filtrar los
+   controlables con `offsetParent !== null` es incorrecto: `offsetParent` es
+   `null` para todo elemento `position: fixed` en un navegador real.
+2. **El logout revocaba contra un token ya borrado.** `logout()` limpiaba el
+   store antes de revocar, así que el access token se leía cuando ya-era `null`,
+   el backend respondía 401 y el refresh token nunca se revocaba: justo el
+   defecto que el cambio venía a arreglar.
+3. **A3 y el rate limit están acoplados.** Con nginx como único ingress,
+   `trust_proxy_headers=false` haría que todas las requests pareciesan venir del
+   contenedor nginx, y el límite de 10/min en `/auth/login` bloquearía a todos
+   los usuarios a la vez.
+
+Gates tras el loop: `ruff check src` limpio, `mypy` limpio en 64 ficheros,
+**611 tests** verdes, coverage **86.44 %** (gate 80 %), frontend 242 tests,
+`tsc` y build correctos.
+
+Evidencia de lo que **queda** pendiente, por lectura directa del código:
+
 - **A2** — `is_token_blacklisted` y `blacklist_token` son dos `await` separados
-  (`auth.py:110` y `:122`): la ventana TOCTOU existe.
-- **A3** — `docker-compose.yml:51-52` publica `8000:8000`, así que nginx es
-  opcional y se salta.
-- **A4** — `audit.py:25,80,113` y `reports.py:17` sin dependencia de limiter;
-  `auth/logout` tampoco la tiene.
+  (`auth.py:110` y `:122`): la ventana TOCTOU existe. Corregirlo bien pide una
+  operación atómica de Redis (Lua script o `SET NX`), no un parche.
 - **A5** — `services/auth.py:95` lanza `CredentialError` si el usuario no existe
   **antes** de `:98` `verify_password`, así que el bcrypt solo se paga si el
-  usuario existe.
-- **A6** — `health.py:83` devuelve `"error": str(exc)` sin autenticar.
+  usuario existe. Arreglo: hashear una contraseña ficticia contra un usuario
+  dummy para igualar el tiempo.
+- **A6** — `health.py:83` devuelve `"error": str(exc)` sin autenticar: expone
+  nombre de usuario de BD, SQLSTATE o IP de contenedor. Hay un *trade-off* real:
+  en staging el detalle ayuda a diagnosticar.
 - **A12** — `rule_engine.py` no valida `amount` ni `merchant_name`; no es
-  alcanzable por HTTP, pero cualquier consumidor en batch lo heredaría.
+  alcanzable por HTTP, pero cualquier consumidor en batch o replay lo heredaría.
 - **A15** — `ensemble.py:50` filtra por **peso** (`w.get(k, 0) > 0`), no por
-  señal: una capa ausente con `score = 0` sigue contando en el promedio ponderado, y con el modelo
-  caído se pierden 25 puntos en silencio.
+  señal: una capa ausente con `score = 0` sigue contando en el promedio
+  ponderado, y con el modelo caído se pierden 25 puntos en silencio. **Cambiar
+  esto altera scores en producción: es decisión de negocio, igual que A10/A11.**
 - **A25** — `useCountUp.ts:33` arranca en `0` y el efecto se reinicia en cada
-  cambio de `target`; el dashboard refresca cada 30 s.
+  cambio de `target`; el dashboard refresca cada 30 s, así que los KPIs se
+  rebobinan en bucle. Arreglo: animar solo en el primer montaje, o interpolar
+  desde el valor actual.
 - **A27** — `authStore.ts:20,51` usa `persist` de zustand, que serializa en
-  localStorage, token de acceso y de refresh en claro.
+  localStorage, token de acceso y de refresh en claro. Migrar a cookie `httpOnly`
+  es un rediseño del flujo de auth, y choca con A28: el interceptor lee el token
+  del storage.
 - **A31** — `TransactionDetail.tsx:57-65` devuelve `null` para cualquier error
   no-202/no-404, así que un 500 se renderiza como "No hay reporte disponible".
 
-**580 tests verdes y 86 % de coverage no cubren A1–A6 ni A12–A15**: son caminos
-sin test, y por eso nadie los ha tocado. El coverage no es evidencia de que estén
+**El coverage sigue sin cubrir A2, A5, A6 ni A12–A15**: son caminos sin test, y
+por eso nadie los ha tocado. El coverage no es evidencia de que estén
 resueltos.
