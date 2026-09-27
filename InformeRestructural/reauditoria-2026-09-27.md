@@ -207,7 +207,9 @@ Requieren confirmación antes de actuar.
 
 ## 🎨 VISUALES — Los que más importan
 
-### V-01 · Cuatro mapas de clasificación→color, y **ya divergieron** (no hipotético)
+### V-01 · ~~Cuatro mapas de clasificación→color, y ya divergieron~~ RESUELTO (`724cccc`)
+> Fuente única en `lib/score.ts`, consumida por `ClassificationBadge`. Verificado
+> contra el código: no queda una segunda definición de color por clasificación.
 | Ubicación | Estados |
 |---|---|
 | `RiskMeter.tsx:8-12` | RiskTone → bg |
@@ -218,19 +220,25 @@ Requieren confirmación antes de actuar.
 
 **Drift ya visible:** el Dashboard renderiza **dos pastillas verdes distintas** para el mismo estado "legítimo" en la misma tabla — `bg-fraud-legitimate-bg` (#052e16, verde opaco) en Clasificación vs `bg-status-approved/10` (#22c55e al 10%) en Estado. Mismo tono, tratamiento de superficie completamente diferente.
 
-### V-02 · El estado `pending`/desconocido se pinta **verde** en el medidor de riesgo
+### V-02 · ~~El estado `pending`/desconocido se pinta verde~~ RESUELTO (`724cccc`)
+> `neutral` cubre pending/unknown en `classification.ts:24`, y `RiskMeter.tsx:12`
+> usa relleno slate: se lee como "no determinado", no como "correcto".
 `RiskMeter.tsx:18-24` — `return "clean"` es el fallback de *todo* lo no reconocido.
 Un arco verde de 270° con "Pendiente" en el centro: un color que dice "seguro"
 alrededor de un estado desconocido. `Badge.tsx:17` ya define un tono `neutral`
 para esto.
 
-### V-03 · El histograma contradice al medidor, al gauge y a su propia leyenda
+### V-03 · ~~El histograma contradice al medidor, al gauge y a su leyenda~~ RESUELTO (`0dbc2a0`)
+> Buckets de rango cerrado y sin huecos float (`ScoreHistogram.tsx:28`), coloreados
+> por posición para que la paleta no pueda derivar de los umbrales.
 `RISK_THRESHOLDS` (lib/risk.ts) dice warn 45 / critical 60. El histograma pinta
 ámbar en `41-60` **y** `61-80`, reservando rojo para `81-100`. Un score 65 es
 **rojo** en el gauge y el medidor, pero **ámbar** en el histograma — cuya leyenda
 dice "Revisión (41-80)". Consistente consigo mismo, inconsistente con toda la app.
 
-### V-04 · Tres renderizados de moneda distintos para el mismo número
+### V-04 · ~~Tres renderizados de moneda distintos~~ RESUELTO (`724cccc`)
+> `lib/money.ts` es la fuente única, con `Intl.NumberFormat` y centavos. Los
+> `toLocaleString` que quedan son un tick de gráfico y dos fechas, no dinero.
 `1234.56` se muestra como `$1234.56` (punto, sin separador) en la móvil, y
 `$1.235` (**centavos descartados**) en la tabla y en el detalle. En una herramienta
 de investigación de fraude, ocultar los centavos del monto en revisión es un
@@ -361,8 +369,36 @@ que me detuvo.
 - **A10/A11** (el ensemble no alcanza `fraud` bajo $1000; umbrales que bajan con
   el monto) — requieren **recalibrar el modelo**, y eso cambia scores en
   producción. Decisión de negocio, no mía.
-- **V-01 a V-04, V-08 a V-25** (visuales restantes) — tipografía aplanada, paddings
-  y gaps inconsistentes, tokens saltados, jerarquía de headings y el error boundary
-  global. V-05, V-06 y V-07 están cerrados. El siguiente paso de mayor impacto es
-  la jerarquía de headings, porque `h1` falta en varias páginas y rompe la
-  navegación por headings de cualquier lector de pantalla.
+- **V-01 a V-04** — resueltos en `724cccc` (fuente única de clasificación/color,
+  fallback neutro para `pending`, buckets del histograma sin huecos, y
+  `formatMoney` con centavos). Verificado por código: no queda ninguna segunda
+  fuente de color ni renderizado de moneda; los `toLocaleString` que quedan son
+  un tick de gráfico y dos formateadores de fecha, no dinero.
+- **V-01 a V-07** — los siete visuales de este informe están cerrados. **No existe
+  un V-08 a V-25**: una versión anterior de este documento menciónaba ese rango
+  por error y ya está corregido.
+
+### Contabilidad de los hallazgos altos (A1–A31)
+
+El informe listaba 31 hallazgos altos sin decir cuáles estaban resueltos. Esta
+tabla es la fuente de verdad; "verificado" significa comprobado contra el código,
+no citado de memoria.
+
+| Estado | Hallazgos |
+|---|---|
+| **Verificado pendiente** | A1, A2, A3, A4, A5, A6, A8, A12, A15, A25, A26, A27, A28, A31 |
+| **Resuelto** | A9 (guard de producción en W1), A20 (W3), A29 / V-03 (W4) |
+| **Sin contabilidad en este documento** | A7, A13, A14, A16–A24, A30 |
+| **Diferido por decisión** | A10, A11 (recalibrar el ensemble: cambia scores en producción) |
+
+Evidencia de los pendientes verificados: A4 → 4 rutas con `SIN-DEP` en
+`audit.py:25,80,113` y `reports.py:17`; A6 → `health.py:84`; A8 →
+`core/dependencies.py:49`; A12 → `rule_engine.py:98`; A15 →
+`ensemble.py:26`; A26 → no existe ningún `ErrorBoundary` ni
+`getDerivedStateFromError` en `frontend/src/`; A27 → `persist` de zustand con
+clave `auth-storage`; A28 → `refresh()` y `logout()` exportados en
+`api/auth.ts:50,68` y nunca llamados; A31 → `TransactionDetail.tsx:40`.
+
+**580 tests verdes y 86 % de coverage no cubren A4–A8 ni A12–A15**: son caminos
+sin test, y por eso nadie los ha tocado. El coverage no es evidencia de que estén
+resueltos.
