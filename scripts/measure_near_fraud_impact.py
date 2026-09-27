@@ -33,6 +33,7 @@ def build_production_like_graph(
     transactions: int,
     fraud_rate: float,
     shared_merchant_rate: float,
+    card_space: int = 10_000,
     seed: int = 7,
 ) -> None:
     """Populate the graph the way the API does.
@@ -41,18 +42,28 @@ def build_production_like_graph(
     receiver is a merchant node derived from the merchant name, card is the
     last-4. A share of transactions reuse a small merchant pool, which is what
     makes networks form at all.
+
+    `card_space` is the number of distinct card values, and it matters more than
+    it looks. The API stores `card_last4`, so the real space is 10,000 values.
+    An earlier version of this script assigned one card per user — a 1:1
+    mapping — which made every user's card constant and turned the near-fraud
+    signal into a restatement of user proximity, reporting ~17% where the
+    production topology reports ~0%. That is an artefact of the generator, not
+    a property of the detector, and it made the script quietly wrong.
     """
     rng = random.Random(seed)
     merchants = [f"merchant_{i}" for i in range(40)]
-    cards = [f"card_{i:04d}" for i in range(users)]
+    cards = [f"card_{i:04d}" for i in range(card_space)]
 
-    for i in range(transactions):
+    for _ in range(transactions):
         sender = f"user_{rng.randrange(users)}"
         if rng.random() < shared_merchant_rate:
             receiver = rng.choice(merchants)
         else:
             receiver = f"merchant_{rng.randrange(users * 2)}"
-        card = cards[rng.randrange(users)]
+        # Drawn from the whole space, not indexed by sender: two users can share
+        # a card value and one user can have many, which is what 4 digits means.
+        card = cards[rng.randrange(card_space)]
         service.add_transaction(
             sender_id=sender,
             receiver_id=receiver,

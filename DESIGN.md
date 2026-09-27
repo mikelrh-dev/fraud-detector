@@ -42,7 +42,7 @@ Professional fintech dashboard for fraud detection analysts. Dark-first, data-de
 | Token | Hex | Tailwind |
 |---|---|---|
 | Action base (`--color-accent`) | `#dc2626` | `red-600` / `bg-accent` |
-| Action hover | `#b91c1c` | `red-700` (CTAs use `hover:bg-red-500` legacy hover) |
+| Action hover | `#b91c1c` | `red-700` / `hover:bg-action-hover` |
 | Focus ring | `#ef4444` | `red-500`, 2px offset |
 
 **Accent contract (Phase 4):** `--color-accent` is the **brand action color**
@@ -123,8 +123,8 @@ Desktop (md+): root `min-h-dvh md:grid md:grid-cols-[1.15fr_1fr]`.
 - **RIGHT form panel**: centered `max-w-sm`; labels above inputs (`text-xs`
   slate-400); inputs per Forms spec (h-11, focus ring risk-critical/25);
   password fields carry an Eye/EyeSlash visibility toggle
-  ("Mostrar/Ocultar contraseña"); primary submit `bg-accent hover:bg-red-500`;
-  ghost demo button under a divider row.
+  ("Mostrar/Ocultar contraseña"); primary submit
+  `bg-accent hover:bg-action-hover`; ghost demo button under a divider row.
 - **Register strength meter**: 3 segments (`h-1 rounded-full`), filled count
   1/2/3 for weak/medium/strong with tones risk-critical / warn / clean.
 - **Mobile (<md)**: single column — compact brand header (`h-14`, 28px shield)

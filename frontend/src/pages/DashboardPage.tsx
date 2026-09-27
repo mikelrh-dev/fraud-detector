@@ -140,10 +140,17 @@ export default function DashboardPage() {
 
       {/* Main content — route entrance animates once per navigation */}
       <main className="flex-1 overflow-auto p-6">
-        <PageTransition>
-          <div className="max-w-7xl mx-auto space-y-6">
-            {/* Failure banner — a failed metrics query used to render as four
-                permanent em-dashes, indistinguishable from genuinely zero. */}
+            <PageTransition>
+              <div className="max-w-7xl mx-auto space-y-6">
+                {/* The dashboard had no h1 at all: its first heading was the
+                    "Últimas Transacciones" h2, so a screen-reader user arriving
+                    on the page got no page title and a heading hierarchy that
+                    started at level 2. Every other page has an h1. Visually
+                    hidden rather than added, because the KPI row is the visual
+                    header and a second visible title would be redundant. */}
+                <h1 className="sr-only">Dashboard de detección de fraude</h1>
+                {/* Failure banner - a failed metrics query used to render as four
+                    permanent em-dashes, indistinguishable from genuinely zero. */}
             {metricsError && (
               <div className="rounded-lg border border-risk-critical/30 bg-risk-critical/5">
                 <ErrorState
