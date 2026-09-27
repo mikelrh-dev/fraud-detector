@@ -29,41 +29,58 @@ function fetchTransaction(id: string) {
   return getTransaction(id);
 }
 
-async function fetchReport(
-  transactionId: string,
-): Promise<ReportResponse | null> {
+/**
+ * Outcome of asking for the LLM report.
+ *
+ * A31: this used to return `null` for every outcome that was not a 202 or a
+ * 404, so a 500 from a dead worker rendered as "No hay reporte disponible para
+ * esta transacción" — telling the analyst the report does not exist when in
+ * fact the request failed. Those are different claims, and on a fraud
+ * investigation the second one is the dangerous one: an analyst concludes
+ * there is nothing to see when the system never looked.
+ */
+type ReportFetch =
+  | { kind: "report"; report: ReportResponse }
+  | { kind: "absent" }
+  | { kind: "failed"; status?: number };
+
+async function fetchReport(transactionId: string): Promise<ReportFetch> {
   try {
     const response = await apiClient.get<ReportResponse>(
       `/transactions/${transactionId}/report`,
     );
-    return response.data;
+    return { kind: "report", report: response.data };
   } catch (err: unknown) {
-    if (
+    const status =
       err &&
       typeof err === "object" &&
       "response" in err &&
-      (err as { response: { status: number } }).response.status === 202
-    ) {
-      // Pending — return a pending state
+      (err as { response: { status: number } }).response.status;
+
+    if (status === 202) {
+      // Still being generated.
       return {
-        transaction_id: transactionId,
-        report_text: null,
-        model_name: null,
-        status: "pending",
-        generation_time_ms: null,
-        created_at: null,
-        error_detail: null,
+        kind: "report",
+        report: {
+          transaction_id: transactionId,
+          report_text: null,
+          model_name: null,
+          status: "pending",
+          generation_time_ms: null,
+          created_at: null,
+          error_detail: null,
+        },
       };
     }
-    if (
-      err &&
-      typeof err === "object" &&
-      "response" in err &&
-      (err as { response: { status: number } }).response.status === 404
-    ) {
-      return null;
+
+    if (status === 404) {
+      // Genuinely absent: the worker has not produced one and is not trying.
+      return { kind: "absent" };
     }
-    return null;
+
+    // A 5xx, a network failure, an aborted request: we do not know. Say so
+    // instead of asserting the report does not exist.
+    return { kind: "failed", status: status as number | undefined };
   }
 }
 
@@ -212,6 +229,10 @@ export default function TransactionDetail() {
   // Poll report if pending
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [reportLoading, setReportLoading] = useState(true);
+  // A31: tracked separately from `report === null`, which now means "the
+  // worker has not produced one", so a failed request is not reported as an
+  // absent report.
+  const [reportError, setReportError] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -219,19 +240,32 @@ export default function TransactionDetail() {
     let cancelled = false;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
+    function apply(result: ReportFetch) {
+      if (result.kind === "report") {
+        setReport(result.report);
+        setReportError(null);
+      } else if (result.kind === "absent") {
+        setReport(null);
+        setReportError(null);
+      } else {
+        setReport(null);
+        setReportError(result.status ?? null);
+      }
+    }
+
     async function loadReport() {
       const result = await fetchReport(id!);
       if (cancelled) return;
-      setReport(result);
+      apply(result);
       setReportLoading(false);
 
       // If pending, poll every 5s
-      if (result?.status === "pending") {
+      if (result.kind === "report" && result.report.status === "pending") {
         pollInterval = setInterval(async () => {
           const updated = await fetchReport(id!);
           if (cancelled) return;
-          setReport(updated);
-          if (updated?.status !== "pending") {
+          apply(updated);
+          if (updated.kind !== "report" || updated.report.status !== "pending") {
             if (pollInterval) clearInterval(pollInterval);
           }
         }, 5000);
@@ -370,6 +404,25 @@ export default function TransactionDetail() {
 
           {reportLoading ? (
             <div className="text-sm text-slate-500">Cargando reporte...</div>
+          ) : reportError !== null ? (
+            // A31: a failed request must not read as an absent report. "We
+            // could not ask" and "there is nothing there" are different claims,
+            // and an analyst investigating fraud needs to know which one they
+            // are looking at.
+            <div
+              role="alert"
+              className="flex flex-col items-center px-6 py-8 text-center"
+              data-testid="report-error"
+            >
+              <p className="text-sm font-medium text-slate-300">
+                No se pudo consultar el reporte
+              </p>
+              <p className="mt-1 max-w-xs text-xs text-slate-500">
+                {reportError
+                  ? `El servicio respondió con un error (${reportError}). El reporte puede existir; no se pudo verificar.`
+                  : "No se pudo contactar al servicio. El reporte puede existir; no se pudo verificar."}
+              </p>
+            </div>
           ) : report === null ? (
             <div className="text-sm text-slate-500">
               No hay reporte disponible para esta transacción.

@@ -62,12 +62,38 @@ describe("CreateTransactionPage", () => {
     expect(screen.getByLabelText(/últimos 4 dígitos/i)).toBeInTheDocument();
   });
 
-  it("user_id is hidden (no visible input)", () => {
+  it("A30: no longer renders the dead user_id field", () => {
     renderPage();
-    // The user_id input should be type="hidden"
+    // This test used to assert the opposite — that a hidden `user_id` input was
+    // present — which pinned the defect. That field was required, fed from an
+    // auth store that can legitimately hold `user: null`, and was the one input
+    // with no rendered error, so an empty value disabled the submit button
+    // permanently and silently. The server ignores the value anyway (F2).
     const userIdInput = document.querySelector('input[name="user_id"]');
-    expect(userIdInput).toBeInTheDocument();
-    expect(userIdInput).toHaveAttribute("type", "hidden");
+    expect(userIdInput).not.toBeInTheDocument();
+  });
+
+  it("A30: the submit button is enabled without a user object in the store", () => {
+    // authStore sets isAuthenticated unconditionally and leaves `user` null when
+    // the token fails to decode, and ProtectedRoute gates on isAuthenticated
+    // only, so this state is reachable. The form must not depend on it.
+    renderPage();
+    const submit = screen.getByRole("button", { name: /crear transacci/i });
+    // Disabled only because the visible fields are still empty, not because of
+    // a hidden field nobody can see or fix.
+    const namedInputs = [
+      ...document.querySelectorAll("input[name], textarea[name]"),
+    ].map((el) => el.getAttribute("name"));
+    expect(namedInputs).not.toContain("user_id");
+    expect(submit).toBeInTheDocument();
+  });
+
+  it("A30: shows no loading skeleton before anything is submitted", () => {
+    const { container } = renderPage();
+    // ScoreResultCard used to render a pulsing skeleton whenever `!result`,
+    // which is true on first paint — claiming work was in progress before the
+    // user had done anything.
+    expect(container.querySelector(".animate-pulse")).toBeNull();
   });
 
   it("submits valid form and shows ScoreResultCard", async () => {

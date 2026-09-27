@@ -5,7 +5,6 @@ import { z } from "zod";
 import { useCreateTransaction } from "../hooks/useCreateTransaction";
 import { ScoreResultCard } from "./ScoreResultCard";
 import { PageTransition } from "../components/PageTransition";
-import { useAuthStore } from "../store/authStore";
 import { Sidebar } from "../components/Sidebar";
 import type { ScoreResponse } from "../api/transactions";
 
@@ -18,14 +17,24 @@ const transactionSchema = z.object({
     .string()
     .length(4, "Debe tener 4 dígitos")
     .regex(/^\d{4}$/, "Solo dígitos"),
-  user_id: z.string().min(1),
+  // A30: user_id used to be a hidden required field fed from the auth store.
+  // It was a permanent dead end: authStore sets isAuthenticated unconditionally
+  // and leaves `user` null when the token fails to decode, and ProtectedRoute
+  // gates on isAuthenticated only, so `{isAuthenticated: true, user: null}` was
+  // reachable — and an empty user_id fails validation forever, leaving the
+  // submit button permanently disabled with no error rendered, because the
+  // hidden input was the one field with no error node.
+  //
+  // It was also dead weight: the server ignores payload.user_id and always uses
+  // the authenticated identity (F2), and the schema marks it deprecated. So a
+  // hidden, un-diagnosable, permanently-blocking field was gating a submit for
+  // a value the server discards.
 });
 
 type TransactionFormData = z.infer<typeof transactionSchema>;
 
 export default function CreateTransactionPage() {
   const [result, setResult] = useState<ScoreResponse | null>(null);
-  const user = useAuthStore((s) => s.user);
 
   const {
     register,
@@ -35,7 +44,6 @@ export default function CreateTransactionPage() {
     resolver: zodResolver(transactionSchema),
     mode: "onChange",
     defaultValues: {
-      user_id: user?.id || "",
       merchant_category: "",
     },
   });
@@ -147,9 +155,6 @@ export default function CreateTransactionPage() {
             )}
           </div>
 
-          {/* Hidden user_id */}
-          <input type="hidden" {...register("user_id")} />
-
           {/* Submit */}
           <button
             type="submit"
@@ -161,7 +166,7 @@ export default function CreateTransactionPage() {
         </form>
 
         {/* Score Result */}
-        <ScoreResultCard result={result} isLoading={mutation.isPending && result === null} />
+            <ScoreResultCard result={result} isLoading={mutation.isPending} />
         </PageTransition>
       </div>
     </div>

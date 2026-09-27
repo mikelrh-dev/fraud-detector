@@ -42,7 +42,13 @@ export interface CreateTransactionRequest {
   merchant_name: string;
   merchant_category?: string | null;
   card_last4: string;
-  user_id: string;
+  /**
+   * A30: removed from the form and from this contract. The server ignores it
+   * and always uses the authenticated identity (F2), and the schema marks it
+   * deprecated. As a required field it was a permanent dead end: an empty value
+   * failed validation forever and disabled the submit button with no error
+   * shown, because the hidden input was the one field with no error node.
+   */
 }
 
 export interface ScoreResponse {

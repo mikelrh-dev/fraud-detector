@@ -241,8 +241,19 @@ function LoadingSkeleton() {
 }
 
 export function ScoreResultCard({ result, isLoading }: ScoreResultCardProps) {
-  if (isLoading || !result) {
+  // A30: this used to be `if (isLoading || !result)`, so the `!result` arm
+  // rendered a pulsing skeleton on first paint — before the user had submitted
+  // anything, and for as long as no result existed. A "scoring…" skeleton shown
+  // on an untouched form claims work is in progress when none is.
+  if (isLoading) {
     return <LoadingSkeleton />;
+  }
+
+  if (!result) {
+    // Nothing submitted yet, or the request failed. Neither is a loading state,
+    // so render nothing rather than an indefinite skeleton. The page already
+    // shows the form and reports failures through a toast.
+    return null;
   }
 
   const mlTrained = isMLTrained(result.ml_score);
