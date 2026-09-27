@@ -25,6 +25,40 @@ MERCHANT_RISK_CATEGORIES: frozenset[str] = frozenset({
     "money_transfer",
     "adult",
     "pharmacy",
+   })
+
+# A14: the rule engine used MERCHANT_RISK_CATEGORIES as a single tier, so a
+# pharmacy purchase or a remittance carried the same flat 20 rule points as a
+# gambling site, with no corroborating evidence at all. Combined with
+# velocity_burst (30) and the night-time rules, a single `category` field could
+# reach 85/100 on its own — and 20 points of pure class bias on every such
+# transaction is 20 points of systematic false positives across a whole class of
+# legitimate merchants.
+#
+# These tiers are for the rule engine only. MERCHANT_RISK_CATEGORIES is left
+# untouched because it is also the feature-engine's contract
+# (merchant_risk_level, is_crypto) and the training scripts generate from it;
+# changing it would silently shift the model's input distribution, which is a
+# different and much more dangerous change.
+#
+#   - Adversarial: the category itself is evidence of risk.
+#   - Regulated: the category is normal for the business; it is only a
+#     *corroborating* signal, and must be paired with something else.
+MERCHANT_ADVERSARIAL_CATEGORIES: frozenset[str] = frozenset({
+    "cryptocurrency",  # canonical
+    "crypto",          # alias for cryptocurrency
+    "btc",             # alias for cryptocurrency
+    "gambling",
+    "casino",
+    "adult",
+})
+
+#: Legitimate, heavily-regulated businesses. Flagging a transaction purely
+#: because it happened at a pharmacy or a remittance provider is a false
+#: positive by construction, so these only count alongside another signal.
+MERCHANT_REGULATED_CATEGORIES: frozenset[str] = frozenset({
+    "money_transfer",
+    "pharmacy",
 })
 
 # Alias mapping: incoming category strings → canonical form.

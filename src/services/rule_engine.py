@@ -9,7 +9,12 @@ import math
 from datetime import datetime
 from typing import Any
 
-from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
+from src.core.ml_constants import (
+    CATEGORY_ALIASES,
+    MERCHANT_ADVERSARIAL_CATEGORIES,
+    MERCHANT_REGULATED_CATEGORIES,
+    MERCHANT_RISK_CATEGORIES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,13 +120,22 @@ class RuleEngine:
         if recent_txns > 1 and category in MERCHANT_RISK_CATEGORIES:
             fired.append("velocity_burst")
 
-        # 3. Unusual merchant: in blacklist or inherently risky category
+        # 3. Unusual merchant: blacklisted, or an inherently adversarial category.
+        #
+        # A14: this fired on category alone for every merchant in
+        # MERCHANT_RISK_CATEGORIES, which charged a flat 20 points to every
+        # pharmacy purchase and every remittance with no evidence whatsoever.
+        # A regulated category is now only a *corroborating* signal: it counts
+        # here only when paired with velocity, a night hour, or a blacklisted
+        # merchant. An adversarial category still stands on its own, because
+        # that is the actual claim being made.
         merchant = _as_text(transaction.get("merchant_name")).lower()
         blacklist = [_as_text(m).lower() for m in (ctx.get("merchant_blacklist") or [])]
-        if merchant in blacklist or category in MERCHANT_RISK_CATEGORIES:
-            fired.append("unusual_merchant")
+        blacklisted = merchant in blacklist
 
-        # 4. Unusual hours: transaction between 00:00 and 06:00
+        # Rule 4's hour is needed as corroboration, so it is resolved first.
+        # Rule ordering in the *output* list is unchanged; only the evaluation
+        # order moved.
         ts_str = transaction.get("timestamp")
         hour: int | None = None
         if ts_str:
@@ -134,9 +148,25 @@ class RuleEngine:
             except (ValueError, TypeError):
                 pass
 
-        # 5b. Off-hours + crypto: night transaction on a risky category
-        #     Revolut-grade: combine temporal + category signals
-        if hour is not None and 0 <= hour < 6 and category in MERCHANT_RISK_CATEGORIES:
+        is_adversarial = category in MERCHANT_ADVERSARIAL_CATEGORIES
+        is_regulated = category in MERCHANT_REGULATED_CATEGORIES
+        night_hour = hour is not None and 0 <= hour < 6
+        has_corroboration = recent_txns > 1 or night_hour or blacklisted
+
+        if blacklisted or is_adversarial or (is_regulated and has_corroboration):
+            fired.append("unusual_merchant")
+
+        # 5b. Off-hours + adversarial category.
+        #
+        # A14: this rule is named for crypto and is scoped accordingly. It used
+        # the full risk-category set, so a pharmacy at 3am scored it too — and
+        # since `unusual_hours` already charges 10 for the same night hour, the
+        # night hour was being counted twice, 10 + 25 = 35 points for one fact.
+        # For a regulated merchant the night hour now carries its proportionate
+        # weight (unusual_hours, 10) and velocity still stacks on top, which
+        # lands a night-time pharmacy with rapid transactions in review rather
+        # than in fraud.
+        if night_hour and category in MERCHANT_ADVERSARIAL_CATEGORIES:
             fired.append("off_hours_crypto")
 
         # 6. Near fraud: user or card is ≤2 hops from known fraudster (graph network)

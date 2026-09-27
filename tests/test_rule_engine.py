@@ -108,9 +108,28 @@ class TestRuleEngineMerchantCategory:
         assert "unusual_merchant" in fired
         assert score == 20
 
-    def test_money_transfer_category_fires(self):
-        """Category 'money_transfer' fires unusual_merchant."""
+    def test_money_transfer_category_alone_does_not_fire(self):
+        """A14: a regulated category is not evidence on its own.
+
+        This test used to assert the opposite — that `money_transfer` fired
+        `unusual_merchant` and scored exactly 20 with no corroborating signal —
+        which pinned the class-bias defect. Flagging every remittance because of
+        what a remittance is, is a false positive by construction.
+        """
         tx = {**self.base_tx, "merchant_category": "money_transfer"}
+        score, fired = self.engine.evaluate(tx)
+        assert "unusual_merchant" not in fired
+        assert score == 0
+
+    def test_money_transfer_with_corroboration_fires(self):
+        """The category is a corroborating signal, so it still counts."""
+        tx = {**self.base_tx, "merchant_category": "money_transfer"}
+        _, fired = self.engine.evaluate(tx, context={"recent_transactions": 5})
+        assert "unusual_merchant" in fired
+
+    def test_adversarial_category_still_fires_alone(self):
+        """The tier that genuinely is a risk claim keeps its behaviour."""
+        tx = {**self.base_tx, "merchant_category": "gambling"}
         score, fired = self.engine.evaluate(tx)
         assert "unusual_merchant" in fired
         assert score == 20
