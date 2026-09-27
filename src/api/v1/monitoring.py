@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.rate_limit import check_rate_limit
 from src.core.dependencies import get_current_user, get_db, require_role
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudScore

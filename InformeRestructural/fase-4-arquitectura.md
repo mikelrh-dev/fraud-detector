@@ -186,7 +186,24 @@ Total: 36 passed, 0 failed
 
 ---
 
+## Medios Resueltos
+
+### M4: Sin Rate Limiting en Monitoring Endpoints
+
+**Problema:** Los endpoints de monitoring no tenían rate limiting.
+
+**Cambio:**
+- `src/api/v1/monitoring.py`: Agregada dependencia `check_rate_limit` en todos los endpoints
+
+**Efecto práctico:**
+- Endpoints de monitoring protegidos contra abuso
+- Mismo patrón que ya existe en transactions y alerts
+
+---
+
 ## Pendiente de la Fase 4
 
 - Conectar el graph service con Redis en el endpoint de transacciones (C2 parcialmente implementado)
-- Considerar añadir un endpoint de health para los workers
+- M1: Script overlap — create_admin.py vs create_admin_user.py
+- M2: Sin ADRs — no hay Architecture Decision Records
+- M3: Sin documentación de deployment
