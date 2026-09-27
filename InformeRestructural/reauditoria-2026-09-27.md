@@ -393,11 +393,40 @@ tabla es la fuente de verdad.
 
 | Estado | Hallazgos |
 |---|---|
-| **Resuelto en el loop de bloqueantes** | A1 (`e172665`), A3 (`e635863`), A4 (`e635863`), A26 (`922dcf5`), A28 (`ca3c2bf`) |
-| **Ya estaba resuelto antes** | A8 (`4db8533`, con `require_any_role`), A9 (W1), A20 (W3), A29 / V-03 (W4) |
-| **Pendiente verificado** | A2, A5, A6, A12, A15, A25, A27, A31 |
-| **Sin contabilidad en este documento** | A7, A13, A14, A16–A24, A30 |
-| **Diferido por decisión** | A10, A11 (recalibrar el ensemble: cambia scores en producción) |
+| **Resuelto** | A1, A2, A3, A4, A5, A6, A7, A12, A14, A15, A16, A17, A18, A21, A22, A23, A24, A25, A26, A28, A30, A31 |
+| **Ya estaba resuelto antes** | A8 (`4db8533`), A9 (W1), A20 (W3), A29 / V-03 (W4) |
+| **Verificado y NO es un defecto** | A13 (contenido por tres capas: sanitizador en `feature_engine.py:153`, fail-closed en `ensemble.py:65`, y el único caller pasa floats validados por pydantic) |
+| **Pendiente, requiere decisión de diseño** | A19 (outbox), A27 (cookies httpOnly + CSRF) |
+| **Diferido por decisión de negocio** | A10, A11 (recalibrar el ensemble: cambia scores en producción) |
+| **Diferido por impacto** | C6, C7 |
+
+### Verificación de los 12 nunca auditados
+
+Eleven turned out LIVE and one was already contained. Three were worse than
+the original report said, and the verifier found defects nobody had catalogued:
+
+- **A14** — no era 75/100 sino **85/100**, porque `off_hours_crypto` (25) y
+  `unusual_hours` (10) cobraban por la misma hora nocturna: un hecho valía 35
+  puntos. Y `off_hours_crypto`, que se llama "crypto", disparaba también para
+  farmacias.
+- **A7** — no era "cualquier analyst": **cualquier token válido**, porque el
+  guardia era un `get_current_user` a secas, sin exigir rol.
+- **A22** — no era un O(V+E) sino **tres** lecturas no acotadas por request: el
+  snapshot completo del grafo, `nx.degree_centrality` sobre todo el grafo, y un
+  `SELECT` del historial de montos **sin `LIMIT`**.
+- **A19** — no era "silencioso": se loguea a ERROR con traceback. Pero el
+  verificador encontró algo peor: los eventos se publican **antes del commit**
+  (el commit real ocurre en el teardown de `get_db`), y las tres tablas
+  consumidoras tienen FK a `transactions.id`, así que un worker que recoge el
+  mensaje en esa ventana falla con violación de FK.
+- **A21** — el trigger de poda `number_of_nodes() % 1000 == 0` **nunca disparaba**:
+  el contador crece ~3 por transacción y puede saltarse un múltiplo de 1000.
+- **A23** — el mecanismo está invertido: `redis-cli ping` contra un servidor con
+  `requirepass` imprime `NOAUTH` y **sale con 0**, así que era un healthcheck
+  verde falso, no un bloqueo de arranque. Por eso el stack arrancaba.
+- **A17** — el audit decía "sin log de error"; sí hay un `logger.warning` al
+  importar. Lo que no existe es que la condición llegue a `/health`.
+- **A18** — `/health/workers` solo mira la profundidad del PEL, y el camino que fallaba la drenaba activamente, reforzando el verde falso.
 
 ### Loop de bloqueantes — resultado
 
@@ -430,35 +459,58 @@ Gates tras el loop: `ruff check src` limpio, `mypy` limpio en 64 ficheros,
 **611 tests** verdes, coverage **86.44 %** (gate 80 %), frontend 242 tests,
 `tsc` y build correctos.
 
-Evidencia de lo que **queda** pendiente, por lectura directa del código:
 
-- **A2** — `is_token_blacklisted` y `blacklist_token` son dos `await` separados
-  (`auth.py:110` y `:122`): la ventana TOCTOU existe. Corregirlo bien pide una
-  operación atómica de Redis (Lua script o `SET NX`), no un parche.
-- **A5** — `services/auth.py:95` lanza `CredentialError` si el usuario no existe
-  **antes** de `:98` `verify_password`, así que el bcrypt solo se paga si el
-  usuario existe. Arreglo: hashear una contraseña ficticia contra un usuario
-  dummy para igualar el tiempo.
-- **A6** — `health.py:83` devuelve `"error": str(exc)` sin autenticar: expone
-  nombre de usuario de BD, SQLSTATE o IP de contenedor. Hay un *trade-off* real:
-  en staging el detalle ayuda a diagnosticar.
-- **A12** — `rule_engine.py` no valida `amount` ni `merchant_name`; no es
-  alcanzable por HTTP, pero cualquier consumidor en batch o replay lo heredaría.
-- **A15** — `ensemble.py:50` filtra por **peso** (`w.get(k, 0) > 0`), no por
-  señal: una capa ausente con `score = 0` sigue contando en el promedio
-  ponderado, y con el modelo caído se pierden 25 puntos en silencio. **Cambiar
-  esto altera scores en producción: es decisión de negocio, igual que A10/A11.**
-- **A25** — `useCountUp.ts:33` arranca en `0` y el efecto se reinicia en cada
-  cambio de `target`; el dashboard refresca cada 30 s, así que los KPIs se
-  rebobinan en bucle. Arreglo: animar solo en el primer montaje, o interpolar
-  desde el valor actual.
-- **A27** — `authStore.ts:20,51` usa `persist` de zustand, que serializa en
-  localStorage, token de acceso y de refresh en claro. Migrar a cookie `httpOnly`
-  es un rediseño del flujo de auth, y choca con A28: el interceptor lee el token
-  del storage.
-- **A31** — `TransactionDetail.tsx:57-65` devuelve `null` para cualquier error
-  no-202/no-404, así que un 500 se renderiza como "No hay reporte disponible".
+## Pendiente real tras el loop
 
-**El coverage sigue sin cubrir A2, A5, A6 ni A12–A15**: son caminos sin test, y
-por eso nadie los ha tocado. El coverage no es evidencia de que estén
-resueltos.
+### Requiere una decisión de diseño (no es un parche)
+
+- **A27 (tokens en localStorage)** — `authStore` serializa access y refresh token
+  en claro vía `persist` de zustand. Migrar a cookie `httpOnly` **no es un cambio
+  localizado**, y por eso no se hizo a medias: las cookies las envía el navegador
+  automáticamente, así que migrar sin CSRF **crea** una vulnerabilidad nueva
+  mientras aparenta cerrar esta. El trabajo real son cuatro piezas encadenadas:
+  1. Backend: emitir cookies en login/refresh y borrarlas en logout.
+  2. Backend: aceptar el token desde cookie **o** cabecera.
+  3. **CSRF**, que hoy no existe en ningún punto del repo (verificado).
+  4. CORS: en desarrollo es `["*"]` con `allow_credentials=True`, combinación que
+     los navegadores rechazan para requests con credenciales. Habría que pasar a
+     una lista explícita de orígenes.
+  Además choca con A28: el interceptor lee el token del storage.
+- **A19 (outbox)** — los tres `publish_event` son fire-and-forget. Cerrar el hueco
+  de pérdida pide una tabla outbox en la misma sesión y un relay que la drene a
+  los tres streams. Además cierra una condición de carrera que el verificador
+  encontró: los eventos se publican **antes** del commit real (que ocurre en el
+  teardown de `get_db`) y las tablas consumidoras tienen FK a `transactions.id`,
+  así que un worker que recoge el mensaje en esa ventana falla con violación de FK.
+
+### Diferido por decisión de negocio
+
+- **A10 / A11** — recalibrar el ensemble cambia scores en producción. Es el mismo
+  tipo de decisión que A15, que ya se resolvió redistribuyendo el peso entre las
+  capas que sí producen señal.
+
+### Diferido por impacto
+
+- **C6 / C7** — requieren tocar `requirements.txt` y `docker-compose.yml`; C6
+  necesita desinstalar el shim de `sentence_transformers`, lo que rompe la suite
+  hasta reinstalar la dependencia.
+
+### No era un defecto
+
+- **A13** — confirmado contenido por tres capas independientes: el sanitizador de
+  `feature_engine.py:153`, el fail-closed de `ensemble.py:65`, y el hecho de que
+  el único caller pase floats ya validados por pydantic. El `float()` sin guard
+  solo lo alcanzaría un consumidor no-HTTP que pase un dict crudo, y no existe.
+
+### Dos notas de honestidad sobre el método
+
+- **El grep no verifica defectos.** Una primera pasada marcó A8 como pendiente
+  porque `require_role` seguía existiendo en `dependencies.py`, cuando el defecto
+  estaba en el *call site* de `monitoring.py`, ya arreglado en `4db8533`. Buscar
+  el síntoma en la definición en vez de en el uso produce falsos positivos.
+- **Varios tests fijaban el defecto, no el contrato.** `test_money_transfer_category_fires`
+  afirmaba que una remesa sin señal puntuaba 20. `test_unavailable_skips_without_retry_or_rows`
+  afirmaba que el worker SHAP hacía ACK sin dejar rastro. El test de
+  `CreateTransactionPage` afirmaba que el input oculto `user_id` debía existir.
+  Los cuatro se invirtieron. Un test que pasa con y sin el defecto no es una red,
+  es decoración.
