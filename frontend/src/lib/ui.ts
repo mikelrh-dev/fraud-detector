@@ -14,9 +14,30 @@
  * without reducing any coupling.
  */
 
-/** Merge class fragments, dropping falsy entries. */
-export const cn = (...parts: (string | false | null | undefined)[]): string =>
-  parts.filter(Boolean).join(" ");
+/**
+ * Merge class fragments, dropping falsy entries.
+ *
+ * Accepts nested fragments and maps because callers hold objects: variant and
+ * size maps are objects of strings, so `cn(BTN_VARIANTS[variant])` has to type
+ * check or every call site drifts back to a hand-rolled join.
+ */
+type ClassValue =
+  | string
+  | false
+  | null
+  | undefined
+  | readonly string[]
+  | Readonly<Record<string, string | false | undefined>>;
+export const cn = (...parts: ClassValue[]): string =>
+  parts
+    .flatMap((p) => {
+      if (!p) return [];
+      if (typeof p === "string") return [p];
+      if (Array.isArray(p)) return [...p];
+      return Object.values(p).map((v) => v ?? "");
+    })
+    .filter((p) => Boolean(p))
+    .join(" ");
 
 // --- tables ---
 
@@ -70,24 +91,26 @@ export const BTN_VARIANTS = {
   secondary:
     "bg-transparent text-slate-300 border border-slate-700 enabled:hover:bg-slate-800",
   ghost: "text-slate-400 enabled:hover:text-slate-100",
-  // Known divergence from DESIGN.md ("Danger: same as primary"), deferred to
-  // the visual pass. `bg-risk-critical` is #ef4444, which is LIGHTER than
-  // `bg-accent` #dc2626 — so today a destructive control reads as weaker than
-  // the primary action it sits beside. Keeping it on the risk family is the
-  // deliberate call: DESIGN.md keeps risk and accent semantically independent,
-  // and that independence is worth more than the weight match. The weight is
-  // the thing to fix in the visual pass, not by re-colouring danger into the
-  // accent family.
-  danger: "bg-risk-critical text-white enabled:hover:bg-risk-critical-hover",
+  // DESIGN.md (Buttons): "Danger: same as primary (this product's primary
+  // action IS risky)". So this is deliberately identical to `primary` — the
+  // distinction is semantic, carried by the button's label, not by colour.
+  //
+  // It previously used the risk family with its own hover token. That token
+  // resolved to #dc2626, byte-identical to `--color-accent`, so hovering a
+  // destructive button landed on the rest colour of a primary one. A second
+  // red ramp to say "risky" was the wrong instrument; DESIGN.md had already
+  // answered it. If the visual pass wants destructive controls to read
+  // distinctly, that is a design change to make there, on purpose.
+  danger: "bg-accent text-white enabled:hover:bg-action-hover",
 } as const;
-
-export type ButtonVariant = keyof typeof BTN_VARIANTS;
-export type ButtonSize = keyof typeof BTN_SIZES;
 
 export const BTN_SIZES = {
   sm: "px-3 py-1.5 text-xs rounded-lg",
   md: "px-4 py-2 text-sm rounded-lg",
 } as const;
+
+export type ButtonVariant = keyof typeof BTN_VARIANTS;
+export type ButtonSize = keyof typeof BTN_SIZES;
 
 // --- form fields ---
 

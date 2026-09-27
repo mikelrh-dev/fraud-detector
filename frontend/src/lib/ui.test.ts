@@ -58,19 +58,30 @@ describe("ui class constants", () => {
     expect(BTN_BASE).toContain(FOCUS_RING);
   });
 
-  it("only the variant named `primary` carries the accent background", () => {
+  it("only the variants DESIGN.md calls action-bearing carry the accent", () => {
     // A secondary or ghost button that hovered to the accent colour would read
     // as the primary action, which is the V-07 class of defect. Iterated over
     // the object rather than naming variants, so a fifth variant added later
     // cannot slip past this check.
+    //
+    // `danger` IS action-bearing: DESIGN.md says "Danger: same as primary
+    // (this product's primary action IS risky)", so it is deliberately in the
+    // set rather than exempted from it.
+    const ACCENT_BEARING = new Set(["primary", "danger"]);
     for (const [name, classes] of Object.entries(BTN_VARIANTS)) {
-      if (name === "primary") {
+      if (ACCENT_BEARING.has(name)) {
         expect(classes, `variant ${name} must use the accent background`).toContain(
           "bg-accent",
+        );
+        expect(classes, `variant ${name} must use the action hover`).toContain(
+          "enabled:hover:bg-action-hover",
         );
       } else {
         expect(classes, `variant ${name} must not use bg-accent`).not.toContain(
           "bg-accent",
+        );
+        expect(classes, `variant ${name} must not borrow the action hover`).not.toContain(
+          "action-hover",
         );
       }
     }
@@ -112,15 +123,23 @@ describe("ui class constants", () => {
     expect(BTN_VARIANTS.ghost).not.toContain("border");
   });
 
-  it("danger hover is a real, distinct token — not the tone it sits on", () => {
-    // `--color-risk-critical` is #ef4444, which IS red-500. A
-    // `hover:bg-red-500` here rendered and changed nothing: a destructive
-    // control with an invisible hover. The hover must be its own token.
-    expect(BTN_VARIANTS.danger).toContain("bg-risk-critical-hover");
-    expect(BTN_VARIANTS.danger).not.toMatch(/hover:bg-(red|rose)-\d/);
-    // And it must not borrow the accent family's hover, which is a different
-    // semantic family (DESIGN.md keeps risk and accent independent).
-    expect(BTN_VARIANTS.danger).not.toContain("action-hover");
+  it("danger is the primary treatment, per DESIGN.md — not a lighter red", () => {
+    // DESIGN.md: "Danger: same as primary (this product's primary action IS
+    // risky)". So danger and primary are intentionally the same tokens.
+    //
+    // This replaced a previous attempt that gave danger its own risk-family
+    // hover token. That token resolved to #dc2626 — byte-identical to
+    // --color-accent — so HOVERING a destructive button landed on the exact
+    // rest colour of a primary one, which is a sharper V-07 than the one it was
+    // meant to fix. Minting a second red ramp to express "risky" was the
+    // mistake; the design system already decided the answer.
+    expect(BTN_VARIANTS.danger).toBe(BTN_VARIANTS.primary);
+
+    // A destructive control must never read as weaker than the action beside
+    // it, and `bg-risk-critical` (#ef4444) is LIGHTER than `bg-accent`
+    // (#dc2626). Guard the value, not just the class name, so swapping the
+    // token back cannot pass unnoticed.
+    expect(BTN_VARIANTS.danger).not.toContain("risk-critical");
   });
 
   it("no variant reaches for a raw risk or accent palette value", () => {
@@ -224,5 +243,15 @@ describe("cn", () => {
     expect(cn("a", false, false, "b")).toBe("a b");
     expect(cn("", "a")).toBe("a");
     expect(cn("a", "")).toBe("a");
+  });
+
+  it("flattens nested fragments", () => {
+    // Variant maps are objects of strings, so a caller holding a map needs to
+    // be able to spread it in. A signature that only took `string` made
+    // `cn(BTN_VARIANTS[variant])` a type error and pushed every call site
+    // toward a hand-rolled `[...].filter().join()`.
+    expect(cn("a", { b: "x", c: "y" })).toBe("a x y");
+    expect(cn(["a", "b"], "c")).toBe("a b c");
+    expect(cn("a", { b: false, c: "y" })).toBe("a y");
   });
 });

@@ -154,21 +154,24 @@ All buttons compose from the shared constants in `src/lib/ui.ts` (`BTN_BASE` + o
 | `primary` | `bg-accent text-white`, hover `bg-action-hover` |
 | `secondary` | `bg-transparent text-slate-300 border border-slate-700`, hover `bg-slate-800` |
 | `ghost` | `text-slate-400` (text only, no background), hover `text-slate-100` |
-| `danger` | `bg-risk-critical text-white`, hover `bg-risk-critical-hover` |
+| `danger` | identical to `primary` — see the note below |
 | Size `sm` | `px-3 py-1.5 text-xs rounded-lg` |
 | Size `md` | `px-4 py-2 text-sm rounded-lg` (8px radius, 12×24px padding) |
 
 - **Design intent — Danger: same as primary** (this product's primary action IS
-  risky). The *intent* is unchanged and remains the target state.
-- ⚠ **Known divergence, deferred to the visual pass:** `bg-risk-critical` is
-  `#ef4444`, which is *lighter* than `bg-accent` `#dc2626`, so the danger button
-  currently reads as weaker than the primary action beside it. It stays on the
-  risk family deliberately — risk and accent are semantically independent and
-  that independence is the stronger rule. Fix the *weight* in the visual pass
-  (a darker risk-critical base), not by re-colouring danger into the accent
-  family. Note also that `risk-critical-hover` is `#dc2626`, i.e. exactly the
-  accent value, so hovering a danger button currently lands on the primary
-  colour.
+  risky). `danger` is therefore *the same tokens as `primary`*: the distinction
+  is semantic, carried by the button's label, not by colour.
+  - It previously used `bg-risk-critical` with its own `risk-critical-hover`
+    token. That token resolved to `#dc2626` — byte-identical to `--color-accent` —
+    so **hovering a destructive button landed on the rest colour of a primary
+    one**, a worse version of the problem it was meant to fix. A second red ramp
+    to say "risky" was the wrong instrument; this design system had already
+    answered the question. Both the variant's colour and the token are gone.
+  - `bg-risk-critical` is also *lighter* than `bg-accent` (`#ef4444` vs `#dc2626`),
+    so a destructive control read as weaker than the action beside it.
+  - If the visual pass wants destructive controls to read as visually distinct
+    from the primary action, that is a deliberate design change to make there —
+    with a third tone, not by reusing an existing one.
 - **Hovers are gated on `enabled:`** (`enabled:hover:bg-…`). `BTN_BASE` already
   dims disabled controls with `disabled:opacity-50`; a bare `hover:` still fired
   under the cursor and made an inert button look pressable.
