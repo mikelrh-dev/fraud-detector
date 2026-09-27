@@ -16,6 +16,7 @@ import {
   classificationTextClass,
 } from "../lib/classification";
 import { MotionList } from "../components/MotionList";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageTransition } from "../components/PageTransition";
 import { RiskMeter } from "../components/RiskMeter";
 import { NUMERIC_CELL } from "../lib/ui";
@@ -440,49 +441,35 @@ export default function AlertsPage() {
         </PageTransition>
       </main>
 
-      {/* Action confirmation modal */}
+      {/* Action confirmation modal — role/focus/Escape now handled by ConfirmDialog */}
       {actionAlertId && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 w-full max-w-sm">
-            <h3 className="text-sm font-semibold text-slate-200 mb-3">
-              {actionType === "review"
-                ? "Revisar Alerta"
-                : actionType === "false_positive"
-                  ? "Marcar como Falso Positivo"
-                  : "Revertir Alerta"}
-            </h3>
-
-            {actionType !== "review" && (
+        <ConfirmDialog
+          title={
+            actionType === "review"
+              ? "Revisar Alerta"
+              : actionType === "false_positive"
+                ? "Marcar como Falso Positivo"
+                : "Revertir Alerta"
+          }
+          onConfirm={confirmAction}
+          onCancel={() => setActionAlertId(null)}
+          disabled={actionMutation.isPending}
+          error={actionError}
+          confirmLabel={actionMutation.isPending ? "Procesando..." : "Confirmar"}
+        >
+          {actionType !== "review" && (
+            <label className="block mb-3">
+              <span className="sr-only">Razón (requerida)</span>
               <textarea
                 value={actionReason}
                 onChange={(e) => setActionReason(e.target.value)}
                 placeholder="Razón (requerida)"
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/40 mb-3"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 mb-3"
                 rows={2}
               />
-            )}
-
-            {actionError && (
-              <p className="text-xs text-red-400 mb-3">{actionError}</p>
-            )}
-
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setActionAlertId(null)}
-                className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmAction}
-                disabled={actionMutation.isPending}
-                className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed"
-              >
-                {actionMutation.isPending ? "Procesando..." : "Confirmar"}
-              </button>
-            </div>
-          </div>
-        </div>
+            </label>
+          )}
+        </ConfirmDialog>
       )}
     </div>
   );

@@ -144,7 +144,7 @@ export default function RegisterPage() {
           </div>
           <Link
             to="/login"
-            className="btn-motion active:scale-[0.98] flex h-11 w-full items-center justify-center rounded-lg bg-accent hover:bg-red-500 font-medium text-white text-sm"
+            className="btn-motion active:scale-[0.98] flex h-11 w-full items-center justify-center rounded-lg bg-accent hover:bg-action-hover font-medium text-white text-sm"
           >
             Volver a Login
           </Link>
@@ -259,7 +259,7 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
+            className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-action-hover disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
           >
             {loading ? "Creando cuenta..." : "Crear Cuenta"}
           </button>

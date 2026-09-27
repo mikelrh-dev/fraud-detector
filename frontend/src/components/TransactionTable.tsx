@@ -1,4 +1,5 @@
 import type { Transaction } from "../api/transactions";
+import { Link } from "react-router-dom";
 import { EmptyState, ReceiptLineArt } from "./EmptyState";
 import { classificationPillClass, classificationText } from "../lib/classification";
 import { formatMoney } from "../lib/money";
@@ -169,8 +170,16 @@ export default function TransactionTable({
                 return (
                   <tr
                     key={tx.id}
-                    onClick={() => onTransactionClick(tx.id)}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/40 cursor-pointer transition-colors"
+                    onClick={(e) => {
+                      // The merchant cell is a real <Link>, so it handles its
+                      // own activation — including middle-click, cmd-click and
+                      // "copy link address". Without this guard the row's
+                      // handler would also fire and push a second history
+                      // entry for the same route.
+                      if ((e.target as HTMLElement).closest("a")) return;
+                      onTransactionClick(tx.id);
+                    }}
+                    className="border-b border-slate-800/50 hover:bg-slate-800/40 focus-within:bg-slate-800/40 cursor-pointer transition-colors"
                   >
                     <td className="px-4 py-3 text-slate-300 font-mono text-xs">
                       {tx.id.slice(0, 8)}...
@@ -178,7 +187,17 @@ export default function TransactionTable({
                     <td className={`px-4 py-3 text-slate-200 font-medium ${NUMERIC_CELL}`}>
                       {formatMoney(tx.amount, tx.currency)}
                     </td>
-                    <td className="px-4 py-3 text-slate-300">{tx.merchant_name}</td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {/* The row's primary action is reachable by keyboard and
+                          exposes a real href; the row onClick is mouse-only
+                          convenience for the rest of the cells. */}
+                      <Link
+                        to={`/transactions/${tx.id}`}
+                        className="rounded hover:text-slate-100 hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
+                        {tx.merchant_name}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <RiskMeter value={tx.risk_score} />

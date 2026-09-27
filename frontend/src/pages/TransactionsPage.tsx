@@ -65,7 +65,7 @@ export default function TransactionsPage() {
           <h1 className="text-lg font-bold text-text-primary">Transacciones</h1>
           <Link
             to="/transactions/new"
-            className="btn-motion active:scale-[0.98] inline-flex items-center gap-1.5 bg-accent hover:bg-red-500 text-white text-sm font-medium px-4 py-2 rounded-lg"
+            className="btn-motion active:scale-[0.98] inline-flex items-center gap-1.5 bg-accent hover:bg-action-hover text-white text-sm font-medium px-4 py-2 rounded-lg"
           >
             <Plus size={16} aria-hidden="true" />
             Nueva Transacción
@@ -151,12 +151,20 @@ export default function TransactionsPage() {
                 <div
                   key={tx.id}
                   data-testid={`tx-card-${tx.id}`}
-                  className="bg-slate-900 border border-slate-800 rounded-xl p-4"
-                  onClick={() => navigate(`/transactions/${tx.id}`)}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-4 focus-within:border-slate-700"
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest("a")) return;
+                    navigate(`/transactions/${tx.id}`);
+                  }}
                 >
                   {/* Header row: merchant + amount */}
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-slate-200 truncate">{tx.merchant_name}</span>
+                    <Link
+                      to={`/transactions/${tx.id}`}
+                      className="text-sm font-medium text-slate-200 truncate rounded hover:text-slate-100 hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      {tx.merchant_name}
+                    </Link>
                     <span className={`text-sm font-bold text-slate-100 ${NUMERIC_CELL}`}>
                   {formatMoney(tx.amount, tx.currency)}
                 </span>
@@ -205,10 +213,22 @@ export default function TransactionsPage() {
                       {data?.items.map((tx: Transaction) => (
                         <tr
                           key={tx.id}
-                          onClick={() => navigate(`/transactions/${tx.id}`)}
-                          className="border-b border-slate-800/50 hover:bg-slate-800/40 cursor-pointer transition-colors"
+                          onClick={(e) => {
+                            // The merchant cell is a real <Link>; see
+                            // TransactionTable for why this guard exists.
+                            if ((e.target as HTMLElement).closest("a")) return;
+                            navigate(`/transactions/${tx.id}`);
+                          }}
+                          className="border-b border-slate-800/50 hover:bg-slate-800/40 focus-within:bg-slate-800/40 cursor-pointer transition-colors"
                         >
-                          <td className="px-4 py-3 text-slate-200">{tx.merchant_name}</td>
+                          <td className="px-4 py-3 text-slate-200">
+                            <Link
+                              to={`/transactions/${tx.id}`}
+                              className="rounded hover:text-slate-100 hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                            >
+                              {tx.merchant_name}
+                            </Link>
+                          </td>
                           <td className={`px-4 py-3 text-slate-200 ${NUMERIC_CELL}`}>
                   {formatMoney(tx.amount, tx.currency)}
                 </td>

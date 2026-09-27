@@ -144,7 +144,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-red-500 disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
+          className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-action-hover disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
         >
           {loading ? "Ingresando..." : "Ingresar"}
         </button>

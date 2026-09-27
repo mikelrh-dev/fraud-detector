@@ -237,20 +237,36 @@ de investigación de fraude, ocultar los centavos del monto en revisión es un
 defecto de fidelidad de datos, no cosmético. Y el `$` está hardcodeado aunque
 `tx.currency` viaja en el payload.
 
-### V-05 · Filas de tabla y cards móviles solo funcionan con ratón
-`<tr onClick>` sin `tabIndex`/`role`/`onKeyDown` en tres sitios → un usuario de
-teclado **no puede abrir una transacción**. Es la acción de navegación principal
-del producto. Sin anillo de foco visible porque no son focusables.
+### V-05 · ~~Filas de tabla y cards móviles solo funcionan con ratón~~ RESUELTO
+`<tr onClick>` sin `tabIndex`/`role`/`onKeyDown` → un usuario de teclado **no podía
+abrir una transacción**. Resuelto con un `<Link>` real en la celda del comercio, no
+con un parche de tabindex: eso además hace funcionar cmd-click, clic central y
+"copiar dirección del enlace" para todo el mundo. El `onClick` de la fila se
+conserva como comodidad de ratón y **descarta** los clics originados dentro del
+enlace para no empujar dos entradas de historial. Aplicado en `TransactionTable` y
+en la tabla y la card móvil de `TransactionsPage`. La fila gana
+`focus-within:` para que el foco de teclado resalte la fila completa.
 
-### V-06 · El modal de confirmación no es un diálogo ni atrapa el foco
+### V-06 · ~~El modal de confirmación no es un diálogo ni atrapa el foco~~ RESUELTO
 Overlay `<div>` sin `role="dialog"`, sin `aria-modal`, sin foco inicial, sin
-trampa, sin Escape, sin restaurar foco. Confirmar *"Marcar como Falso Positivo"*
-— una acción destructiva — se anuncia como contenido ordinario de página.
+trampa, sin Escape, sin restaurar foco. Extraído a `components/ConfirmDialog.tsx`:
+`role="dialog"` + `aria-modal` + `aria-labelledby`, foco al primer control al
+abrir, Tab contenido (con envoltura en ambos sentidos), Escape para descartar,
+foco devuelto al control que lo abrió, y `role="alert"` para el error inline.
 
-### V-07 · El hover del CTA **aclara** el botón, y el token correcto está muerto
-`--color-accent` es #dc2626 y el hover es `bg-red-500` = #ef4444, **más claro**.
-`--color-action-hover` (#b91c1c, red-700) está **definido y sin usar** en todo
-`src/`. `DESIGN.md` se contradice: `:45` dice `red-500`, `:148` dice `red-700`.
+> **Bug encontrado y corregido durante la implementación:** la trampa de foco
+> filtraba los controlables con `offsetParent !== null`, que es `null` para todo
+> elemento `position: fixed` en un navegador real. El filtro dejaba **un solo**
+> control y la trampa no envolvía. Corregido para filtrar por marcado
+> (`hidden` / `aria-hidden`) en lugar de layout.
+
+### V-07 · ~~El hover del CTA aclara el botón~~ RESUELTO
+`--color-accent` es #dc2626 y el hover era `bg-red-500` = #ef4444, **más claro**,
+y `--color-action-hover` (#b91c1c, red-700) estaba **definido y sin usar**. Los 5
+CTAs que quedaban (`CreateTransactionPage`, `LoginPage`, `RegisterPage` ×2,
+`TransactionsPage`) ahora usan `hover:bg-action-hover`; el token pasa a estar vivo.
+`DESIGN.md` sigue contradiciéndose en `:45` (red-500) frente a `:148` (red-700):
+pendiente de corregir el documento.
 
 ### Lo que está bien hecho (y merece decirse)
 El sistema de motion es lo más fuerte del repo: cap de stagger enforcing en *código* (`MotionList.tsx:18-25`, ~480ms máximo sin importar el largo de la lista), `PageTransition` keyed solo en `pathname` para que filtros y paginación no re-disparen, y el reduced-motion está completo (un guard CSS global + los tres paths JS optan explícitamente). **No hay librería de animación instalada**, exactamente como manda `DESIGN.md`. La deduplicación de la paleta de charts está documentada *y* testeada con un test que lee el source y falla ante cualquier hex literal. `Color nunca es el único signal`: cada badge combina color + texto + icono. La regresión desktop↔móvil está pineada por tests.
@@ -336,11 +352,17 @@ que me detuvo.
   desinstalar el shim de `sentence_transformers` en `tests/workers/conftest.py`,
   lo que hará fallar la suite hasta reinstalar la dependencia.
 - **A1–A3** (token path sin BD, rotación TOCTOU, bypass de rate limit) —
-  cambios de diseño en el flujo de auth, no parches.
+  cambios de diseño en el flujo de auth, no parches. **Decisión tomada: A1 va
+  después de los visuales de alto impacto.** La forma elegida es leer `User` en
+  `/auth/refresh` (no en cada request), lo que baja la ventana de 24 h a los
+  15 min del access token sin acoplar toda request autenticada a Postgres.
+  Motivo de la prioridad: no existe ningún endpoint de gestión de usuarios, así
+  que la única forma de desactivar una cuenta hoy es editar la BD a mano.
 - **A10/A11** (el ensemble no alcanza `fraud` bajo $1000; umbrales que bajan con
   el monto) — requieren **recalibrar el modelo**, y eso cambia scores en
   producción. Decisión de negocio, no mía.
-- **V-01 a V-25** (visuales) — 4 mapas de color ya divergidos, `pending` verde,
-  moneda inconsistente, tabla solo-ratón. Son cambios de bajo riesgo y sin
-  efecto en el backend; el mejor siguiente paso es V-01/V-02/V-04, que son los
-  que más erosionan la confianza del usuario.
+- **V-01 a V-04, V-08 a V-25** (visuales restantes) — tipografía aplanada, paddings
+  y gaps inconsistentes, tokens saltados, jerarquía de headings y el error boundary
+  global. V-05, V-06 y V-07 están cerrados. El siguiente paso de mayor impacto es
+  la jerarquía de headings, porque `h1` falta en varias páginas y rompe la
+  navegación por headings de cualquier lector de pantalla.
