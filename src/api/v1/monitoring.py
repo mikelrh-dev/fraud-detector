@@ -150,14 +150,22 @@ async def get_drift_status(
 
         # If drift service not seeded yet, use first half as reference
         if not _drift_service.is_initialized:
-            reference_size = max(len(recent_scores) // 2, 50)
-            reference_data = current_data.iloc[:reference_size]
-            _drift_service.set_reference_data(reference_data)
-            current_data = current_data.iloc[reference_size:]
-            logger.info(
-                "Initialized drift service with %d reference transactions",
-                reference_size,
-            )
+            # Try to load from DB first
+            loaded = await _drift_service.load_reference_from_db()
+            if not loaded:
+                # Fall back to using first half as reference
+                reference_size = max(len(recent_scores) // 2, 50)
+                reference_data = current_data.iloc[:reference_size]
+                _drift_service.set_reference_data(reference_data)
+                await _drift_service.save_reference_to_db(
+                    reference_data,
+                    description="Auto-initialized from recent transactions",
+                )
+                current_data = current_data.iloc[reference_size:]
+                logger.info(
+                    "Initialized drift service with %d reference transactions",
+                    reference_size,
+                )
 
         # Evaluate drift using ThreadPoolExecutor to avoid blocking event loop
         # Evidently calculations are CPU-bound (500ms-2s), must run in thread

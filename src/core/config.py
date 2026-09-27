@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     db_port: int = 5432
 
     # Redis
-    redis_password: str = "fraud_redis_secret"
-    redis_url: str = "redis://:fraud_redis_secret@localhost:6379/0"
+    redis_password: str  # No default — must be injected via env (security)
+    redis_url: str  # No default — must be injected via env (security)
 
     # Ollama
     ollama_host: str = "http://localhost:11434"

@@ -18,9 +18,9 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from sklearn.ensemble import IsolationForest
 from sklearn.metrics import (auc, precision_recall_curve, precision_score,
                              recall_score, roc_auc_score, roc_curve)
+from xgboost import XGBClassifier
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -33,7 +33,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = "models/isolation_forest_v1.joblib"
+MODEL_PATH = "models/xgboost_paysim_v1.joblib"
 FEATURE_PIPELINE_PATH = "models/feature_pipeline_v1.joblib"
 DATA_PATH = "data/synthetic_transactions.csv"
 
@@ -120,29 +120,28 @@ def build_user_history(
 
 
 def evaluate_model(
-    model: IsolationForest,
+    model: XGBClassifier,
     X: np.ndarray,
     y_true: np.ndarray,
 ) -> dict:
     """Evaluate the model and return metrics.
 
     Args:
-        model: Trained IsolationForest.
+        model: Trained XGBClassifier.
         X: Feature matrix.
         y_true: Ground truth labels (0=legitimate, 1=fraud).
 
     Returns:
         Dict of evaluation metrics.
     """
-    # Predictions (IsolationForest: -1=anomaly, 1=normal)
+    # Predictions (XGBoost: 0=legitimate, 1=fraud)
     y_pred = model.predict(X)
-    y_pred_binary = np.where(y_pred == -1, 1, 0)
 
-    # Anomaly scores
-    y_scores = -model.decision_function(X)
+    # Fraud probability scores (0-1)
+    y_scores = model.predict_proba(X)[:, 1]
 
-    precision = precision_score(y_true, y_pred_binary, zero_division=0)
-    recall = recall_score(y_true, y_pred_binary, zero_division=0)
+    precision = precision_score(y_true, y_pred, zero_division=0)
+    recall = recall_score(y_true, y_pred, zero_division=0)
 
     # Precision-Recall curve
     precision_vals, recall_vals, _ = precision_recall_curve(y_true, y_scores)
@@ -160,7 +159,7 @@ def evaluate_model(
         "pr_auc": round(float(pr_auc), 4),
         "roc_auc": round(float(roc_auc), 4),
         "n_samples": len(X),
-        "n_anomalies": int(np.sum(y_pred == -1)),
+        "n_fraud": int(np.sum(y_pred == 1)),
     }
 
 
@@ -177,17 +176,19 @@ def main() -> None:
     X = extract_features(transactions, user_history)
     logger.info("Feature matrix shape: %s", X.shape)
 
-    # 4. Train IsolationForest
-    logger.info("Training IsolationForest...")
-    contamination = float(np.sum(labels)) / len(labels)
-    model = IsolationForest(
+    # 4. Train XGBoost classifier
+    logger.info("Training XGBoost classifier...")
+    scale_pos_weight = float(np.sum(labels == 0)) / max(np.sum(labels == 1), 1)
+    model = XGBClassifier(
         n_estimators=100,
-        max_samples="auto",
-        contamination=contamination,
+        max_depth=6,
+        learning_rate=0.1,
+        scale_pos_weight=scale_pos_weight,
         random_state=42,
         n_jobs=-1,
+        eval_metric="logloss",
     )
-    model.fit(X)
+    model.fit(X, labels)
 
     # 5. Evaluate
     metrics = evaluate_model(model, X, labels)

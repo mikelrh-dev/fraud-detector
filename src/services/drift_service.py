@@ -4,22 +4,22 @@ Monitors if the distribution of fraud transaction features drifts from a
 reference dataset. If drift is detected, it indicates the model may be
 becoming obsolete and needs retraining.
 
-Reference data is persisted to Redis (key ``drift:reference_data``) as
-JSON so it survives process restarts. On startup, if the Redis key exists,
-the reference baseline is restored automatically.
+Reference data is persisted to the database so it survives Redis flushes
+and service restarts.
 """
 
-import json
 import logging
 from typing import Any
 
 import pandas as pd
 from evidently.metric_preset import DataDriftPreset
 from evidently.report import Report
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.models.drift_reference import DriftReferenceData
 
 logger = logging.getLogger(__name__)
-
-REDIS_DRIFT_KEY = "drift:reference_data"
 
 
 class DataDriftService:
@@ -27,75 +27,87 @@ class DataDriftService:
     
     Compares current transaction features against a reference distribution
     to identify if fraud patterns have shifted.
+    
+    Reference data is persisted to the database for durability.
     """
-
+    
     def __init__(
         self,
         reference_data: pd.DataFrame | None = None,
-        redis_client: Any | None = None,
+        db: AsyncSession | None = None,
     ):
         """Initialize drift service with optional reference dataset.
         
         Args:
             reference_data: Baseline dataset (e.g., first 500 transactions).
-                           If None, will be restored from Redis or set on first use.
-            redis_client: Optional async Redis client for persistence.
+                           If None, will be loaded from the database or set on first use.
+            db: Optional async database session for persistence.
         """
-        self._redis = redis_client
+        self._db = db
         self.reference_data = reference_data
         self.is_initialized = reference_data is not None
 
-        # Restore from Redis if available and no explicit reference provided
-        if not self.is_initialized and self._redis is not None:
-            self._restore_from_redis()
-
-    def _restore_from_redis(self) -> None:
-        """Load reference data from Redis if available (best-effort)."""
-        if self._redis is None:
-            return
-        try:
-            raw = self._redis.get(REDIS_DRIFT_KEY)
-            if raw is None:
-                return
-            if isinstance(raw, bytes):
-                raw = raw.decode()
-            payload = json.loads(raw)
-            columns = payload.get("columns", [])
-            data = payload.get("data", [])
-            if columns and data:
-                self.reference_data = pd.DataFrame(data, columns=columns)
-                self.is_initialized = True
-                logger.info(
-                    "Restored drift reference from Redis: %d rows, %d cols",
-                    len(data), len(columns),
-                )
-        except Exception as exc:
-            logger.warning("Failed to restore drift reference from Redis: %s", exc)
-
-    def _persist_to_redis(self) -> None:
-        """Save reference data to Redis as JSON (best-effort, fire-and-forget)."""
-        if self._redis is None or self.reference_data is None:
-            return
-        try:
-            payload = json.dumps({
-                "columns": list(self.reference_data.columns),
-                "data": self.reference_data.values.tolist(),
-            })
-            self._redis.set(REDIS_DRIFT_KEY, payload)
-        except Exception as exc:
-            logger.warning("Failed to persist drift reference to Redis: %s", exc)
-
-    def set_reference_data(self, data: pd.DataFrame) -> None:
-        """Set the reference baseline dataset for drift comparison.
+    async def load_reference_from_db(self) -> bool:
+        """Load reference data from the database if available.
         
-        Also persists to Redis for crash recovery.
+        Returns:
+            True if reference data was loaded, False otherwise.
+        """
+        if self._db is None or self.is_initialized:
+            return False
+        try:
+            result = await self._db.execute(
+                select(DriftReferenceData).order_by(DriftReferenceData.created_at.desc()).limit(1)
+            )
+            record = result.scalar_one_or_none()
+            if record is None:
+                return False
+            self.reference_data = pd.DataFrame(record.data, columns=record.columns)
+            self.is_initialized = True
+            logger.info(
+                "Loaded drift reference from DB: %d rows, %d cols",
+                len(record.data), len(record.columns),
+            )
+            return True
+        except Exception as exc:
+            logger.warning("Failed to load drift reference from DB: %s", exc)
+            return False
+
+    async def save_reference_to_db(
+        self,
+        data: pd.DataFrame,
+        description: str | None = None,
+    ) -> None:
+        """Save reference data to the database.
         
         Args:
             data: DataFrame with features (amount, merchant_category, velocity_5min, etc.)
+            description: Optional description of the reference dataset.
+        """
+        if self._db is None:
+            return
+        try:
+            record = DriftReferenceData(
+                columns=list(data.columns),
+                data=data.values.tolist(),
+                description=description,
+                version="v1",
+            )
+            self._db.add(record)
+            await self._db.flush()
+            logger.info("Saved drift reference to DB: %d rows", len(data))
+        except Exception as exc:
+            logger.warning("Failed to save drift reference to DB: %s", exc)
+
+    def set_reference_data(self, data: pd.DataFrame, description: str | None = None) -> None:
+        """Set the reference baseline dataset for drift comparison.
+        
+        Args:
+            data: DataFrame with features (amount, merchant_category, velocity_5min, etc.)
+            description: Optional description of the reference dataset.
         """
         self.reference_data = data
         self.is_initialized = True
-        self._persist_to_redis()
         logger.info("Reference dataset set: %d rows", len(data))
 
     def evaluate_drift(self, current_data: pd.DataFrame) -> dict[str, Any]:

@@ -1,8 +1,8 @@
 """Tests for drift monitoring persistence (ML4).
 
 Verifies that:
-- Drift reference data persists to Redis (not just in-memory singleton).
-- track_model_run is invoked after scoring (fire-and-forget).
+- Drift reference data persists to the database (not just in-memory singleton).
+- track_model_run is invoked after scoring (awaited).
 - GET /monitoring/metrics returns actual ml_model_run rows.
 """
 
@@ -14,58 +14,61 @@ from src.services.scoring_service import ScoringService
 
 
 class TestDriftPersistence:
-    """Drift reference data should persist to Redis, not just in-memory."""
+    """Drift reference data should persist to the database, not just in-memory."""
 
-    def test_drift_service_loads_from_redis_on_init(self):
-        """DataDriftService should load reference data from Redis key on startup."""
-        from src.services.drift_service import DataDriftService
-
-        mock_redis = MagicMock()
-        mock_redis.get = MagicMock(return_value=None)  # no cached data
-
-        service = DataDriftService(redis_client=mock_redis)
-        assert service.is_initialized is False
-
-    def test_drift_service_persists_to_redis_on_set(self):
-        """set_reference_data should persist to Redis as JSON."""
-        import json
-
-        from src.services.drift_service import DataDriftService
+    @pytest.mark.asyncio
+    async def test_drift_service_loads_from_db(self):
+        """DataDriftService should load reference data from DB when available."""
         import pandas as pd
 
-        mock_redis = MagicMock()
-        mock_redis.set = MagicMock()
+        from src.models.drift_reference import DriftReferenceData
+        from src.services.drift_service import DataDriftService
 
-        service = DataDriftService(redis_client=mock_redis)
+        mock_db = AsyncMock()
+        mock_record = MagicMock()
+        mock_record.columns = ["col1", "col2"]
+        mock_record.data = [[1.0, 3.0], [2.0, 4.0]]
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_record
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        service = DataDriftService(db=mock_db)
+        loaded = await service.load_reference_from_db()
+
+        assert loaded is True
+        assert service.is_initialized is True
+        assert service.reference_data is not None
+        assert len(service.reference_data) == 2
+
+    @pytest.mark.asyncio
+    async def test_drift_service_saves_to_db(self):
+        """save_reference_data should persist to the database."""
+        import pandas as pd
+
+        from src.services.drift_service import DataDriftService
+
+        mock_db = AsyncMock()
+        mock_db.flush = AsyncMock()
+
+        service = DataDriftService(db=mock_db)
+        df = pd.DataFrame({"col1": [1.0, 2.0], "col2": [3.0, 4.0]})
+        await service.save_reference_to_db(df, description="test")
+
+        # Should have added a record and flushed
+        mock_db.add.assert_called_once()
+        mock_db.flush.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_drift_service_no_db_no_crash(self):
+        """DataDriftService should work without a DB (memory-only fallback)."""
+        import pandas as pd
+
+        from src.services.drift_service import DataDriftService
+
+        service = DataDriftService(db=None)
         df = pd.DataFrame({"col1": [1.0, 2.0], "col2": [3.0, 4.0]})
         service.set_reference_data(df)
 
-        # Should have called redis.set with the drift:reference_data key
-        mock_redis.set.assert_called_once()
-        call_args = mock_redis.set.call_args
-        assert call_args[0][0] == "drift:reference_data"
-        # Value should be valid JSON
-        stored_json = call_args[0][1]
-        parsed = json.loads(stored_json)
-        assert "data" in parsed
-        assert "columns" in parsed
-
-    def test_drift_service_restores_from_redis(self):
-        """DataDriftService should restore reference data from Redis on init."""
-        import json
-
-        from src.services.drift_service import DataDriftService
-        import pandas as pd
-
-        cached_data = json.dumps({
-            "columns": ["col1", "col2"],
-            "data": [[1.0, 3.0], [2.0, 4.0]],
-        })
-
-        mock_redis = MagicMock()
-        mock_redis.get = MagicMock(return_value=cached_data.encode())
-
-        service = DataDriftService(redis_client=mock_redis)
         assert service.is_initialized is True
         assert service.reference_data is not None
         assert len(service.reference_data) == 2
@@ -108,16 +111,13 @@ class TestTrackModelRunAfterScoring:
         db = MagicMock()
         db.flush = AsyncMock()
 
-        result = service.compute_scores(
+        result = await service.compute_scores(
             tx_data={"amount": 5000, "merchant_category": "retail"},
             context={"recent_transactions": 2},
             user_history={},
             db=db,
             monitoring_service=monitoring,
         )
-
-        # Allow fire-and-forget task to complete
-        await asyncio.sleep(0.05)
 
         # track_model_run should have been called
         monitoring.track_model_run.assert_called_once()
@@ -162,7 +162,7 @@ class TestTrackModelRunAfterScoring:
         db.flush = AsyncMock()
 
         # Should not raise even if track_model_run fails
-        result = service.compute_scores(
+        result = await service.compute_scores(
             tx_data={"amount": 100},
             context={},
             user_history={},
@@ -170,6 +170,3 @@ class TestTrackModelRunAfterScoring:
             monitoring_service=monitoring,
         )
         assert result.ensemble_score == 0.0
-
-        # Allow fire-and-forget task to complete (and fail silently)
-        await asyncio.sleep(0.05)
