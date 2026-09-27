@@ -188,6 +188,32 @@ Total: 36 passed, 0 failed
 
 ## Medios Resueltos
 
+### M1: Script Overlap
+
+**Hallazgo:** `create_admin_user.py` no existe. El único script de admin es `create_admin.py`.
+
+**Estado:** No requiere cambios.
+
+---
+
+### M2: Sin ADRs
+
+**Problema:** No había Architecture Decision Records para las decisiones clave.
+
+**Cambio:**
+- `docs/adr/001-hybrid-rules-llm.md`: Motor de reglas + LLM híbrido
+- `docs/adr/002-redis-streams-workers.md`: Redis Streams para workers
+- `docs/adr/003-scoring-service.md`: Scoring pipeline en servicios
+- `docs/adr/004-soft-delete.md`: Soft delete
+- `docs/adr/005-xgboost-ml.md`: XGBoost para ML
+
+**Efecto práctico:**
+- Decisiones de diseño documentadas
+- Onboarding más rápido para el equipo
+- Referencia para futuras decisiones
+
+---
+
 ### M4: Sin Rate Limiting en Monitoring Endpoints
 
 **Problema:** Los endpoints de monitoring no tenían rate limiting.
@@ -204,6 +230,4 @@ Total: 36 passed, 0 failed
 ## Pendiente de la Fase 4
 
 - Conectar el graph service con Redis en el endpoint de transacciones (C2 parcialmente implementado)
-- M1: Script overlap — create_admin.py vs create_admin_user.py
-- M2: Sin ADRs — no hay Architecture Decision Records
 - M3: Sin documentación de deployment
