@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { Toaster } from "./components/Toaster";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { logRenderError } from "./lib/logRenderError";
 // Self-hosted fonts — must load before app CSS so @theme font stacks resolve.
 import "@fontsource-variable/geist";
 import "@fontsource/jetbrains-mono/400.css";
@@ -22,11 +24,15 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-        <Toaster />
-      </BrowserRouter>
-    </QueryClientProvider>
+    {/* Last resort: catches a throw from a provider itself (QueryClient or
+        BrowserRouter), which the route-level boundary inside App cannot see. */}
+    <ErrorBoundary onError={logRenderError("root")}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+          <Toaster />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );
