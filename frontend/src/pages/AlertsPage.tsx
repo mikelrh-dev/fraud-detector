@@ -11,23 +11,18 @@ import { Sidebar } from "../components/Sidebar";
 import { AlertStatusBadge } from "../components/AlertStatusBadge";
 import { BellLineArt, EmptyState } from "../components/EmptyState";
 import { AlertLineArt, ErrorState } from "../components/ErrorState";
+import {
+  classificationText,
+  classificationTextClass,
+} from "../lib/classification";
 import { MotionList } from "../components/MotionList";
 import { PageTransition } from "../components/PageTransition";
 import { RiskMeter } from "../components/RiskMeter";
 import { NUMERIC_CELL } from "../lib/ui";
 
-const CLASSIFICATION_COLORS: Record<string, string> = {
-  legitimate: "text-fraud-legitimate",
-  review: "text-fraud-review",
-  fraud: "text-fraud-fraud",
-};
-
-const CLASSIFICATION_LABELS: Record<string, string> = {
-  legitimate: "Legítimo",
-  review: "Revisión",
-  fraud: "Fraude",
-};
-
+// Classification colour and label come from lib/classification. This page used
+// to carry its own map that was missing `pending` entirely, so an unrecognised
+// classification silently fell through to a fourth, undocumented colour.
 type AlertAction = "review" | "false_positive" | "revert";
 
 export default function AlertsPage() {
@@ -214,13 +209,9 @@ export default function AlertsPage() {
                       {alert.transaction_id.slice(0, 8)}...
                     </button>
                     <span
-                      className={`text-xs font-medium ${
-                        CLASSIFICATION_COLORS[alert.classification] ||
-                        "text-slate-400"
-                      }`}
+                      className={`text-xs font-medium ${classificationTextClass(alert.classification)}`}
                     >
-                      {CLASSIFICATION_LABELS[alert.classification] ||
-                        alert.classification}
+                      {classificationText(alert.classification)}
                     </span>
                   </div>
                   {/* Timestamp */}
@@ -355,14 +346,9 @@ export default function AlertsPage() {
                           </td>
                           <td className="p-3">
                             <span
-                              className={`text-xs font-medium ${
-                                CLASSIFICATION_COLORS[
-                                  alert.classification
-                                ] || "text-slate-400"
-                              }`}
+                              className={`text-xs font-medium ${classificationTextClass(alert.classification)}`}
                             >
-                              {CLASSIFICATION_LABELS[alert.classification] ||
-                                alert.classification}
+                              {classificationText(alert.classification)}
                             </span>
                           </td>
                           <td className="p-3">

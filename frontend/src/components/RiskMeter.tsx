@@ -1,27 +1,24 @@
 import type { RiskTone } from "../lib/risk";
 import { RISK_THRESHOLDS, riskTone } from "../lib/risk";
+import {
+  classificationTone,
+  type ClassificationTone,
+} from "../lib/classification";
 
 /**
  * Tone → token fill classes. Zero inline hex: colors come from the
  * --color-risk-* @theme tokens (see DESIGN.md).
+ *
+ * `neutral` covers pending/unknown: a slate fill reads as "not determined"
+ * instead of asserting safety. It previously fell through to `clean`, so an
+ * unrecognised classification drew a green bar.
  */
-const FILL_CLASSES: Record<RiskTone, string> = {
+const FILL_CLASSES: Record<ClassificationTone, string> = {
   clean: "bg-risk-clean",
   warn: "bg-risk-warn",
   critical: "bg-risk-critical",
+  neutral: "bg-slate-600",
 };
-
-/**
- * Map backend classification to RiskTone.
- * Backend uses dynamic thresholds; this is the canonical mapping.
- */
-export function classificationToTone(
-  classification: string
-): RiskTone {
-  if (classification === "fraud") return "critical";
-  if (classification === "review") return "warn";
-  return "clean";
-}
 
 export interface RiskMeterProps {
   /** Risk score 0–100. Values outside the range are clamped.
@@ -43,8 +40,8 @@ export interface RiskMeterProps {
 export function RiskMeter({ value, classification, widthClass = "w-16" }: RiskMeterProps) {
   if (value === null || value === undefined) return null;
   const clamped = Math.min(Math.max(value, 0), 100);
-  const tone = classification
-    ? classificationToTone(classification)
+  const tone: RiskTone | ClassificationTone = classification
+    ? classificationTone(classification)
     : riskTone(clamped);
   return (
     <div

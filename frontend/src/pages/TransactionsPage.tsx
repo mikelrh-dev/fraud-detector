@@ -10,6 +10,7 @@ import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
 import type { Transaction } from "../api/transactions";
 import { formatScore } from "../lib/score";
+import { formatMoney } from "../lib/money";
 import {
   NUMERIC_CELL,
   TABLE_HEADER_CELL,
@@ -156,7 +157,9 @@ export default function TransactionsPage() {
                   {/* Header row: merchant + amount */}
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-slate-200 truncate">{tx.merchant_name}</span>
-                    <span className={`text-sm font-bold text-slate-100 ${NUMERIC_CELL}`}>${tx.amount.toFixed(2)}</span>
+                    <span className={`text-sm font-bold text-slate-100 ${NUMERIC_CELL}`}>
+                  {formatMoney(tx.amount, tx.currency)}
+                </span>
                   </div>
                   {/* Footer row: date + badge + score */}
                   <div className="flex items-center justify-between">
@@ -206,7 +209,9 @@ export default function TransactionsPage() {
                           className="border-b border-slate-800/50 hover:bg-slate-800/40 cursor-pointer transition-colors"
                         >
                           <td className="px-4 py-3 text-slate-200">{tx.merchant_name}</td>
-                          <td className={`px-4 py-3 text-slate-200 ${NUMERIC_CELL}`}>${tx.amount.toFixed(2)}</td>
+                          <td className={`px-4 py-3 text-slate-200 ${NUMERIC_CELL}`}>
+                  {formatMoney(tx.amount, tx.currency)}
+                </td>
                           <td className="px-4 py-3 text-slate-400">{tx.currency}</td>
                           <td className="px-4 py-3">
                             <span

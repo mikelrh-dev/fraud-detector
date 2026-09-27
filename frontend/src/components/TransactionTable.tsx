@@ -1,5 +1,7 @@
 import type { Transaction } from "../api/transactions";
 import { EmptyState, ReceiptLineArt } from "./EmptyState";
+import { classificationPillClass, classificationText } from "../lib/classification";
+import { formatMoney } from "../lib/money";
 import { RiskMeter } from "./RiskMeter";
 import {
   NUMERIC_CELL,
@@ -22,13 +24,8 @@ interface TransactionTableProps {
   loading?: boolean;
 }
 
-const CLASSIFICATION_COLORS: Record<string, string> = {
-  legitimate: "bg-fraud-legitimate-bg text-fraud-legitimate border border-fraud-legitimate/30",
-  review: "bg-fraud-review-bg text-fraud-review border border-fraud-review/30",
-  fraud: "bg-fraud-fraud-bg text-fraud-fraud border border-fraud-fraud/30",
-  pending: "bg-slate-800 text-slate-400 border border-slate-600/30",
-};
-
+/** Status → classification. Unknown statuses fall through as-is so the
+ *  classification helpers classify them as neutral rather than guessing. */
 const CLASSIFICATION_LABELS: Record<string, string> = {
   approved: "legitimate",
   flagged: "review",
@@ -169,9 +166,6 @@ export default function TransactionTable({
               transactions.map((tx) => {
                 const classification =
                   tx.classification ?? getClassification(tx.status);
-                const colorClass =
-                  CLASSIFICATION_COLORS[classification] ||
-                  CLASSIFICATION_COLORS.pending;
                 return (
                   <tr
                     key={tx.id}
@@ -182,7 +176,7 @@ export default function TransactionTable({
                       {tx.id.slice(0, 8)}...
                     </td>
                     <td className={`px-4 py-3 text-slate-200 font-medium ${NUMERIC_CELL}`}>
-                      ${tx.amount.toLocaleString("es-AR")}
+                      {formatMoney(tx.amount, tx.currency)}
                     </td>
                     <td className="px-4 py-3 text-slate-300">{tx.merchant_name}</td>
                     <td className="px-4 py-3">
@@ -195,15 +189,9 @@ export default function TransactionTable({
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${colorClass}`}
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${classificationPillClass(classification)}`}
                       >
-                        {classification === "legitimate"
-                          ? "Legítimo"
-                          : classification === "review"
-                            ? "Revisión"
-                            : classification === "fraud"
-                              ? "Fraude"
-                              : classification}
+                        {classificationText(classification)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs capitalize">

@@ -6,6 +6,11 @@ import { getTransaction } from "../api/transactions";
 import type { ScoreResponse, Transaction } from "../api/transactions";
 import apiClient from "../api/client";
 import { parseReportLines, type ReportBlock } from "../lib/report-format";
+import { formatMoney } from "../lib/money";
+import {
+  classificationPillClass,
+  classificationText,
+} from "../lib/classification";
 import { ScoreResultCard } from "./ScoreResultCard";
 import { PageTransition } from "../components/PageTransition";
 import { ShapAttributionCard } from "../components/ShapAttributionCard";
@@ -62,31 +67,21 @@ async function fetchReport(
   }
 }
 
+/**
+ * Status → classification.
+ *
+ * Was duplicated byte-for-byte in api/transactions.ts; an unknown status now
+ * falls through as itself so the classification helpers classify it as
+ * neutral instead of silently guessing.
+ */
 function statusToClassification(status: string): string {
-  switch (status) {
-    case "approved":
-      return "legitimate";
-    case "flagged":
-      return "review";
-    case "blocked":
-      return "fraud";
-    default:
-      return "pending";
-  }
+  return STATUS_TO_CLASSIFICATION[status] ?? status;
 }
 
-const CLASSIFICATION_COLORS: Record<string, string> = {
-  legitimate: "text-fraud-legitimate bg-fraud-legitimate-bg border-fraud-legitimate/30",
-  review: "text-fraud-review bg-fraud-review-bg border-fraud-review/30",
-  fraud: "text-fraud-fraud bg-fraud-fraud-bg border-fraud-fraud/30",
-  pending: "text-slate-400 bg-slate-800 border-slate-600/30",
-};
-
-const CLASSIFICATION_LABELS: Record<string, string> = {
-  legitimate: "Legítimo",
-  review: "Revisión",
-  fraud: "Fraude",
-  pending: "Pendiente",
+const STATUS_TO_CLASSIFICATION: Record<string, string> = {
+  approved: "legitimate",
+  flagged: "review",
+  blocked: "fraud",
 };
 
 /**
@@ -278,10 +273,8 @@ export default function TransactionDetail() {
   }
 
   const classification = statusToClassification(tx.status);
-  const colorKey =
-    CLASSIFICATION_COLORS[classification] || CLASSIFICATION_COLORS.pending;
-  const classificationLabel =
-    CLASSIFICATION_LABELS[classification] || classification;
+  const colorKey = classificationPillClass(classification);
+  const classificationLabel = classificationText(classification);
 
   return (
     <div className="min-h-screen bg-slate-950 overflow-x-hidden">
@@ -326,7 +319,7 @@ export default function TransactionDetail() {
             Información General
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <DetailField label="Monto" value={`$${tx.amount.toLocaleString("es-AR")}`} />
+            <DetailField label="Monto" value={formatMoney(tx.amount, tx.currency)} />
             <DetailField label="Moneda" value={tx.currency} />
             <DetailField label="Comercio" value={tx.merchant_name} />
             <DetailField label="Categoría" value={tx.merchant_category || "—"} />

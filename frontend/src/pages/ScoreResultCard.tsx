@@ -5,9 +5,8 @@ import type { ScoreResponse } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
 import { MotionList } from "../components/MotionList";
 import { formatScore, isMLTrained } from "../lib/score";
-import type { RiskTone } from "../lib/risk";
 import { RISK_THRESHOLDS } from "../lib/risk";
-import { classificationToTone } from "../components/RiskMeter";
+import { classificationTone, type ClassificationTone } from "../lib/classification";
 import {
   GAUGE_START_ANGLE_DEG,
   polarToPoint,
@@ -30,11 +29,14 @@ const GAUGE_STROKE_WIDTH = 14;
 const TICK_INNER_RADIUS = GAUGE_RADIUS - 10;
 const TICK_OUTER_RADIUS = GAUGE_RADIUS + 10;
 
-/** Risk tone → token stroke class (zero inline hex; see DESIGN.md). */
-const TONE_STROKE_CLASSES: Record<RiskTone, string> = {
+/** Risk tone → token stroke class (zero inline hex; see DESIGN.md).
+ *  `neutral` draws the gauge in slate: an unrecognised classification is an
+ *  undetermined state, and a green arc implied "safe". */
+const TONE_STROKE_CLASSES: Record<ClassificationTone, string> = {
   clean: "stroke-risk-clean",
   warn: "stroke-risk-warn",
   critical: "stroke-risk-critical",
+  neutral: "stroke-slate-500",
 };
 
 function prefersReducedMotion(): boolean {
@@ -60,7 +62,7 @@ function ScoreGauge({
   classification: string;
 }) {
   const clamped = Math.min(Math.max(score, 0), 100);
-  const tone = classificationToTone(classification);
+  const tone = classificationTone(classification);
   const circumference = 2 * Math.PI * GAUGE_RADIUS;
   const arcLength = totalArcLength(GAUGE_RADIUS);
 

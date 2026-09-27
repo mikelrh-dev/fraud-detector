@@ -15,7 +15,7 @@ export function Toaster() {
           color: "var(--color-text-primary)",
           border: "1px solid var(--color-border-subtle)",
         },
-        className: "font-body",
+        className: "font-sans",
       }}
     />
   );

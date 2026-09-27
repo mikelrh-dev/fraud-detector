@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ClassificationTone } from "../lib/classification";
 
 /**
  * Semantic tone → token class map. Zero hardcoded hex: every entry points at
@@ -6,8 +7,11 @@ import type { ReactNode } from "react";
  * utilities (neutral). Badge pattern per DESIGN.md: /10 bg, /30 border,
  * full-color text. `neutral` is the unknown-state fallback and skips the
  * tinted pattern on purpose.
+ *
+ * The type is owned by lib/classification so there is exactly one definition
+ * of the tone vocabulary; re-exported here for existing importers.
  */
-export type BadgeTone = "clean" | "warn" | "critical" | "info" | "neutral";
+export type BadgeTone = ClassificationTone | "info";
 
 const TONE_CLASSES: Record<BadgeTone, string> = {
   clean: "bg-risk-clean/10 border-risk-clean/30 text-risk-clean",
