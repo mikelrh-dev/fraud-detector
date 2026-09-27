@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,10 +24,11 @@ from src.core.config import settings
 from src.core.dependencies import (
     get_current_user,
     get_db,
+    get_redis,
     get_velocity_store,
     require_role,
 )
-from src.core.redis import get_redis
+from src.core.redis import get_redis as get_shared_redis
 from src.core.stream_publisher import publish_event
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
@@ -151,6 +153,7 @@ async def create_and_score_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
     velocity_store: VelocityStore = Depends(get_velocity_store),
+    redis_client: Redis = Depends(get_redis),
 ) -> ScoreResponse:
     """Create a transaction and run the full scoring pipeline.
 
@@ -294,15 +297,16 @@ async def create_and_score_transaction(
 
     await db.flush()
 
-    # 8.5. Update fraud graph: add transaction edges and mark fraudsters (async)
-    # This happens AFTER classification is made
+    # 8.5. Update fraud graph: add transaction edges and mark fraudsters.
+    # Runs after classification; the graph mutation is CPU/lock bound so it
+    # happens in a thread, then the snapshot is persisted to Redis.
     try:
-        await asyncio.to_thread(
-            _graph_service.add_transaction,
+        await _graph_service.add_transaction_persisted(
             sender_id=str(user_uuid),
             receiver_id=f"merchant_{payload.merchant_name}",  # Treat merchant as receiver node
             card_id=payload.card_last4,
             is_fraud=(classification == "fraud"),
+            redis_client=redis_client,
         )
     except Exception:
         logger.exception("Failed to update fraud graph")
@@ -581,7 +585,7 @@ async def get_embedding_analysis(
             detail="Transaction not found",
         )
 
-    redis = get_redis()
+    redis = get_shared_redis()
     try:
         result_key = f"embedding_result:{transaction_id}"
         result_json = await redis.get(result_key)

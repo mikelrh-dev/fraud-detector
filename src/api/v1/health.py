@@ -9,10 +9,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.dependencies import get_db, get_redis
+from src.core.stream_dlq import get_consumer_group_status
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
+
+# A worker backlog above this many unacked messages means the consumer is not
+# keeping up; surfaced as "backed_up" so operators / alerts can react.
+PENDING_BACKLOG_THRESHOLD = 100
 
 
 # Note: The /health endpoint is defined in main.py for backward compatibility.
@@ -64,18 +69,14 @@ async def workers_health_check(
     for stream_name, group_name, consumer_name in streams:
         try:
             stream_len = await redis_client.xlen(stream_name)
-            pending_info = await redis_client.xpending(
-                stream_name, group_name, consumer_name
+            status = await get_consumer_group_status(
+                redis_client, stream_name, group_name
             )
-            pending_count = (
-                pending_info.get("pending", 0)
-                if isinstance(pending_info, dict)
-                else 0
-            )
+            pending_count = int(status.get("pending_count", 0) or 0)
             workers[stream_name] = {
                 "stream_length": stream_len,
                 "pending": pending_count,
-                "status": "ok" if pending_count < 100 else "backed_up",
+                "status": "ok" if pending_count < PENDING_BACKLOG_THRESHOLD else "backed_up",
             }
         except Exception as exc:
             workers[stream_name] = {
@@ -113,21 +114,18 @@ async def prometheus_metrics(
     for stream_name, group_name, consumer_name, label in streams:
         try:
             stream_len = await redis_client.xlen(stream_name)
-            pending_info = await redis_client.xpending(
-                stream_name, group_name, consumer_name
+            status = await get_consumer_group_status(
+                redis_client, stream_name, group_name
             )
-            pending_count = (
-                pending_info.get("pending", 0)
-                if isinstance(pending_info, dict)
-                else 0
-            )
+            pending_count = int(status.get("pending_count", 0) or 0)
             lines.append(
                 f'fraud_detector_stream_length{{stream="{label}"}} {stream_len}'
             )
             lines.append(
                 f'fraud_detector_pending_messages{{worker="{label}"}} {pending_count}'
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to collect metrics for %s: %s", stream_name, exc)
             lines.append(f'fraud_detector_stream_length{{stream="{label}"}} 0')
             lines.append(f'fraud_detector_pending_messages{{worker="{label}"}} 0')
 

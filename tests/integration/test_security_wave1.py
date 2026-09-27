@@ -49,6 +49,9 @@ def _db_result(rows=None, scalar=None):
     result.all.return_value = rows or []
     result.scalar_one_or_none.return_value = scalar
     result.scalars.return_value.one.return_value = scalar
+    # Paginated endpoints read their total via .scalar_one(); without this the
+    # MagicMock default leaks through and Pydantic coerces it to 1.
+    result.scalar_one.return_value = scalar if scalar is not None else len(rows or [])
     return result
 
 

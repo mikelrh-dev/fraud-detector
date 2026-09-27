@@ -1,9 +1,6 @@
 """DriftReferenceData ORM model — stores drift reference baseline data."""
 
-import uuid
-
 from sqlalchemy import JSON, String, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import BaseModel

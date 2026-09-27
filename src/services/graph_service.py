@@ -17,6 +17,8 @@ from typing import Any
 
 import networkx as nx
 
+from src.core.redis import get_redis
+
 logger = logging.getLogger(__name__)
 
 _REDIS_NODES_KEY = "graph:nodes"
@@ -51,75 +53,147 @@ class FraudGraphService:
         self.last_pruned = datetime.now(tz=timezone.utc)
         self._redis = redis_client
         self._restored = False
-        logger.info("FraudGraphService initialized (retention: %d days, persistence: %s)", retention_days, "redis" if redis_client else "memory-only")
+        logger.info(
+            "FraudGraphService initialized (retention: %d days, persistence: %s)",
+            retention_days,
+            "redis" if redis_client else "shared-pool",
+        )
 
-    def _restore_from_redis(self) -> None:
-        """Restore graph from Redis if available (best-effort)."""
-        if self._redis is None or self._restored:
-            return
+    def _resolve_redis(self, redis_client: Any | None = None) -> Any | None:
+        """Resolve the Redis client: explicit arg, injected client, or shared pool.
+
+        Returns None when no client can be resolved, so callers can treat
+        persistence as a best-effort side effect instead of failing.
+        """
+        if redis_client is not None:
+            return redis_client
+        if self._redis is not None:
+            return self._redis
+        return get_redis()
+
+    @staticmethod
+    def _as_str(value: Any) -> str:
+        """Normalize bytes/str from Redis to str."""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
+    def _snapshot(self) -> tuple[dict[str, str], list[str], list[str]]:
+        """Serialize the graph under the lock into plain Redis-ready payloads.
+
+        Deliberately synchronous: it must never ``await`` while holding the
+        ``threading.Lock`` (a worker thread mutates the graph concurrently).
+        """
+        with self.lock:
+            nodes = {
+                str(node_id): json.dumps(
+                    {
+                        "node_type": data.get("node_type", "user"),
+                        "is_fraud": bool(data.get("is_fraud", False)),
+                        "timestamp": (
+                            data["timestamp"].isoformat()
+                            if data.get("timestamp") is not None
+                            else None
+                        ),
+                    }
+                )
+                for node_id, data in self.graph.nodes(data=True)
+            }
+            edges = [f"{sender}:{receiver}" for sender, receiver in self.graph.edges()]
+            fraudsters = list(self.known_fraudsters)
+        return nodes, edges, fraudsters
+
+    async def restore(self, redis_client: Any | None = None) -> bool:
+        """Restore the graph from Redis so it survives restarts.
+
+        Returns True when a restore pass completed (including the empty-graph
+        case), False when Redis was unavailable or unreadable. Never raises:
+        an unavailable Redis degrades to memory-only operation.
+        """
+        if self._restored:
+            return True
+        redis = self._resolve_redis(redis_client)
+        if redis is None:
+            return False
+
         try:
-            # Restore nodes
-            nodes_data = self._redis.hgetall(_REDIS_NODES_KEY)
-            if nodes_data:
-                for node_id_bytes, node_json in nodes_data.items():
-                    node_id = node_id_bytes.decode() if isinstance(node_id_bytes, bytes) else node_id_bytes
-                    node_data = json.loads(node_json)
-                    self.graph.add_node(node_id, **node_data)
-
-            # Restore edges
-            edges_data = self._redis.smembers(_REDIS_EDGES_KEY)
-            if edges_data:
-                for edge_bytes in edges_data:
-                    edge_str = edge_bytes.decode() if isinstance(edge_bytes, bytes) else edge_bytes
-                    sender, receiver = edge_str.split(":")
-                    self.graph.add_edge(sender, receiver)
-
-            # Restore fraudsters
-            fraudsters_data = self._redis.smembers(_REDIS_FRAUDSTERS_KEY)
-            if fraudsters_data:
-                for fraudster_bytes in fraudsters_data:
-                    fraudster_id = fraudster_bytes.decode() if isinstance(fraudster_bytes, bytes) else fraudster_bytes
-                    self.known_fraudsters.add(fraudster_id)
-
-            self._restored = True
-            logger.info(
-                "Restored graph from Redis: %d nodes, %d edges, %d fraudsters",
-                self.graph.number_of_nodes(),
-                self.graph.number_of_edges(),
-                len(self.known_fraudsters),
-            )
+            nodes_data = await redis.hgetall(_REDIS_NODES_KEY) or {}
+            edges_data = await redis.smembers(_REDIS_EDGES_KEY) or set()
+            fraudsters_data = await redis.smembers(_REDIS_FRAUDSTERS_KEY) or set()
         except Exception as exc:
-            logger.warning("Failed to restore graph from Redis: %s", exc)
+            logger.warning("Failed to read graph from Redis: %s", exc)
+            return False
 
-    def _persist_to_redis(self) -> None:
-        """Persist graph to Redis (best-effort, fire-and-forget)."""
-        if self._redis is None:
-            return
+        now = datetime.now(tz=timezone.utc)
+        with self.lock:
+            for node_key, node_json in nodes_data.items():
+                try:
+                    payload = json.loads(self._as_str(node_json))
+                except (TypeError, ValueError) as exc:
+                    logger.warning("Skipping malformed graph node: %s", exc)
+                    continue
+                raw_ts = payload.get("timestamp")
+                try:
+                    timestamp = (
+                        datetime.fromisoformat(raw_ts) if raw_ts else now
+                    )
+                except (TypeError, ValueError):
+                    timestamp = now
+                self.graph.add_node(
+                    self._as_str(node_key),
+                    node_type=payload.get("node_type", "user"),
+                    is_fraud=bool(payload.get("is_fraud", False)),
+                    timestamp=timestamp,
+                )
+
+            for edge in edges_data:
+                parts = self._as_str(edge).split(":", 1)
+                if len(parts) == 2:
+                    self.graph.add_edge(parts[0], parts[1])
+                else:
+                    logger.warning("Skipping malformed graph edge: %s", edge)
+
+            self.known_fraudsters.update(
+                self._as_str(item) for item in fraudsters_data
+            )
+            self._restored = True
+
+        logger.info(
+            "Restored graph from Redis: %d nodes, %d edges, %d fraudsters",
+            self.graph.number_of_nodes(),
+            self.graph.number_of_edges(),
+            len(self.known_fraudsters),
+        )
+        return True
+
+    async def persist(self, redis_client: Any | None = None) -> bool:
+        """Persist the graph to Redis (best-effort).
+
+        Returns True when the snapshot was written, False when Redis was
+        unavailable. Never raises: graph detection must keep working when
+        Redis is down.
+        """
+        redis = self._resolve_redis(redis_client)
+        if redis is None:
+            return False
+
+        nodes, edges, fraudsters = self._snapshot()
         try:
-            # Persist nodes
-            for node_id, node_data in self.graph.nodes(data=True):
-                node_json = json.dumps({
-                    "node_type": node_data.get("node_type", "user"),
-                    "is_fraud": node_data.get("is_fraud", False),
-                    "timestamp": node_data.get("timestamp").isoformat() if node_data.get("timestamp") else None,
-                })
-                self._redis.hset(_REDIS_NODES_KEY, str(node_id), node_json)
-
-            # Persist edges
-            for sender, receiver in self.graph.edges():
-                self._redis.sadd(_REDIS_EDGES_KEY, f"{sender}:{receiver}")
-
-            # Persist fraudsters
-            for fraudster_id in self.known_fraudsters:
-                self._redis.sadd(_REDIS_FRAUDSTERS_KEY, fraudster_id)
-
+            if nodes:
+                await redis.hset(_REDIS_NODES_KEY, mapping=nodes)
+            if edges:
+                await redis.sadd(_REDIS_EDGES_KEY, *edges)
+            if fraudsters:
+                await redis.sadd(_REDIS_FRAUDSTERS_KEY, *fraudsters)
         except Exception as exc:
             logger.warning("Failed to persist graph to Redis: %s", exc)
+            return False
+        return True
 
-    async def ensure_restored(self) -> None:
-        """Async wrapper to restore graph from Redis before first use."""
-        if not self._restored and self._redis is not None:
-            await asyncio.to_thread(self._restore_from_redis)
+    async def ensure_restored(self, redis_client: Any | None = None) -> bool:
+        """Restore the graph once, before the first detection query."""
+        return await self.restore(redis_client)
+
 
     def add_transaction(
         self,
@@ -168,11 +242,30 @@ class FraudGraphService:
                 if self.graph.number_of_nodes() % 1000 == 0:
                     self._prune_old_nodes()
 
-                # Persist to Redis (best-effort)
-                self._persist_to_redis()
-
             except Exception as exc:
                 logger.error("Failed to add transaction to graph: %s", exc)
+
+    async def add_transaction_persisted(
+        self,
+        sender_id: str,
+        receiver_id: str,
+        card_id: str,
+        is_fraud: bool = False,
+        redis_client: Any | None = None,
+    ) -> bool:
+        """Add a transaction and persist the graph (async entry point).
+
+        The mutation runs in a worker thread (it is CPU/lock bound, never
+        awaited), then the snapshot is written to Redis. Persistence failure
+        never propagates: detection keeps working from memory.
+
+        Returns:
+            True when the graph was persisted, False otherwise.
+        """
+        await asyncio.to_thread(
+            self.add_transaction, sender_id, receiver_id, card_id, is_fraud
+        )
+        return await self.persist(redis_client)
 
     def get_graph_features(self, user_id: str) -> dict:
         """Get graph-based features for a user (thread-safe).

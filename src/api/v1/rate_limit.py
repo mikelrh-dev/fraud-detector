@@ -26,6 +26,10 @@ RATE_LIMITS: dict[str, tuple[int, float]] = {
     "/api/v1/auth/refresh": (5, 60.0),  # 5 attempts per 60 seconds (F5)
     "/api/v1/transactions": (100, 60.0),
     "/api/v1/alerts": (60, 60.0),
+    # Monitoring is expensive: /drift runs a full distribution comparison and
+    # /dashboard issues four aggregate COUNT/AVG queries. Keep it tight so a
+    # polling dashboard cannot become a denial-of-service vector.
+    "/api/v1/monitoring": (30, 60.0),
 }
 
 

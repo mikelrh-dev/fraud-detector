@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/monitoring",
     tags=["monitoring"],
+    dependencies=[Depends(check_rate_limit)],
 )
 
 # Initialize drift service (will be seeded with reference data on first use)

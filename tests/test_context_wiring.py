@@ -58,7 +58,8 @@ class TestContextWiring:
         # 0.60*100 + 0.25*100 + 0.15*100 = 60+25+15 = 100
         assert score == 100.0
 
-    def test_scoring_service_passes_context_to_ensemble(self):
+    @pytest.mark.asyncio
+    async def test_scoring_service_passes_context_to_ensemble(self):
         """ScoringService.compute_scores() should pass context_score to combine()."""
         # Create mocks
         rule_engine = MagicMock()
@@ -87,7 +88,7 @@ class TestContextWiring:
         context = {"recent_transactions": 5}
         user_history = {}
 
-        result = service.compute_scores(tx_data, context, user_history)
+        result = await service.compute_scores(tx_data, context, user_history)
 
         # Verify combine was called with context_score
         call_kwargs = ensemble.combine.call_args
@@ -96,7 +97,8 @@ class TestContextWiring:
         if "context_score" in call_kwargs.kwargs:
             assert call_kwargs.kwargs["context_score"] == pytest.approx(50.0)
 
-    def test_scoring_service_context_score_from_recent_transactions(self):
+    @pytest.mark.asyncio
+    async def test_scoring_service_context_score_from_recent_transactions(self):
         """ScoringService should compute context_score = min(recent/10*100, 100)."""
         rule_engine = MagicMock()
         rule_engine.evaluate.return_value = (0.0, [])
@@ -122,7 +124,7 @@ class TestContextWiring:
 
         # 15 recent txns → 15/10*100 = 150, capped to 100
         context = {"recent_transactions": 15}
-        service.compute_scores({"amount": 100}, context, {})
+        await service.compute_scores({"amount": 100}, context, {})
 
         call_kwargs = ensemble.combine.call_args
         if "context_score" in call_kwargs.kwargs:

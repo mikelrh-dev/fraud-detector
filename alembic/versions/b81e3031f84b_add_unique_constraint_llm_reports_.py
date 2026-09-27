@@ -21,16 +21,18 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # Enforce one LLM report per transaction at the database level.
     # Prevents duplicate reports from retry/recovery loops.
-    op.create_unique_constraint(
-        "uq_llm_reports_transaction_id",
-        "llm_reports",
-        ["transaction_id"],
-    )
+    #
+    # batch_alter_table is required: plain create_unique_constraint emits
+    # ALTER TABLE ... ADD CONSTRAINT, which SQLite does not support. The
+    # batch mode uses copy-and-move instead, so this migration runs on both
+    # PostgreSQL and SQLite (used by the migration test-suite).
+    with op.batch_alter_table("llm_reports") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_llm_reports_transaction_id",
+            ["transaction_id"],
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "uq_llm_reports_transaction_id",
-        "llm_reports",
-        type_="unique",
-    )
+    with op.batch_alter_table("llm_reports") as batch_op:
+        batch_op.drop_constraint("uq_llm_reports_transaction_id", type_="unique")

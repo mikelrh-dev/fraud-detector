@@ -33,11 +33,34 @@ def test_threshold_tiers_has_four_entries():
     assert labels == ["low", "medium", "high", "critical"]
 
 
-def test_threshold_tiers_strictly_increasing():
-    """Each tier's min_amount should match the previous tier's max_amount + 1."""
+def test_threshold_tiers_are_contiguous_half_open_intervals():
+    """Tiers must tile the amount axis with no gaps and no overlaps.
+
+    Each tier is a half-open interval ``[min_amount, max_amount)``, so the
+    next tier's ``min_amount`` must equal this tier's ``max_amount`` exactly.
+    A ``+ 1`` step (the old expectation) left float amounts in between
+    unmatched and silently fell through to the default threshold.
+    """
     tiers = settings.threshold_tiers
     for i in range(len(tiers) - 1):
-        assert tiers[i + 1]["min_amount"] == tiers[i]["max_amount"] + 1
+        assert tiers[i + 1]["min_amount"] == tiers[i]["max_amount"], (
+            f"gap/overlap between {tiers[i]['label']} and {tiers[i + 1]['label']}"
+        )
+
+
+def test_threshold_tiers_cover_from_zero_to_infinity():
+    """The first tier must start at 0 and the last must be unbounded above."""
+    tiers = settings.threshold_tiers
+    assert tiers[0]["min_amount"] == 0
+    assert tiers[-1]["max_amount"] == float("inf")
+
+
+def test_threshold_tiers_thresholds_decrease_with_amount():
+    """Higher amounts must be classified against a lower threshold."""
+    thresholds = [t["threshold"] for t in settings.threshold_tiers]
+    assert thresholds == sorted(thresholds, reverse=True), (
+        f"thresholds must decrease as amount grows, got {thresholds}"
+    )
 
 
 def test_ollama_timeout_default():

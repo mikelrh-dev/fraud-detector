@@ -241,6 +241,95 @@ Total: 36 passed, 0 failed
 
 ---
 
+## Corrección de la Fase 4 — Defectos Propios Detectados
+
+Una revisión posterior con `ruff`, `mypy` y la suite completa **invalidó tres
+afirmaciones de este informe**. Se documentan porque el error fue mío, no del
+código original.
+
+### DEF-1: La persistencia del grafo no funcionaba (C2)
+
+**Lo que decía el informe:** "El grafo persiste en Redis".
+
+**Realidad:** era un no-op total, por dos defectos:
+1. `_persist_to_redis()` / `_restore_from_redis()` llamaban `hset`, `sadd`,
+   `hgetall`, `smembers` **sin `await`** sobre un cliente `redis.asyncio`.
+   Todas devolvían corrutinas: no se escribía nada y el restore fallaba con
+   `TypeError` atrapado por un `except` amplio.
+2. `_graph_service = FraudGraphService()` se construye sin `redis_client`, así
+   que ambos métodos retornaban de inmediato.
+
+**Corrección:**
+- `restore()` y `persist()` ahora son `async` reales y esperan cada comando.
+- `_snapshot()` serializa el grafo **bajo el lock** y devuelve payloads planos;
+  nunca se sostiene un `threading.Lock`Across un `await`.
+- Resolución de cliente: argumento explícito → cliente inyectado → pool
+  compartido (`src.core.redis.get_redis`), igual que `VelocityStore`.
+- `add_transaction_persisted()`: muta en hilo (la mutación es CPU/lock-bound y
+  nunca se espera) y luego persiste.
+- El endpoint inyecta Redis por DI (`Depends(get_redis)`), con alias
+  `get_shared_redis` para el pool crudo que ya usaba el endpoint.
+- Un Redis caído degrada a memoria: `persist()`/`restore()` devuelven `False`
+  y registran warning; la detección de fraude sigue funcionando.
+
+### DEF-2: El rate limiting de monitoring no se aplicaba (M4)
+
+**Lo que decía el informe:** "rate limiting en monitoring".
+
+**Realidad:** se importó `check_rate_limit` pero **nunca se aplicó** al router
+— `ruff` lo detectó como `F401 imported but unused`. Y aunque se hubiera
+aplicado, `RATE_LIMITS` no tenía entrada para `/api/v1/monitoring`, así que
+`check_rate_limit` retornaba en el `if limit_key is None` y el endpoint
+quedaba **ilimitado**.
+
+**Corrección:**
+- `rate_limit.py`: entrada `"/api/v1/monitoring": (30, 60.0)`.
+- `monitoring.py`: `dependencies=[Depends(check_rate_limit)]` en el router.
+- `/health*` y `/metrics` quedan **fuera** a propósito: sondas y scrapers no
+  deben limitarse.
+
+### DEF-3: `xpending()` con firma inválida
+
+`xpending(stream, group, consumer)` con 3 posicionales no existe en la API de
+redis-py; `mypy` lo标记 en `health.py` (×2) y `llm_worker.py`. Reemplazado por
+el helper ya existente `get_consumer_group_status()`, eliminando la
+reimplementación.
+
+### DEF-4 (heredado): migración de la Fase 3 incompatible con SQLite
+
+`b81e3031f84b` usaba `op.create_unique_constraint()`, que emite
+`ALTER TABLE ... ADD CONSTRAINT` — no soportado por SQLite, que es lo que usan
+los tests de migración. Ahora usa `op.batch_alter_table()` (copy-and-move),
+compatible con PostgreSQL y SQLite.
+
+### Tests que habrían detectado esto
+
+- `tests/test_graph_persistence.py` (8 tests): round-trip contra un
+  `FakeRedis` que **sí** almacena lo que recibe, más degradación con Redis caído.
+  Un mismatch async/sync falla aquí.
+- `tests/integration/test_monitoring_rate_limit.py` (5 tests): comprueba que
+  existe presupuesto, que el límite se aplica (429 tras 30 peticiones) y que
+  `/health` no se limita.
+- `tests/test_context_wiring.py`, `tests/unit/test_config.py`: tests rancios de
+  las Fases 1-3 arreglados (await de `compute_scores`; invariante de tiers
+  reescrito como continuidad de intervalos semiabiertos en vez del `+ 1` buggy).
+- `tests/migrations/test_initial_migration.py`: `EXPECTED_TABLES` ahora se
+  deriva de `Base.metadata` en vez de estar hardcodeado.
+- `tests/integration/test_security_wave1.py`: `_db_result()` ahora define
+  `scalar_one()`, que los endpoints paginados usan para el total.
+
+**Verificación:** `500 passed, 0 failed` · `ruff` limpio · `mypy` limpio (64 files).
+
+---
+
 ## Pendiente de la Fase 4
 
-- Conectar el graph service con Redis en el endpoint de transacciones (C2 parcialmente implementado)
+- **Limitación conocida (preexistente, no introducida aquí):** el grafo es
+  `DiGraph` y `add_transaction` solo crea aristas `sender → receiver` y
+  `sender → card`. El BFS de `get_graph_features()` sigue **solo aristas
+  salientes**, así que la señal de "≤2 saltos desde un fraudster" es
+  estructuralmente inalcanzable en la topología de producción salvo que el
+  usuario consultada pague a un merchant marcado como fraude. Merece una
+  decisión explícita (añadir aristas inversas, o `to_undirected()`) porque
+  cambia la semántica de detección.
+

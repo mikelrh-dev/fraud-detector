@@ -21,22 +21,21 @@ from sqlalchemy.ext.compiler import compiles
 
 from alembic import command
 from src.core.config import Settings
+from src.models.base import Base
+
+# Import for side effects: every model must be registered on Base.metadata
+# before the expected table set is derived from it.
+import src.models  # noqa: F401,E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
 MIGRATION_FILE = PROJECT_ROOT / "alembic" / "versions" / "b02e4753e78e_initial.py"
 
-EXPECTED_TABLES = {
-    "users",
-    "transactions",
-    "fraud_scores",
-    "fraud_alerts",
-    "rule_metadata",
-    "llm_reports",
-    "ml_model_runs",
-    "shap_attributions",
-    "audit_entries",
-}
+# Derived from the ORM metadata on purpose: the invariant this file protects is
+# "migrations produce exactly the tables the models declare". A hardcoded list
+# silently rots every time a model + migration pair is added, which previously
+# hid the drift_reference_data table.
+EXPECTED_TABLES = set(Base.metadata.tables)
 
 
 @compiles(PG_UUID, "sqlite")

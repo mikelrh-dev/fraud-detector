@@ -16,7 +16,11 @@ import redis.asyncio as redis
 
 from src.core.config import settings
 from src.core.database import async_session_maker
-from src.core.stream_dlq import recover_pending_messages, send_to_dlq
+from src.core.stream_dlq import (
+    get_consumer_group_status,
+    recover_pending_messages,
+    send_to_dlq,
+)
 from src.core.stream_publisher import ensure_consumer_group
 from src.models.llm_report import LLMReport, LLMReportStatus
 from src.services.audit import AuditService
@@ -30,6 +34,9 @@ CONSUMER_NAME = "llm-worker-1"
 MAX_RETRIES = 3  # total retries before DLQ (actual attempts = MAX_RETRIES + 1: original + retries)
 RECOVERY_INTERVAL = 60
 BACKOFF_CAP_SECONDS = 60
+# Backlog thresholds for the recovery-loop lag monitor (C14).
+STREAM_BACKLOG_THRESHOLD = 50000
+PENDING_BACKLOG_THRESHOLD = 100
 
 
 def _backoff_delay(retry_count: int) -> int:
@@ -252,18 +259,19 @@ async def _recovery_loop(redis_client: redis.Redis) -> None:
             # Monitor consumer lag
             try:
                 stream_len = await redis_client.xlen(STREAM_NAME)
-                pending = await redis_client.xpending(
-                    STREAM_NAME, GROUP_NAME, CONSUMER_NAME
+                status = await get_consumer_group_status(
+                    redis_client, STREAM_NAME, GROUP_NAME
                 )
-                pending_count = pending.get("pending", 0) if isinstance(pending, dict) else 0
-                if stream_len > 50000 or pending_count > 100:
+                pending_count = int(status.get("pending_count", 0) or 0)
+                if stream_len > STREAM_BACKLOG_THRESHOLD or pending_count > PENDING_BACKLOG_THRESHOLD:
                     logger.warning(
                         "LLM stream backing up: stream_len=%d, pending=%d",
                         stream_len,
                         pending_count,
                     )
-            except Exception:
-                pass  # Don't let monitoring break recovery
+            except Exception as exc:
+                # Monitoring must never break recovery.
+                logger.debug("LLM lag monitoring unavailable: %s", exc)
 
             recovered = await recover_pending_messages(
                 redis_client,
