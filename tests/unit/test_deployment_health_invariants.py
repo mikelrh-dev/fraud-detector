@@ -87,14 +87,30 @@ class TestRedisHealthcheck:
 
     def test_healthcheck_sends_the_password(self, compose: dict) -> None:
         test = " ".join(compose["services"]["redis"]["healthcheck"]["test"])
-        assert "-a" in test or "REDISCLI_AUTH" in test
         assert "PONG" in test, (
             "exit code alone is not enough: redis-cli ping prints NOAUTH and "
             "exits 0, which is why the check was a false green"
         )
 
-    def test_password_is_available_to_the_healthcheck(self, compose: dict) -> None:
-        assert "REDIS_PASSWORD" in compose["services"]["redis"].get("environment", {})
+    def test_healthcheck_has_no_shell_expansion(self, compose: dict) -> None:
+        """`$$VAR` in a healthcheck cannot be verified without a running daemon.
+
+        An earlier version passed the password with `redis-cli -a "$$REDIS_PASSWORD"`.
+        Whether the container receives `$REDIS_PASSWORD` or the literal `$$` is
+        only observable at runtime, and getting it wrong silently reintroduces
+        the false green. REDISCLI_AUTH removes the expansion entirely, so the
+        invariant is that no `$` appears at all.
+        """
+        test = " ".join(compose["services"]["redis"]["healthcheck"]["test"])
+        assert "$" not in test, (
+            "the redis healthcheck should use REDISCLI_AUTH, not shell expansion: "
+            "an expansion that cannot be verified here is an expansion that can "
+            "be silently wrong"
+        )
+
+    def test_uses_rediscli_auth(self, compose: dict) -> None:
+        """Keeps the secret out of the process list too, unlike `-a`."""
+        assert "REDISCLI_AUTH" in compose["services"]["redis"].get("environment", {})
 
     def test_server_still_requires_a_password(self, compose: dict) -> None:
         """If the server stopped requiring auth, the check would pass vacuously."""

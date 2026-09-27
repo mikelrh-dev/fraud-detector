@@ -26,12 +26,16 @@ services:
       # reported healthy while proving nothing. A wrong or rotated password then
       # stays invisible: every publish, velocity counter and worker stream fails
       # while the orchestrator believes the dependency is fine.
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-fraud_redis_secret}
+      #
+      # REDISCLI_AUTH rather than `redis-cli -a "$PASSWORD"`: it is the
+      # documented way to authenticate redis-cli non-interactively, it keeps the
+      # secret out of the process list, and it needs no `$$` escaping in the
+      # healthcheck, so there is nothing that can be silently mis-rendered.
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-fraud_redis_secret}
     volumes:
       - redis_data:/data
     healthcheck:
-      # `$$` escapes the variable for the container shell, not compose.
-      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 5
