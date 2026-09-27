@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.core import counters
 from src.models.audit_entry import AuditEntry
 from src.models.shap_attribution import ShapAttribution
 from src.services.shap_service import ShapContribution, ShapService, ShapUnavailableError
@@ -106,15 +107,31 @@ class TestProcessShapMessage:
         self.session.commit.assert_awaited()
 
     @pytest.mark.asyncio
-    async def test_unavailable_skips_without_retry_or_rows(self):
+    async def test_unavailable_is_routed_to_dlq_not_acked_away(self):
+        """A18: the old contract asserted ``result is True`` here.
+
+        That pinned the defect: the message was acked with zero attribution rows
+        and no DLQ entry, while /health/workers reported "ok" because its only
+        signal is consumer-group pending depth, which this path drained. A
+        misconfigured worker was indistinguishable from a healthy one.
+
+        ShapUnavailableError is a permanent environmental fault (no library, no
+        model file, explainer init failure), so retrying will not fix it — but
+        the retry/DLQ path is what makes the failure visible and recoverable
+        instead of vanishing. The counter is what surfaces it before the DLQ
+        fills.
+        """
+        counters.reset()
         mock_service = MagicMock(spec=ShapService)
         mock_service.explain.side_effect = ShapUnavailableError("shap is not installed")
 
         result = await process_shap_message(_message(), AsyncMock(), mock_service)
 
-        # SHP-005: message done (no re-enqueue), nothing persisted
-        assert result is True
+        assert result is False, (
+            "must not ack: the DLQ path is what leaves evidence"
+        )
         self.session.commit.assert_not_awaited()
+        assert counters.snapshot().get("shap_skipped_unavailable") == 1
 
     @pytest.mark.asyncio
     async def test_exception_returns_false_for_retry(self):

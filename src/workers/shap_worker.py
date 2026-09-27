@@ -18,6 +18,7 @@ from typing import Any
 import redis.asyncio as redis
 from sqlalchemy import delete
 
+from src.core.counters import shap_skipped_unavailable
 from src.core.database import async_session_maker
 from src.core.stream_dlq import (
     get_consumer_group_status,
@@ -95,12 +96,23 @@ async def process_shap_message(
         return True
 
     except ShapUnavailableError as exc:
+        # A18: this used to `return True`, which acked the message with zero
+        # ShapAttribution rows written and no DLQ entry. Nothing anywhere could
+        # contradict it, and /health/workers reported "ok" because the single
+        # signal it uses is PEL depth — which this path actively drains. A
+        # misconfigured worker was therefore indistinguishable from a healthy
+        # one, and the SHAP feature just quietly stopped existing.
+        #
+        # Returning False routes it through the normal retry/DLQ path, so the
+        # failure becomes visible and recoverable instead of disappearing. The
+        # counter is what makes it observable before the DLQ fills.
+        shap_skipped_unavailable.inc()
         logger.warning(
-            "SHAP unavailable for transaction %s: %s — skipping",
+            "SHAP unavailable for transaction %s: %s — routing to DLQ",
             transaction_id,
             exc,
         )
-        return True
+        return False  # Retry, then DLQ — do not silently ack
 
     except Exception as exc:
         logger.exception(

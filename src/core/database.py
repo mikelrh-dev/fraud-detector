@@ -8,9 +8,33 @@ from sqlalchemy.orm import DeclarativeBase
 
 from src.core.config import settings
 
+# A24: Redis is bounded (see core/redis.py: max_connections, socket timeouts)
+# and Postgres was not, which is the wrong way round: Postgres is the one every
+# request depends on. Without these, one pathological query holds its pooled
+# connection forever, and SQLAlchemy's defaults (pool_size=5, max_overflow=10)
+# mean 15 stuck requests exhaust the pool and the whole API stops serving.
+#
+# command_timeout is the load-bearing one: it is the asyncpg-level bound that
+# turns "hangs forever" into "fails after 5s". statement_cache_size=0 avoids
+# the prepared-statement invalidation class of bug behind PgBouncer/pgpool.
 engine = create_async_engine(
     settings.database_url,
     echo=settings.environment == "development",
+    pool_size=10,
+    max_overflow=20,
+    # Seconds a caller waits for a free connection before erroring. Sheds load
+    # loudly instead of queueing without bound.
+    pool_timeout=10,
+    # Recycle well under any typical idle_session_timeout / firewall idle cut.
+    pool_recycle=1800,
+    # Validate a pooled connection before handing it out. Without this, a
+    # connection that died while idle (Postgres restart) surfaces as a 500 on
+    # an unrelated query.
+    pool_pre_ping=True,
+    connect_args={
+        "command_timeout": 5,
+        "statement_cache_size": 0,
+    },
 )
 
 async_session_maker = async_sessionmaker(

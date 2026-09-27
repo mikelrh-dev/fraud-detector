@@ -32,6 +32,16 @@ COPY scripts/ ./scripts/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
+# A17: the ML artifacts were never copied, so the image only worked because
+# compose bind-mounts ./models. Without the mount, ml_model.load_model() logged
+# one warning at import and then predict() returned 0.0 forever, so the whole
+# 0.25-weighted ML layer silently contributed nothing to every score.
+COPY models/ ./models/
+
+# A16: apply migrations on start (see entrypoint.api.sh).
+COPY docker/entrypoint.api.sh ./entrypoint.api.sh
+RUN chmod +x ./entrypoint.api.sh
+
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser && \
     chown -R appuser:appuser /app
@@ -39,4 +49,5 @@ USER appuser
 
 EXPOSE 8000
 
+ENTRYPOINT ["./entrypoint.api.sh"]
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

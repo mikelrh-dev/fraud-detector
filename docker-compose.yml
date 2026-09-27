@@ -19,10 +19,19 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --appendfsync everysec --save 60 10000 --requirepass ${REDIS_PASSWORD:-fraud_redis_secret} --protected-mode yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    environment:
+      # A23: the healthcheck has to authenticate. The server always has
+      # --requirepass set, but `redis-cli ping` without credentials prints
+      # "NOAUTH Authentication required." and still exits 0, so the container
+      # reported healthy while proving nothing. A wrong or rotated password then
+      # stays invisible: every publish, velocity counter and worker stream fails
+      # while the orchestrator believes the dependency is fine.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-fraud_redis_secret}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # `$$` escapes the variable for the container shell, not compose.
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -83,10 +92,14 @@ services:
       - ./src:/app/src
       - ./models:/app/models
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      # A16: /health is a static literal and cannot see the schema. /health/ready
+      # actually runs SELECT 1 against Postgres and PING against Redis, so a
+      # container with an unmigrated database now fails its healthcheck instead
+      # of reporting healthy and 500ing on the first request.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
       interval: 30s
       timeout: 10s
-      start_period: 15s
+      start_period: 40s
       retries: 3
     restart: unless-stopped
     networks:
