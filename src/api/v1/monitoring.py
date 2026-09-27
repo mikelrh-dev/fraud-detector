@@ -13,7 +13,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
-from src.core.dependencies import get_current_user, get_db, require_role
+from src.core.dependencies import (
+    get_current_user,
+    get_db,
+    require_any_role,
+    require_role,
+)
 from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudScore
 from src.models.ml_model_run import MLModelRun
@@ -203,7 +208,7 @@ async def get_drift_status(
 async def get_model_metrics(
     limit: int = Query(20, ge=1, le=100, description="Max runs to return"),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_role("analyst")),
+    current_user: dict = Depends(require_any_role("analyst", "admin")),
 ) -> dict[str, Any]:
     """Recent ML model training/evaluation runs (R3-002)."""
     result = await db.execute(

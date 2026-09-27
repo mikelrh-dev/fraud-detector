@@ -34,9 +34,12 @@ app = FastAPI(
     title="Fraud Detector Hybrid",
     description="Sistema híbrido de detección de fraude con motor de reglas + LLM local",
     version="0.1.0",
-    # R1-006: interactive API docs are a development convenience only.
+    # R1-006: interactive API docs are a development convenience only. The
+    # openapi schema must go too — leaving it public enumerates every route,
+    # parameter and model in production.
     docs_url=None if _is_production else "/docs",
     redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
     lifespan=lifespan,
 )
 

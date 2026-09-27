@@ -3,6 +3,7 @@
 import math
 import secrets
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,7 +38,14 @@ class Settings(BaseSettings):
     api_port: int = 8000
     # Ephemeral dev secret; production MUST inject via env (R1-005 guard, wave 5).
     api_secret_key: str = secrets.token_urlsafe(32)
-    environment: str = "development"
+    # ENVIRONMENT is the canonical name. API_ENV is accepted as an alias because
+    # it shipped in .env.example and in operator runbooks; without the alias the
+    # whole production branch below was unreachable and a deployment that set
+    # API_ENV=production silently ran with dev secrets, open CORS and public docs.
+    environment: str = Field(
+        "development",
+        validation_alias=AliasChoices("ENVIRONMENT", "API_ENV"),
+    )
 
     # Database
     db_user: str = "fraud"

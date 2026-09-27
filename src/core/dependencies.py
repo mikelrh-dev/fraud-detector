@@ -97,3 +97,24 @@ def require_role(required_role: str) -> Callable[[dict], dict]:
         return current_user
 
     return role_checker
+
+
+def require_any_role(*allowed_roles: str) -> Callable[[dict], dict]:
+    """Return a dependency that accepts any one of ``allowed_roles``.
+
+    ``require_role`` is exact equality, so an admin was rejected by endpoints
+    that only meant "not a guest" (e.g. ``require_role("analyst")``). Use this
+    when the intent is a set of acceptable roles.
+    """
+    if not allowed_roles:
+        raise ValueError("require_any_role() needs at least one role")
+
+    def role_checker(current_user: dict = Depends(get_current_user)) -> dict:
+        if current_user.get("role") not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Role " + " or ".join(f"'{r}'" for r in allowed_roles) + " required",
+            )
+        return current_user
+
+    return role_checker
