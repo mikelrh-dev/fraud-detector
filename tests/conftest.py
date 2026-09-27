@@ -29,6 +29,46 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_user_row():
+    """Factory that makes ``select(User)...`` return a user row on ``mock_db``.
+
+    ``/auth/refresh`` (A1) loads the user before minting tokens, so any test that
+    exercises the happy path must provide a row. A1 made the endpoint read the
+    database instead of trusting the JWT, so tests that only seeded Redis are no
+    longer sufficient.
+
+    ``missing=True`` reproduces what the ``deleted_at IS NULL`` filter yields
+    for a soft-deleted or unknown account: no row at all.
+
+    Usage::
+
+        async def test_x(self, test_client, mock_db, mock_user_row):
+            mock_user_row(mock_db, str(uuid4()), role="analyst")
+    """
+
+    def _seed(
+        db: AsyncMock,
+        user_id: str,
+        role: str = "analyst",
+        is_active: bool = True,
+        missing: bool = False,
+    ) -> None:
+        result = MagicMock()
+        if missing:
+            result.scalar_one_or_none.return_value = None
+        else:
+            user = MagicMock()
+            user.id = user_id
+            user.role = MagicMock()
+            user.role.value = role
+            user.is_active = is_active
+            result.scalar_one_or_none.return_value = user
+        db.execute = AsyncMock(return_value=result)
+
+    return _seed
+
+
+@pytest.fixture
 def mock_redis() -> AsyncMock:
     """Provide a mock Redis client with velocity ZSET methods.
 

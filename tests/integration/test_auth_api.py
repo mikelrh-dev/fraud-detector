@@ -4,6 +4,7 @@ Uses the test client with mocked DB and Redis dependencies.
 """
 
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -461,11 +462,18 @@ class TestAuthProtectedAccess:
 class TestAuthRefresh:
     """POST /api/v1/auth/refresh endpoint."""
 
-    async def test_refresh_with_valid_token(self, test_client: AsyncClient):
+    async def test_refresh_with_valid_token(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_user_row
+    ):
         """Valid refresh token returns new tokens."""
         from src.core.security import create_refresh_token
 
-        token = create_refresh_token(user_id="test-user", role="analyst")
+        # A1: `sub` is `str(user.id)` and `User.id` is a UUID, so a
+        # legitimately issued token always carries a UUID. The endpoint now
+        # parses it to load the user row.
+        user_id = str(uuid4())
+        token = create_refresh_token(user_id=user_id, role="analyst")
+        mock_user_row(mock_db, user_id, role="analyst")
 
         response = await test_client.post(
             "/api/v1/auth/refresh",
@@ -487,7 +495,7 @@ class TestAuthRefresh:
         past = datetime.now(tz=timezone.utc) - timedelta(hours=2)
         token = jose_jwt.encode(
             {
-                "sub": "test-user",
+                "sub": str(uuid4()),
                 "role": "analyst",
                 "exp": past,
                 "iat": past - timedelta(hours=1),
@@ -501,6 +509,113 @@ class TestAuthRefresh:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
+
+
+class TestAuthRefreshReadsDatabase:
+    """A1: refresh must consult the user, not trust the token.
+
+    Before this, deactivating an account, soft-deleting it or demoting an
+    admin changed nothing: the endpoint read `sub` and `role` from the JWT and
+    minted a new pair without touching the database, so an old refresh token
+    kept minting access tokens for up to 24 hours.
+    """
+
+    async def test_inactive_user_cannot_refresh(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_user_row
+    ):
+        from src.core.security import create_refresh_token
+
+        user_id = str(uuid4())
+        token = create_refresh_token(user_id=user_id, role="analyst")
+        mock_user_row(mock_db, user_id, role="analyst", is_active=False)
+
+        response = await test_client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+        assert "inactive" in response.json()["detail"].lower()
+
+    async def test_deleted_user_cannot_refresh(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_user_row
+    ):
+        """A soft-deleted row never matches the query, so it reads as missing."""
+        from src.core.security import create_refresh_token
+
+        user_id = str(uuid4())
+        token = create_refresh_token(user_id=user_id, role="analyst")
+        mock_user_row(mock_db, user_id, role="analyst", missing=True)
+
+        response = await test_client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    async def test_unknown_user_cannot_refresh(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_user_row
+    ):
+        from src.core.security import create_refresh_token
+
+        token = create_refresh_token(user_id=str(uuid4()), role="analyst")
+        mock_user_row(mock_db, str(uuid4()), missing=True)
+
+        response = await test_client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    async def test_demoted_role_takes_effect_on_refresh(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_user_row
+    ):
+        """The new access token must carry the role in the DB, not the token."""
+        from src.core.security import create_refresh_token, decode_access_token
+
+        user_id = str(uuid4())
+        # The token still claims admin; the database says analyst.
+        token = create_refresh_token(user_id=user_id, role="admin")
+        mock_user_row(mock_db, user_id, role="analyst")
+
+        response = await test_client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
+        payload = decode_access_token(response.json()["access_token"])
+        assert payload["role"] == "analyst", (
+            "the access token must reflect the current database role"
+        )
+
+    async def test_malformed_sub_is_rejected(self, test_client: AsyncClient):
+        """A `sub` that is not a UUID cannot belong to a real user."""
+        from src.core.security import create_refresh_token
+
+        token = create_refresh_token(user_id="not-a-uuid", role="admin")
+
+        response = await test_client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    async def test_refresh_issues_token_for_the_requested_user(
+        self, test_client: AsyncClient, mock_db: AsyncMock, mock_user_row
+    ):
+        """The minted token must be bound to the user loaded from the DB."""
+        from src.core.security import create_refresh_token, decode_access_token
+
+        user_id = str(uuid4())
+        token = create_refresh_token(user_id=user_id, role="analyst")
+        mock_user_row(mock_db, user_id, role="analyst")
+
+        response = await test_client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert decode_access_token(response.json()["access_token"])["sub"] == user_id
 
 
 class TestAuthLogout:

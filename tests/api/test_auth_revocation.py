@@ -5,6 +5,9 @@ refresh token must not be reusable. Uses a small stateful Redis stand-in so
 blacklist writes are visible across requests within a test.
 """
 
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 
@@ -62,9 +65,18 @@ class TestRefreshRotationReplay:
     """A consumed refresh token must not grant another pair."""
 
     async def test_used_refresh_token_cannot_be_replayed(
-        self, test_client: AsyncClient, fake_redis: _StatefulFakeRedis
+        self,
+        test_client: AsyncClient,
+        fake_redis: _StatefulFakeRedis,
+        mock_db: AsyncMock,
+        mock_user_row,
     ):
-        refresh = create_refresh_token(user_id="u1", role="analyst")
+        # A1: /auth/refresh now loads the user, and `sub` is `str(user.id)`,
+        # which is a UUID. The previous "u1" could not pass either check.
+        user_id = str(uuid4())
+        mock_user_row(mock_db, user_id, role="analyst")
+
+        refresh = create_refresh_token(user_id=user_id, role="analyst")
         headers = {"Authorization": f"Bearer {refresh}"}
 
         first = await test_client.post("/api/v1/auth/refresh", headers=headers)

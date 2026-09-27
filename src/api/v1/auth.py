@@ -2,9 +2,11 @@
 
 import logging
 import time
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
@@ -17,6 +19,7 @@ from src.core.security import (
     decode_refresh_token,
     is_token_blacklisted,
 )
+from src.models.user import User
 from src.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from src.services.auth import AuthService, CredentialError, register_user
 
@@ -86,6 +89,22 @@ async def refresh_endpoint(
     A new access token and a rotated refresh token are returned.
     The consumed refresh token is blacklisted so it cannot be replayed
     (rotation semantics, R1-002/R1-004).
+
+    A1: this endpoint used to trust the token for everything. It took ``sub``
+    and ``role`` straight from the JWT and minted a new pair without touching
+    the database, so deactivating an account, soft-deleting it or demoting an
+    admin changed nothing: a refresh token issued before the change kept
+    minting access tokens for up to 24 hours. The user row is now read, the
+    account must exist, not be soft-deleted and be active, and the new token
+    carries the role currently stored in the database rather than the one
+    baked into the token.
+
+    The read is here and not in ``get_current_user`` on purpose. Adding it to
+    every authenticated request would couple the whole API to Postgres: a
+    database blip would turn into a total outage and a per-request query.
+    Reading only on refresh bounds the exposure window to the 15-minute
+    access token instead of the 24-hour refresh token, at zero cost per
+    request.
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
@@ -104,7 +123,6 @@ async def refresh_endpoint(
         ) from exc
 
     user_id = payload["sub"]
-    role = payload["role"]
 
     # A replayed (already-consumed) refresh token must be refused.
     if await is_token_blacklisted(redis_client, payload["jti"]):
@@ -112,6 +130,32 @@ async def refresh_endpoint(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked",
         )
+
+    # A1: the token is a claim, not proof the account still exists.
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        ) from exc
+
+    result = await db.execute(
+        select(User).where(User.id == user_uuid, User.deleted_at.is_(None))
+    )
+    user = result.scalar_one_or_none()
+
+    if user is None or not user.is_active:
+        # Deliberately not blacklisting: rejecting is enough to stop the token,
+        # and burning it would lock out a user that an admin re-activates.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is inactive or no longer exists",
+        )
+
+    # Mint from the role currently in the database, not the one in the token, so
+    # a demotion takes effect on the next refresh.
+    role = user.role.value if hasattr(user.role, "value") else user.role
 
     # Revoke the consumed refresh token for its remaining lifetime.
     try:
