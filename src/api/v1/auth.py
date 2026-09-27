@@ -13,11 +13,11 @@ from src.api.v1.rate_limit import check_rate_limit
 from src.core.dependencies import get_current_user, get_db, get_redis
 from src.core.security import (
     blacklist_token,
+    consume_token_once,
     create_access_token,
     create_refresh_token,
     decode_access_token,
     decode_refresh_token,
-    is_token_blacklisted,
 )
 from src.models.user import User
 from src.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
@@ -124,13 +124,6 @@ async def refresh_endpoint(
 
     user_id = payload["sub"]
 
-    # A replayed (already-consumed) refresh token must be refused.
-    if await is_token_blacklisted(redis_client, payload["jti"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-        )
-
     # A1: the token is a claim, not proof the account still exists.
     try:
         user_uuid = uuid.UUID(user_id)
@@ -146,24 +139,40 @@ async def refresh_endpoint(
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:
-        # Deliberately not blacklisting: rejecting is enough to stop the token,
+        # Deliberately not claiming the token: rejecting is enough to stop it,
         # and burning it would lock out a user that an admin re-activates.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is inactive or no longer exists",
         )
 
-    # Mint from the role currently in the database, not the one in the token, so
-    # a demotion takes effect on the next refresh.
-    role = user.role.value if hasattr(user.role, "value") else user.role
-
-    # Revoke the consumed refresh token for its remaining lifetime.
+    # A2: claim the token atomically. This replaces the old
+    # is_token_blacklisted() + blacklist_token() pair, which were two awaits
+    # with an event-loop yield between them, so N concurrent replays all saw
+    # "not blacklisted" and all minted a fresh pair.
+    #
+    # The claim is placed here, after the database validation, so a token that
+    # would be rejected anyway is never consumed: an inactive account that is
+    # re-activated still has a working token, and a burst of requests against a
+    # revoked account does not race to burn it before the reason is known.
     try:
         exp = int(payload.get("exp", 0))
         ttl = max(exp - int(time.time()), 60)
     except (TypeError, ValueError):
         ttl = 60
-    await blacklist_token(redis_client, payload["jti"], ttl)
+
+    if not await consume_token_once(redis_client, payload["jti"], ttl):
+        # Someone else already consumed this exact token. That is either a
+        # replay or a legitimate concurrent refresh; either way only one pair
+        # may be issued, and the loser must not receive one.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+        )
+
+    # Mint from the role currently in the database, not the one in the token, so
+    # a demotion takes effect on the next refresh.
+    role = user.role.value if hasattr(user.role, "value") else user.role
 
     # Issue new tokens (rotated pair)
     new_access = create_access_token(user_id=user_id, role=role)

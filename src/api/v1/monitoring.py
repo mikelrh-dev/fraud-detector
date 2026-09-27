@@ -5,6 +5,7 @@ Includes data drift detection, model performance metrics, and system status.
 
 import asyncio
 import logging
+import uuid
 from typing import Any
 
 import pandas as pd
@@ -13,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
+from src.api.v1.transactions import _current_user_uuid, _is_admin
 from src.core.dependencies import (
     get_current_user,
     get_db,
@@ -60,26 +62,51 @@ async def get_dashboard_metrics(
 
     Returns total transaction count, fraud percentage (blocked transactions),
     average ensemble score across scored transactions, and open/reviewed alert count.
+
+    A7: all four aggregates used to run unscoped, guarded only by a valid JWT.
+    Any authenticated caller — including a role with no analyst privileges —
+    could read every user's totals, blocked counts and average score. The
+    listing route in transactions.py already scopes non-admins to their own
+    rows (R1-003); this now does the same, and keeps the cross-user view for
+    admins, which is the operational purpose of a monitoring dashboard.
     """
+    scope_user_id: uuid.UUID | None = None
+    if not _is_admin(current_user):
+        scope_user_id = _current_user_uuid(current_user)
+
     try:
-        total_result = await db.execute(select(func.count(Transaction.id)))
+        total_query = select(func.count(Transaction.id))
+        blocked_query = select(func.count(Transaction.id)).where(
+            Transaction.status == TransactionStatus.BLOCKED
+        )
+        score_query = select(func.avg(FraudScore.ensemble_score))
+        alerts_query = select(func.count(FraudAlert.id)).where(
+            FraudAlert.status.in_([AlertStatus.OPEN, AlertStatus.REVIEWED])
+        )
+
+        if scope_user_id is not None:
+            total_query = total_query.where(Transaction.user_id == scope_user_id)
+            blocked_query = blocked_query.where(Transaction.user_id == scope_user_id)
+            # FraudScore has no user_id of its own: it is reached through the
+            # transaction, so the scope is a join rather than a direct filter.
+            score_query = score_query.join(
+                Transaction, FraudScore.transaction_id == Transaction.id
+            ).where(Transaction.user_id == scope_user_id)
+            # FraudAlert likewise carries no user_id.
+            alerts_query = alerts_query.join(
+                Transaction, FraudAlert.transaction_id == Transaction.id
+            ).where(Transaction.user_id == scope_user_id)
+
+        total_result = await db.execute(total_query)
         total_transactions = int(total_result.scalar() or 0)
 
-        blocked_result = await db.execute(
-            select(func.count(Transaction.id)).where(
-                Transaction.status == TransactionStatus.BLOCKED
-            )
-        )
+        blocked_result = await db.execute(blocked_query)
         blocked_count = int(blocked_result.scalar() or 0)
 
-        avg_result = await db.execute(select(func.avg(FraudScore.ensemble_score)))
+        avg_result = await db.execute(score_query)
         avg_score = float(avg_result.scalar() or 0.0)
 
-        alerts_result = await db.execute(
-            select(func.count(FraudAlert.id)).where(
-                FraudAlert.status.in_([AlertStatus.OPEN, AlertStatus.REVIEWED])
-            )
-        )
+        alerts_result = await db.execute(alerts_query)
         active_alerts = int(alerts_result.scalar() or 0)
 
         return DashboardMetricsResponse(
@@ -128,11 +155,18 @@ async def get_drift_status(
         - reference_transactions_count: number of reference transactions
     """
     try:
-        # Get recent transactions with scores
-        stmt = (
-            select(FraudScore).order_by(FraudScore.created_at.desc()).limit(window_size)
-        )
-        result = await db.execute(stmt)
+        # A7: the window was global, so one analyst's drift view was built from
+        # every user's scores. FraudScore has no user_id, so the scope is a join
+        # through the transaction. Admins keep the cross-user window, which is
+        # what a fleet-wide drift check is for.
+        stmt = select(FraudScore).order_by(FraudScore.created_at.desc())
+
+        if not _is_admin(current_user):
+            stmt = stmt.join(
+                Transaction, FraudScore.transaction_id == Transaction.id
+            ).where(Transaction.user_id == _current_user_uuid(current_user))
+
+        result = await db.execute(stmt.limit(window_size))
         recent_scores = result.scalars().all()
 
         if len(recent_scores) < 10:

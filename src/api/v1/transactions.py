@@ -617,7 +617,20 @@ async def get_graph_stats(
     """Get fraud network graph statistics.
 
     Returns overall graph metrics: nodes, edges, density, known fraudsters.
+
+    A7: this returned the whole-graph counts to any authenticated caller. The
+    fraud graph is deliberately cross-user — that is what makes near-fraud
+    detection work at all — so there is no meaningful per-user subset to return
+    here. Scoping it is therefore not an option: the endpoint is admin-only.
+    Per-user graph *features* remain available to everyone on
+    `/transactions/{user_id}/graph-features`, which is the endpoint that
+    actually feeds scoring.
     """
+    if not _is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Whole-graph statistics require an admin role",
+        )
     try:
         stats = await asyncio.to_thread(_graph_service.get_stats)
         return {

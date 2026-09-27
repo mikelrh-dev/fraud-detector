@@ -1,5 +1,6 @@
 """JWT token management and password hashing utilities."""
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -21,6 +22,37 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against its bcrypt hash."""
     return _pwd_context.verify(plain_password, hashed_password)
+
+
+# A5: a pre-computed bcrypt hash of a value no user can present, used to burn
+# the same CPU when the account does not exist.
+#
+# The login path used to raise before calling verify_password when the email was
+# unknown, so "user does not exist" returned in ~1 ms and "wrong password" took
+# ~300 ms of bcrypt. That gap is a reliable account-enumeration oracle: an
+# attacker measures, never guesses.
+#
+# The hash must be a real bcrypt hash, not a dummy string, or verify_password
+# short-circuits and the timing is identical to the fast path again. It is
+# generated at import from a fixed random value, so the plaintext is never a
+# guessable constant and no password is ever compared against it successfully.
+_DUMMY_HASH = _pwd_context.hash(secrets.token_urlsafe(32))
+
+
+def burn_password_verification(plain_password: str) -> None:
+    """Spend the same CPU as a real verification. Always returns False.
+
+    Call this on the "account does not exist" branch so it is indistinguishable
+    in timing from a wrong password. The result is deliberately discarded: a
+    real user must never match this hash.
+    """
+    try:
+        _pwd_context.verify(plain_password, _DUMMY_HASH)
+    except Exception:
+        # verify() can raise on a malformed input; the CPU has been spent
+        # either way, which is the entire point of the call.
+        pass
+    return None
 
 
 def create_access_token(
@@ -103,3 +135,26 @@ async def is_token_blacklisted(redis_client: Redis, jti: str) -> bool:
 async def blacklist_token(redis_client: Redis, jti: str, ttl: int = 900) -> None:
     """Add a token to the Redis blacklist with a TTL matching token expiry."""
     await redis_client.setex(f"token_blacklist:{jti}", ttl, "1")
+
+
+async def consume_token_once(redis_client: Redis, jti: str, ttl: int) -> bool:
+    """Atomically claim a single-use token. Returns True only for the first caller.
+
+    A2: rotation used to be two separate awaits — ``is_token_blacklisted`` then
+    ``blacklist_token``. Between them the event loop can yield, so N concurrent
+    replays of the same refresh token all observed "not blacklisted" and all
+    proceeded to mint a fresh pair. The blacklist is only a *record* of revokes;
+    it never *prevented* a race.
+
+    ``SET key value NX EX ttl`` is the fix: Redis executes it as a single
+    command, so exactly one caller can create the key. The losers get ``None``
+    back and must treat the token as already consumed.
+
+    Deliberately not a Lua script. The atomicity guarantee needed here is
+    per-key, and ``SET NX EX`` already provides it inside one Redis command, so
+    a script would add a second failure mode (script cache, ACL) for nothing.
+
+    Returns True when this caller won the claim and must proceed.
+    """
+    claimed = await redis_client.set(f"token_blacklist:{jti}", "1", nx=True, ex=ttl)
+    return bool(claimed)

@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.security import (
+    burn_password_verification,
     create_access_token,
     create_refresh_token,
     hash_password,
@@ -93,6 +94,11 @@ async def login(db: AsyncSession, request: LoginRequest) -> TokenResponse:
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:
+        # A5: spend the same CPU as a real bcrypt verification before failing.
+        # Without this, "unknown email" returned in ~1 ms and "wrong password"
+        # in ~300 ms, which is a reliable account-enumeration oracle: measure,
+        # don't guess. Both branches now take the same time.
+        burn_password_verification(request.password)
         raise CredentialError("Invalid credentials")
 
     if not verify_password(request.password, user.hashed_password):

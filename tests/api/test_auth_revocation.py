@@ -18,7 +18,12 @@ pytestmark = pytest.mark.asyncio
 
 
 class _StatefulFakeRedis:
-    """Minimal async Redis stand-in persisting keys within a test."""
+    """Minimal async Redis stand-in persisting keys within a test.
+
+    Implements ``set(..., nx=True)`` because A2 made refresh-token rotation
+    depend on ``SET NX`` for its atomicity: the fake has to reproduce "only the
+    first caller wins", or a replay test would pass without proving anything.
+    """
 
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
@@ -28,6 +33,19 @@ class _StatefulFakeRedis:
 
     async def exists(self, key: str) -> int:
         return 1 if key in self.store else 0
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> str | None:
+        """Mimic SET NX: return None when the key already exists."""
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return "OK"
 
 
 @pytest.fixture()
