@@ -381,24 +381,49 @@ que me detuvo.
 ### Contabilidad de los hallazgos altos (A1–A31)
 
 El informe listaba 31 hallazgos altos sin decir cuáles estaban resueltos. Esta
-tabla es la fuente de verdad; "verificado" significa comprobado contra el código,
-no citado de memoria.
+tabla es la fuente de verdad.
+
+> **Corrección (2026-09-27, segunda ronda).** Una versión anterior de esta tabla
+> se verificó buscando *strings* sospechosos con grep y clasificó mal varios
+> hallazgos: marcaba A8 como pendiente porque `require_role` seguía existiendo en
+> `dependencies.py`, cuando el defecto estaba en el *call site* de
+> `monitoring.py`, y ese ya estaba corregido en `4db8533`. Buscar el síntoma en
+> la definición en vez de en el uso produce falsos positivos. La tabla de abajo
+> está verificada leyendo el código de cada call site.
 
 | Estado | Hallazgos |
 |---|---|
-| **Verificado pendiente** | A1, A2, A3, A4, A5, A6, A8, A12, A15, A25, A26, A27, A28, A31 |
-| **Resuelto** | A9 (guard de producción en W1), A20 (W3), A29 / V-03 (W4) |
+| **Pendiente verificado** | A1, A2, A3, A4, A5, A6, A12, A15, A25, A27, A31 |
+| **Resuelto** | A8 (`4db8533`, con `require_any_role`), A9 (W1), A20 (W3), A26 (`922dcf5`), A28 (`ca3c2bf`), A29 / V-03 (W4) |
 | **Sin contabilidad en este documento** | A7, A13, A14, A16–A24, A30 |
 | **Diferido por decisión** | A10, A11 (recalibrar el ensemble: cambia scores en producción) |
 
-Evidencia de los pendientes verificados: A4 → 4 rutas con `SIN-DEP` en
-`audit.py:25,80,113` y `reports.py:17`; A6 → `health.py:84`; A8 →
-`core/dependencies.py:49`; A12 → `rule_engine.py:98`; A15 →
-`ensemble.py:26`; A26 → no existe ningún `ErrorBoundary` ni
-`getDerivedStateFromError` en `frontend/src/`; A27 → `persist` de zustand con
-clave `auth-storage`; A28 → `refresh()` y `logout()` exportados en
-`api/auth.ts:50,68` y nunca llamados; A31 → `TransactionDetail.tsx:40`.
+Evidencia de cada pendiente, por lectura directa del código:
 
-**580 tests verdes y 86 % de coverage no cubren A4–A8 ni A12–A15**: son caminos
+- **A1** — `auth.py:105-125` lee `role = payload["role"]` y lo reutiliza para
+  `create_access_token`. No hay `select` ni `db.execute` en el endpoint.
+- **A2** — `is_token_blacklisted` y `blacklist_token` son dos `await` separados
+  (`auth.py:110` y `:122`): la ventana TOCTOU existe.
+- **A3** — `docker-compose.yml:51-52` publica `8000:8000`, así que nginx es
+  opcional y se salta.
+- **A4** — `audit.py:25,80,113` y `reports.py:17` sin dependencia de limiter;
+  `auth/logout` tampoco la tiene.
+- **A5** — `services/auth.py:95` lanza `CredentialError` si el usuario no existe
+  **antes** de `:98` `verify_password`, así que el bcrypt solo se paga si el
+  usuario existe.
+- **A6** — `health.py:83` devuelve `"error": str(exc)` sin autenticar.
+- **A12** — `rule_engine.py` no valida `amount` ni `merchant_name`; no es
+  alcanzable por HTTP, pero cualquier consumidor en batch lo heredaría.
+- **A15** — `ensemble.py:50` filtra por **peso** (`w.get(k, 0) > 0`), no por
+  señal: una capa ausente con `score = 0` sigue contando en el promedio ponderado, y con el modelo
+  caído se pierden 25 puntos en silencio.
+- **A25** — `useCountUp.ts:33` arranca en `0` y el efecto se reinicia en cada
+  cambio de `target`; el dashboard refresca cada 30 s.
+- **A27** — `authStore.ts:20,51` usa `persist` de zustand, que serializa en
+  localStorage, token de acceso y de refresh en claro.
+- **A31** — `TransactionDetail.tsx:57-65` devuelve `null` para cualquier error
+  no-202/no-404, así que un 500 se renderiza como "No hay reporte disponible".
+
+**580 tests verdes y 86 % de coverage no cubren A1–A6 ni A12–A15**: son caminos
 sin test, y por eso nadie los ha tocado. El coverage no es evidencia de que estén
 resueltos.
