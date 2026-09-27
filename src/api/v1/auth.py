@@ -138,6 +138,7 @@ async def logout_endpoint(
     request: Request,
     current_user: dict = Depends(get_current_user),
     redis_client: Redis = Depends(get_redis),
+    _rate_limit: None = Depends(check_rate_limit),
 ) -> None:
     """Logout and blacklist the current access token.
 

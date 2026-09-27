@@ -48,8 +48,23 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.api
-    ports:
-      - "8000:8000"
+    # A3: the API port is deliberately NOT published. It used to be
+    # "8000:8000", which created a second ingress that bypassed nginx — the
+    # only component that overwrites X-Real-IP. With the port reachable
+    # directly, a client could send a fresh X-Real-IP per request and bypass
+    # the per-IP rate limiter entirely, making /auth/login an unlimited
+    # credential-stuffing target.
+    #
+    # The frontend container IS nginx (docker/nginx.conf) and already proxies
+    # /api to api:8000, so the API stays reachable at http://localhost:3000/api
+    # and Swagger at http://localhost:3000/docs. The SPA uses baseURL "/api/v1",
+    # i.e. the same origin, so it goes through nginx as well.
+    #
+    # Because nginx is now the only ingress, TRUST_PROXY_HEADERS must be true:
+    # otherwise every request would look like it came from the nginx container
+    # and the 10-per-minute login limit would apply to all users at once.
+    expose:
+      - "8000"
     mem_limit: 2g
     memswap_limit: 2.5g
     env_file:
@@ -58,6 +73,7 @@ services:
       DB_HOST: postgres
       REDIS_URL: redis://:${REDIS_PASSWORD:-fraud_redis_secret}@redis:6379/0
       OLLAMA_HOST: http://ollama:11434
+      TRUST_PROXY_HEADERS: "true"
     depends_on:
       postgres:
         condition: service_healthy

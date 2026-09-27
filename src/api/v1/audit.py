@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.rate_limit import check_rate_limit
 from src.core.dependencies import get_current_user, get_db, require_role
 from src.models.transaction import Transaction
 from src.schemas.audit import (
@@ -17,7 +18,14 @@ from src.schemas.audit import (
 )
 from src.services.audit import AuditService
 
-router = APIRouter(prefix="/audit", tags=["audit"])
+router = APIRouter(
+    prefix="/audit",
+    tags=["audit"],
+    # A4: this router had no limiter, so /audit/export streamed a full CSV
+    # unmetered. The dependency is a no-op unless the path matches a prefix in
+    # RATE_LIMITS, which is why /api/v1/audit was added there too.
+    dependencies=[Depends(check_rate_limit)],
+)
 
 _audit_service = AuditService()
 

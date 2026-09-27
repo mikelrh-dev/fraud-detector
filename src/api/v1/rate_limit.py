@@ -20,12 +20,23 @@ from src.core.dependencies import get_redis
 logger = logging.getLogger(__name__)
 
 # Rate limits: (path_prefix, max_requests, window_seconds)
+#
+# Order matters: the first matching prefix wins (see the loop in
+# ``check_rate_limit``), so the specific /auth/* entries are listed before the
+# broader ones they would otherwise be shadowed by.
 RATE_LIMITS: dict[str, tuple[int, float]] = {
     "/api/v1/auth/login": (10, 60.0),  # 10 attempts per 60 seconds
     "/api/v1/auth/register": (10, 60.0),  # 10 attempts per 60 seconds
     "/api/v1/auth/refresh": (5, 60.0),  # 5 attempts per 60 seconds (F5)
+    # Logout blacklists a token; unlimited calls would let an attacker churn
+    # blacklist writes in Redis. Listed after the auth entries above so it does
+    # not shadow them.
+    "/api/v1/auth/logout": (20, 60.0),
     "/api/v1/transactions": (100, 60.0),
     "/api/v1/alerts": (60, 60.0),
+    # Audit is an append-only trail read by analysts and admins. The export
+    # route streams a full CSV, so it must not be unmetered.
+    "/api/v1/audit": (60, 60.0),
     # Monitoring is expensive: /drift runs a full distribution comparison and
     # /dashboard issues four aggregate COUNT/AVG queries. Keep it tight so a
     # polling dashboard cannot become a denial-of-service vector.

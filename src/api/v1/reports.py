@@ -6,12 +6,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.rate_limit import check_rate_limit
 from src.core.dependencies import get_current_user, get_db
 from src.models.llm_report import LLMReport, LLMReportStatus
 from src.models.transaction import Transaction
 from src.schemas.report import ReportResponse
 
-router = APIRouter(prefix="/transactions", tags=["reports"])
+router = APIRouter(
+    prefix="/transactions",
+    tags=["reports"],
+    # A4: this route had no limiter. The /api/v1/transactions prefix in
+    # RATE_LIMITS already matches this path, so adding the dependency is enough.
+    dependencies=[Depends(check_rate_limit)],
+)
 
 
 @router.get("/{transaction_id}/report", response_model=ReportResponse)
