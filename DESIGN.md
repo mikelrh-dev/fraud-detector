@@ -43,7 +43,7 @@ Professional fintech dashboard for fraud detection analysts. Dark-first, data-de
 |---|---|---|
 | Action base (`--color-accent`) | `#dc2626` | `red-600` / `bg-accent` |
 | Action hover | `#b91c1c` | `red-700` / `hover:bg-action-hover` |
-| Focus ring | `#ef4444` | `red-500`, 2px offset |
+| Focus ring | `#ef4444` | `red-500`, 2px offset (offset not yet applied — see Buttons) |
 
 **Accent contract (Phase 4):** `--color-accent` is the **brand action color**
 for primary CTAs (Login/Register/CreateTransaction submits, "Nueva
@@ -145,10 +145,37 @@ Desktop (md+): root `min-h-dvh md:grid md:grid-cols-[1.15fr_1fr]`.
 ## Components
 
 ### Buttons
-- **Primary:** `bg-red-600`, text white, hover `bg-red-700`, 8px radius, 12px 24px padding
-- **Secondary:** transparent, border `slate-700`, text `slate-300`, hover `bg-slate-800`
-- **Danger:** same as primary (this product's primary action IS risky)
-- **Ghost:** text only, `slate-400`, hover text `slate-100`
+
+All buttons compose from the shared constants in `src/lib/ui.ts` (`BTN_BASE` + one `BTN_VARIANTS` entry + one `BTN_SIZES` entry) via `cn()` — import them, don't copy class strings. Semantics of each slot:
+
+| Slot | Token / value |
+|---|---|
+| Behaviour (all) | `BTN_BASE` — `btn-motion active:scale-[0.98]`, touch-action, `disabled:opacity-50`, `FOCUS_RING` |
+| `primary` | `bg-accent text-white`, hover `bg-action-hover` |
+| `secondary` | `bg-transparent text-slate-300 border border-slate-700`, hover `bg-slate-800` |
+| `ghost` | `text-slate-400` (text only, no background), hover `text-slate-100` |
+| `danger` | `bg-risk-critical text-white`, hover `bg-risk-critical-hover` |
+| Size `sm` | `px-3 py-1.5 text-xs rounded-lg` |
+| Size `md` | `px-4 py-2 text-sm rounded-lg` (8px radius, 12×24px padding) |
+
+- **Design intent — Danger: same as primary** (this product's primary action IS
+  risky). The *intent* is unchanged and remains the target state.
+- ⚠ **Known divergence, deferred to the visual pass:** `bg-risk-critical` is
+  `#ef4444`, which is *lighter* than `bg-accent` `#dc2626`, so the danger button
+  currently reads as weaker than the primary action beside it. It stays on the
+  risk family deliberately — risk and accent are semantically independent and
+  that independence is the stronger rule. Fix the *weight* in the visual pass
+  (a darker risk-critical base), not by re-colouring danger into the accent
+  family. Note also that `risk-critical-hover` is `#dc2626`, i.e. exactly the
+  accent value, so hovering a danger button currently lands on the primary
+  colour.
+- **Hovers are gated on `enabled:`** (`enabled:hover:bg-…`). `BTN_BASE` already
+  dims disabled controls with `disabled:opacity-50`; a bare `hover:` still fired
+  under the cursor and made an inert button look pressable.
+- ⚠ **Known deviation, deferred to the visual pass:** the focus-ring constants
+  carry **no ring offset**, where the Accent table above specifies 2px. The
+  tokenization pass was scoped to no visual change, so the value was left alone;
+  the offset belongs to the visual pass.
 
 ### Badges / Pills
 
