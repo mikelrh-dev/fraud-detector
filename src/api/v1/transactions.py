@@ -60,6 +60,10 @@ from src.services.velocity_store import VelocityStore
 
 logger = logging.getLogger(__name__)
 
+# A22: how many recent amounts feed the std_amount feature. Bounds an
+# otherwise unbounded read on every scored transaction.
+STD_AMOUNT_SAMPLE_SIZE = 500
+
 router = APIRouter(
     prefix="/transactions",
     tags=["transactions"],
@@ -216,8 +220,18 @@ async def create_and_score_transaction(
 
     # Std amount: fetch only the amount column (no entities) and compute
     # std Python-side for SQLite portability.
+    #
+    # A22: this had no LIMIT, so every scored transaction materialised the user's
+    # entire amount history in memory just to take a standard deviation. On a
+    # long-lived account that is an unbounded read on the hot path. Capped to the
+    # most recent N, which is also the more meaningful window: the feature is a
+    # deviation from the user's *current* typical behaviour, not from their
+    # entire transaction history including behaviour they have since changed.
     amounts_result = await db.execute(
-        select(Transaction.amount).where(*base_filter)
+        select(Transaction.amount)
+        .where(*base_filter)
+        .order_by(Transaction.created_at.desc())
+        .limit(STD_AMOUNT_SAMPLE_SIZE)
     )
     amounts = [float(a) for a in amounts_result.scalars().all()]
 

@@ -53,6 +53,23 @@ class FraudGraphService:
         self.last_pruned = datetime.now(tz=timezone.utc)
         self._redis = redis_client
         self._restored = False
+        # A22: persist() used to serialise the entire graph and ship the whole
+        # node/edge set to Redis on every scored transaction, while holding the
+        # lock for the traversal. That is O(V+E) per request on the hot path and
+        # it grew for the lifetime of the deployment. These accumulate the delta
+        # instead, so a single transaction writes three nodes and two edges.
+        self._pending_nodes: dict[str, str] = {}
+        self._pending_edges: set[str] = set()
+        self._pending_fraudsters: set[str] = set()
+        # A21: nodes removed by a prune, waiting to be deleted from Redis.
+        self._pending_removed_nodes: set[str] = set()
+        self._pending_removed_edges: set[str] = set()
+        # A21: the prune trigger used to be `number_of_nodes() % 1000 == 0`.
+        # The node count steps by ~3 per transaction, so it can jump straight
+        # over a multiple of 1000 and never prune at all. A monotonic counter
+        # cannot skip its own threshold.
+        self._adds_since_prune = 0
+        self.prune_threshold = 1000
         logger.info(
             "FraudGraphService initialized (retention: %d days, persistence: %s)",
             retention_days,
@@ -79,10 +96,11 @@ class FraudGraphService:
         return str(value)
 
     def _snapshot(self) -> tuple[dict[str, str], list[str], list[str]]:
-        """Serialize the graph under the lock into plain Redis-ready payloads.
+        """Serialize the whole graph. Kept for tests and full resyncs.
 
-        Deliberately synchronous: it must never ``await`` while holding the
-        ``threading.Lock`` (a worker thread mutates the graph concurrently).
+        `persist` no longer uses this: writing the entire graph on every scored
+        transaction was O(V+E) per request (A22). It is retained because a
+        deliberate full resync is still occasionally the right thing to do.
         """
         with self.lock:
             nodes = {
@@ -102,6 +120,40 @@ class FraudGraphService:
             edges = [f"{sender}:{receiver}" for sender, receiver in self.graph.edges()]
             fraudsters = list(self.known_fraudsters)
         return nodes, edges, fraudsters
+
+    @staticmethod
+    def _serialize_node(data: dict[str, Any]) -> str:
+        return json.dumps(
+            {
+                "node_type": data.get("node_type", "user"),
+                "is_fraud": bool(data.get("is_fraud", False)),
+                "timestamp": (
+                    data["timestamp"].isoformat()
+                    if data.get("timestamp") is not None
+                    else None
+                ),
+            }
+        )
+
+    def _collect_delta(self) -> tuple[dict[str, str], list[str], list[str], list[str], list[str]]:
+        """Swap out the pending delta. Returns the writes and the deletions.
+
+        Synchronous and lock-free with respect to the caller: it is called from
+        async code after the worker thread has finished, and the swap is atomic
+        so a concurrent mutation lands in the next batch instead of being lost.
+        """
+        nodes, self._pending_nodes = self._pending_nodes, {}
+        edges, self._pending_edges = self._pending_edges, set()
+        fraudsters, self._pending_fraudsters = self._pending_fraudsters, set()
+        removed_nodes, self._pending_removed_nodes = self._pending_removed_nodes, set()
+        removed_edges, self._pending_removed_edges = self._pending_removed_edges, set()
+        return (
+            nodes,
+            list(edges),
+            list(fraudsters),
+            list(removed_nodes),
+            list(removed_edges),
+        )
 
     async def restore(self, redis_client: Any | None = None) -> bool:
         """Restore the graph from Redis so it survives restarts.
@@ -167,17 +219,36 @@ class FraudGraphService:
         return True
 
     async def persist(self, redis_client: Any | None = None) -> bool:
-        """Persist the graph to Redis (best-effort).
+        """Flush the pending graph delta to Redis (best-effort).
 
-        Returns True when the snapshot was written, False when Redis was
+        Returns True when the delta was written, False when Redis was
         unavailable. Never raises: graph detection must keep working when
         Redis is down.
+
+        A22: this used to call ``_snapshot()`` and write every node and every
+        edge on each scored transaction — O(V+E) serialisation while holding the
+        graph lock, plus a full hash rewrite, on the hot path of
+        ``POST /transactions``. Now it writes only what changed since the last
+        flush, so one transaction costs three node writes and two edge writes
+        regardless of how large the graph has grown.
+
+        A21: it also issues the deletions a prune computed. ``persist`` previously
+        only ever did ``hset``/``sadd``, which are upserts, so a pruned node was
+        simply absent from the new mapping and therefore *retained* in Redis;
+        ``restore`` then resurrected the full pruned history on every restart and
+        the edge set grew without limit.
+
+        A failed flush puts the delta back, so a Redis blip defers the write
+        instead of discarding it.
         """
         redis = self._resolve_redis(redis_client)
         if redis is None:
             return False
 
-        nodes, edges, fraudsters = self._snapshot()
+        nodes, edges, fraudsters, removed_nodes, removed_edges = self._collect_delta()
+        if not (nodes or edges or fraudsters or removed_nodes or removed_edges):
+            return True
+
         try:
             if nodes:
                 await redis.hset(_REDIS_NODES_KEY, mapping=nodes)
@@ -185,8 +256,18 @@ class FraudGraphService:
                 await redis.sadd(_REDIS_EDGES_KEY, *edges)
             if fraudsters:
                 await redis.sadd(_REDIS_FRAUDSTERS_KEY, *fraudsters)
+            if removed_nodes:
+                await redis.hdel(_REDIS_NODES_KEY, *removed_nodes)
+            if removed_edges:
+                await redis.srem(_REDIS_EDGES_KEY, *removed_edges)
         except Exception as exc:
             logger.warning("Failed to persist graph to Redis: %s", exc)
+            # Re-queue so the next flush retries instead of losing the delta.
+            self._pending_nodes.update(nodes)
+            self._pending_edges.update(edges)
+            self._pending_fraudsters.update(fraudsters)
+            self._pending_removed_nodes.update(removed_nodes)
+            self._pending_removed_edges.update(removed_edges)
             return False
         return True
 
@@ -231,16 +312,31 @@ class FraudGraphService:
                     self.graph.nodes[card_id]["is_fraud"] = True
                     self.known_fraudsters.add(sender_id)
                     self.known_fraudsters.add(card_id)
+                    self._pending_fraudsters.update({sender_id, card_id})
                     logger.warning(
                         "Marked as fraudster: sender=%s, card=%s (known_fraudsters=%d)",
                         sender_id,
                         card_id,
                         len(self.known_fraudsters),
                     )
-                
-                # Prune old nodes if needed (check every 1000 adds)
-                if self.graph.number_of_nodes() % 1000 == 0:
+
+                # A22: record the delta instead of re-serialising the whole graph
+                # on every persist.
+                for node_id in (sender_id, receiver_id, card_id):
+                    if node_id in self.graph:
+                        self._pending_nodes[node_id] = self._serialize_node(
+                            self.graph.nodes[node_id]
+                        )
+                self._pending_edges.add(f"{sender_id}:{receiver_id}")
+                self._pending_edges.add(f"{sender_id}:{card_id}")
+
+                # A21: prune on a monotonic counter. `number_of_nodes() % 1000`
+                # stepped by ~3 per transaction and could jump over a multiple
+                # of 1000, in which case the graph never pruned at all.
+                self._adds_since_prune += 1
+                if self._adds_since_prune >= self.prune_threshold:
                     self._prune_old_nodes()
+                    self._adds_since_prune = 0
 
             except Exception as exc:
                 logger.error("Failed to add transaction to graph: %s", exc)
@@ -300,8 +396,16 @@ class FraudGraphService:
                 }
 
             try:
-                # Degree centrality
-                degree_centrality = nx.degree_centrality(self.graph).get(user_id, 0.0)
+                # A22: `nx.degree_centrality(self.graph)` walks the entire graph
+                # on every scored transaction, to read a single node's degree.
+                # NetworkX defines degree centrality as degree / (V - 1), so
+                # computing it directly is O(1) here and returns the same value.
+                total_nodes = self.graph.number_of_nodes()
+                degree_centrality = (
+                    self.graph.degree(user_id) / (total_nodes - 1)
+                    if total_nodes > 1
+                    else 0.0
+                )
 
                 # Find shortest path to any fraudster using BFS with cutoff=2.
                 # single_source_shortest_path_length returns all reachable nodes
@@ -356,15 +460,22 @@ class FraudGraphService:
                 "graph_density": nx.density(self.graph),
             }
 
-    def _prune_old_nodes(self) -> None:
+    def _prune_old_nodes(self) -> list[str]:
         """Remove nodes older than retention_days (memory management).
-        
-        Called periodically (every 1000 adds) to prevent unbounded growth.
-        Removes transaction nodes but preserves fraudster nodes.
+
+        Called on a monotonic counter (every `prune_threshold` adds) to prevent
+        unbounded growth. Removes transaction nodes but preserves fraudster
+        nodes.
+
+        A21: returns the removed ids and queues them for deletion from Redis.
+        Previously the removed set was computed in memory and dropped on the
+        floor: `persist` only ever did `hset`/`sadd`, so the pruned nodes stayed
+        in the Redis hash and `restore` resurrected them on every restart.
         """
         try:
             cutoff_time = datetime.now(tz=timezone.utc) - timedelta(days=self.retention_days)
             nodes_to_remove = []
+            removed_edges: set[str] = set()
             
             for node in self.graph.nodes():
                 node_timestamp = self.graph.nodes[node].get("timestamp")
@@ -374,14 +485,35 @@ class FraudGraphService:
                         nodes_to_remove.append(node)
             
             if nodes_to_remove:
+                # Collect the incident edges before removal: after
+                # remove_nodes_from they are gone from the graph and cannot be
+                # derived any more, and the Redis edge set would keep them
+                # forever.
+                for node in nodes_to_remove:
+                    for sender, receiver in list(self.graph.in_edges(node)) + list(
+                        self.graph.out_edges(node)
+                    ):
+                        removed_edges.add(f"{sender}:{receiver}")
+
                 self.graph.remove_nodes_from(nodes_to_remove)
+                self._pending_removed_nodes.update(nodes_to_remove)
+                self._pending_removed_edges.update(removed_edges)
+                # A removed node's pending write must not resurrect it.
+                for node in nodes_to_remove:
+                    self._pending_nodes.pop(node, None)
+                    self._pending_edges.discard(f"{node}")
                 self.last_pruned = datetime.now(tz=timezone.utc)
                 logger.info(
-                    "Pruned %d old nodes (retention: %d days). Graph size: %d nodes, %d edges",
+                    "Pruned %d old nodes and %d edges (retention: %d days). "
+                    "Graph size: %d nodes, %d edges",
                     len(nodes_to_remove),
+                    len(removed_edges),
                     self.retention_days,
                     self.graph.number_of_nodes(),
                     self.graph.number_of_edges(),
                 )
+                return nodes_to_remove
+            return []
         except Exception as exc:
             logger.error("Failed to prune old nodes: %s", exc)
+            return []

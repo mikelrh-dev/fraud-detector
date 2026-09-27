@@ -3,7 +3,7 @@
 Uses the test client with mocked DB and Redis dependencies.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -302,13 +302,22 @@ class TestAuthRegisterSecurity:
             "role": "analyst",
         }
 
+        # The rate-limit window is `int(time.time() // 60)`, so 11 requests that
+        # straddle a minute boundary split across two buckets and neither
+        # reaches the limit of 10. That made this test pass in isolation and
+        # fail inside the full suite purely on timing, which is how a flaky test
+        # erodes trust in every gate. Freezing the limiter's clock removes the
+        # race without weakening the assertion.
+        frozen = 1_700_000_000.0
+
         # Act: fire 11 rapid requests (expected limit: 10 per minute)
-        responses = [
-            await test_client.post(
-                "/api/v1/auth/register", json=payload, headers=headers
-            )
-            for _ in range(11)
-        ]
+        with patch("src.api.v1.rate_limit.time.time", return_value=frozen):
+            responses = [
+                await test_client.post(
+                    "/api/v1/auth/register", json=payload, headers=headers
+                )
+                for _ in range(11)
+            ]
 
         # Assert
         assert all(r.status_code != 429 for r in responses[:10]), (
