@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 import redis.asyncio as redis
+from sqlalchemy.exc import IntegrityError
 
 from src.core.config import settings
 from src.core.database import async_session_maker
@@ -67,7 +68,14 @@ async def process_report_request(
         transaction=transaction,
     )
 
-    # Persist report
+    # Persist report.
+    #
+    # The write must be idempotent. A redelivered message (lost XACK, worker
+    # restart, XAUTOCLAIM after the commit landed) raises IntegrityError against
+    # uq_llm_reports_transaction_id, which the caller routed into its retry path
+    # — so a report that already existed could never drain and the PEL entry
+    # looped forever. Handling the conflict here keeps the code dialect-agnostic
+    # (an INSERT .. ON CONFLICT would be PostgreSQL-only) and is equally final.
     report = LLMReport(
         transaction_id=transaction_id,
         report_text=report_text,
@@ -92,7 +100,19 @@ async def process_report_request(
             },
         )
 
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            # The report is already there: the desired end state is reached.
+            # Roll back the audit insert too, so a redelivery does not
+            # duplicate the audit trail, and report success.
+            await session.rollback()
+            logger.info(
+                "LLM report for transaction %s already exists — treating "
+                "redelivery as success",
+                transaction_id,
+            )
+            return True
 
     logger.info(
         "LLM report generated for transaction %s",
@@ -161,10 +181,19 @@ async def _process_message_safe(
     Any exception during processing is caught and routed to retry/DLQ.
     This prevents poison-pill infinite loops.
     """
+    # Bound BEFORE the try: the except handler needs it, and a malformed payload
+    # (bad utf-8, invalid JSON) used to raise UnboundLocalError *inside* the
+    # handler. asyncio.gather(return_exceptions=True) swallowed that, so the
+    # message got no ack, no requeue and no DLQ — it sat in the PEL and was
+    # re-claimed by XAUTOCLAIM every 60s forever.
+    message_data: dict[str, Any] = {}
     try:
-        # Decode message
         data_json = fields.get(b"data", b"{}").decode("utf-8")
-        message_data = json.loads(data_json)
+        parsed = json.loads(data_json)
+        if isinstance(parsed, dict):
+            message_data = parsed
+        else:
+            message_data = {"_raw": parsed}
 
         # Process
         async with async_session_maker() as db:
@@ -178,6 +207,11 @@ async def _process_message_safe(
         if success:
             await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
             logger.debug("LLM message ACKed: %s", message_id)
+        else:
+            # The processor reported "not done, retryable". Without this the
+            # entry was neither acked nor requeued, so it only moved again when
+            # XAUTOCLAIM happened to reclaim it.
+            await _handle_failed_report(redis_client, message_id, message_data)
 
     except Exception as exc:
         logger.error("Error processing LLM message %s: %s", message_id, exc)
@@ -211,7 +245,11 @@ async def _handle_failed_report(
             if isinstance(message_id, bytes)
             else str(message_id)
         )
-        await send_to_dlq(
+        # send_to_dlq already ACKs the original entry. It returns False when the
+        # DLQ write failed, in which case the entry must stay in the PEL so the
+        # recovery loop tries again — ACKing here anyway (as the code did) is how
+        # work disappeared with no record in the DLQ.
+        delivered = await send_to_dlq(
             redis_client,
             STREAM_NAME,
             dlq_message_id,
@@ -220,10 +258,16 @@ async def _handle_failed_report(
             f"Max retries ({MAX_RETRIES}) exceeded",
             message_data,
         )
-        await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
-        logger.warning(
-            "LLM message sent to DLQ: %s (retries: %d)", message_id, retry_count
-        )
+        if delivered:
+            logger.warning(
+                "LLM message sent to DLQ: %s (retries: %d)", message_id, retry_count
+            )
+        else:
+            logger.error(
+                "LLM message %s could not be written to the DLQ — left pending "
+                "for recovery",
+                message_id,
+            )
         return
 
     message_data["retry_count"] = retry_count + 1
@@ -300,65 +344,14 @@ async def _process_message_with_retry(
 ) -> None:
     """Process a message with automatic retry and DLQ handling (R3).
 
-    Mirrors shap_worker._process_message_with_retry: tracks retry count
-    via the message payload, sends to DLQ after MAX_RETRIES, and re-enqueues
-    with backoff for retryable failures.
+    Delegates to the same path the consume loop uses, so the recovery loop
+    cannot diverge from it. Previously this was a near-verbatim copy whose
+    handler was a bare ``logger.error``: an exception here produced no ack, no
+    retry, no requeue and no DLQ, so the entry stayed in the PEL and was
+    re-claimed every RECOVERY_INTERVAL forever, burning one Ollama generation
+    per pass.
     """
-    try:
-        data_json = fields.get(b"data", b"{}").decode("utf-8")
-        message_data = json.loads(data_json)
-
-        retry_count = message_data.get("retry_count", 0)
-
-        async with async_session_maker() as db:
-            success = await process_report_request(message_data, db, llm_service)
-
-        if success:
-            await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
-            logger.debug("LLM message ACKed: %s", message_id)
-        else:
-            if retry_count >= MAX_RETRIES:
-                # Max retries exceeded: send to DLQ
-                dlq_message_id = (
-                    message_id.decode("utf-8")
-                    if isinstance(message_id, bytes)
-                    else str(message_id)
-                )
-                await send_to_dlq(
-                    redis_client,
-                    STREAM_NAME,
-                    dlq_message_id,
-                    GROUP_NAME,
-                    CONSUMER_NAME,
-                    f"Max retries ({MAX_RETRIES}) exceeded",
-                    message_data,
-                )
-                await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
-                logger.warning(
-                    "LLM message sent to DLQ: %s (retries: %d)",
-                    message_id,
-                    retry_count,
-                )
-            else:
-                # Retry: increment counter, back off, then re-enqueue
-                message_data["retry_count"] = retry_count + 1
-                await asyncio.sleep(_backoff_delay(retry_count))
-                await redis_client.xadd(
-                    STREAM_NAME,
-                    {"data": json.dumps(message_data)},
-                    maxlen=100000,
-                    approximate=True,
-                )
-                await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
-                logger.info(
-                    "LLM message re-queued for retry: %s (attempt %d/%d)",
-                    message_id,
-                    retry_count + 1,
-                    MAX_RETRIES,
-                )
-
-    except Exception as exc:
-        logger.error("Error processing LLM message: %s", exc)
+    await _process_message_safe(redis_client, message_id, fields, llm_service)
 
 
 if __name__ == "__main__":

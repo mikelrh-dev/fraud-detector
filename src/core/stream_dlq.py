@@ -26,9 +26,9 @@ async def send_to_dlq(
     consumer_name: str,
     error_reason: str,
     original_data: dict,
-) -> None:
+) -> bool:
     """Send a failed message to the dead-letter queue.
-    
+
     Args:
         redis_client: Redis async client
         stream_name: Original stream name
@@ -37,6 +37,15 @@ async def send_to_dlq(
         consumer_name: Consumer that failed
         error_reason: Why processing failed
         original_data: Original message data
+
+    Returns:
+        True when the message is durably in the DLQ **and** the original entry
+        has been ACKed. False when the DLQ write failed.
+
+        Callers must not ACK on False: the previous version swallowed its own
+        exceptions and returned None, and the LLM worker ACKed unconditionally
+        after calling it, so a failed DLQ write meant the work was dropped with
+        no record anywhere.
     """
     try:
         # Add to DLQ with context
@@ -66,9 +75,11 @@ async def send_to_dlq(
             message_id,
             error_reason,
         )
+        return True
         
     except Exception as exc:
         logger.error("Failed to send message to DLQ: %s", exc)
+        return False
 
 
 async def recover_pending_messages(
