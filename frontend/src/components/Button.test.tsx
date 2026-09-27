@@ -184,4 +184,33 @@ describe("Button primitive", () => {
     );
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
+
+  it("does NOT claim className overrides the variant, because it cannot", () => {
+    // The old comment said "className lands last so a caller can override".
+    // That is false: Tailwind resolves competing utilities by stylesheet order,
+    // not attribute order. A comment asserting a false mechanism is worse than
+    // no comment, and this one would have been copied into every later
+    // primitive. Guarded at the source level so it cannot drift back.
+    const src = readFileSync(
+      join(process.cwd(), "src", "components", "Button.tsx"),
+      "utf-8",
+    );
+    expect(src).toMatch(/does NOT override/i);
+    expect(src).not.toMatch(/className still lands last so a caller can/);
+  });
+
+  it("the variant class is present even when className conflicts with it", () => {
+    // Documents the real behaviour rather than the hoped-for one: both
+    // classes reach the DOM, and which one paints is decided by Tailwind's
+    // stylesheet order. The primitive's job is to make that rare and visible,
+    // not to pretend it is impossible.
+    render(
+      <Button variant="primary" className="bg-slate-800">
+        Choque
+      </Button>,
+    );
+    const cls = screen.getByRole("button").getAttribute("class") ?? "";
+    expect(cls).toContain("bg-accent");
+    expect(cls).toContain("bg-slate-800");
+  });
 });

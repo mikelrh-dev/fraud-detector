@@ -15,8 +15,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 /**
- * The only button in this app. `className` still lands last so a caller can
- * override, but the variant and size are the parts worth naming.
+ * The only button in this app.
+ *
+ * On `className` landing last: it does NOT override the variant. Tailwind
+ * resolves competing utilities by stylesheet order, not attribute order, so
+ * "the caller's class wins because it comes last" is false. A caller can still
+ * add classes, but to actually change a colour they must change the `variant`
+ * prop. The order is kept so nothing is silently dropped, not because it wins.
  */
 export function Button({
   variant = "primary",
