@@ -272,31 +272,35 @@ describe("TransactionDetail — primitives migration (non-migration, pinned)", (
     expect(copy.classList.contains("max-md:min-h-[40px]")).toBe(true);
   });
 
-  it("REPORTED, NOT FIXED: the header back control has no accessible name", async () => {
-    // Out of scope for a tokenisation pass, and reported rather than fixed
-    // because it is a change to the accessibility tree that needs a commit
-    // saying so. A screen reader announces "button" and nothing else, and the
-    // control is the only way out of this page.
+  it("the not-found back control has an accessible name", async () => {
+    // This test used to assert the OPPOSITE — that the control has no name —
+    // on the reasoning that reporting a defect is better than quietly changing
+    // the accessibility tree inside a tokenisation commit. It was the right call
+    // about the COMMIT and the wrong call about the TEST: asserting a defect is
+    // still asserting it, so it became the pinned expected state and would have
+    // turned the fix into a red build.
     //
-    // Asserted so the defect is a measurement rather than a claim: the day
-    // someone adds the label, this test goes red and they have to decide
-    // whether the new name is the right one.
+    // The fix landed in its own commit, which is what the original comment
+    // actually asked for. So the defect is now recorded as fixed, and the
+    // "report, do not fix" discipline is kept for the migrations that are
+    // genuinely blocked.
+    //
+    // Why it matters: the control is an icon with no text, on the not-found
+    // path. Without a name a screen reader announces "button" and stops — on
+    // the only way out of the page.
     renderDetail();
     await screen.findByText("Detalle de Transacción");
 
-    const header = document.querySelector("header")!;
-    const back = header.querySelector("button")!;
+    const back = screen.getByRole("button", { name: /volver al dashboard/i });
     expect(back).toBeTruthy();
+    // Still icon-only visually: the name is not duplicated as visible text.
     expect(back.textContent?.trim()).toBe("");
-    expect(back.getAttribute("aria-label")).toBeNull();
-    expect(back.getAttribute("title")).toBeNull();
-
-    // Which is also why it cannot be found by role+name — the query a screen
-    // reader would use has nothing to match.
-    expect(
-      screen.queryByRole("button", { name: /volver|atrás|back|dashboard/i }),
-    ).toBeNull();
+    // The graphic itself is not read as content, and is not a tab stop.
+    const svg = back.querySelector("svg");
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    expect(svg?.getAttribute("focusable")).toBe("false");
   });
+
 
   it("neither icon control carries a focus ring, and that is the cost of the gap", async () => {
     server.use(

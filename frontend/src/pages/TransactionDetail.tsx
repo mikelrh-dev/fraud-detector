@@ -351,10 +351,18 @@ export default function TransactionDetail() {
               it is a change to the accessibility tree, and it belongs in a
               commit that says it is doing that. */}
           <button
+            type="button"
+            // The icon carries no text, so without this the control is announced
+            // as a bare "button" — on the one control that gets you off a
+            // not-found page. `aria-hidden` on the svg stops the graphic being
+            // read as content; the name comes from here.
+            aria-label="Volver al dashboard"
             onClick={() => navigate("/dashboard")}
             className="text-slate-400 hover:text-slate-200 transition-colors"
           >
             <svg
+              aria-hidden="true"
+              focusable="false"
               className="w-5 h-5"
               fill="none"
               viewBox="0 0 24 24"
