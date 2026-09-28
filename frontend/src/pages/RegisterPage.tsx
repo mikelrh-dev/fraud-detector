@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import { Eye, EyeSlash } from "@phosphor-icons/react";
 import { register } from "../api/auth";
 import { AUTH_INPUT_CLASS, AuthSplitLayout } from "../components/AuthSplitLayout";
+import { Button } from "../components/Button";
+import { BTN_BASE, BTN_SIZES, BTN_VARIANTS, cn } from "../lib/ui";
+
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -142,15 +145,44 @@ export default function RegisterPage() {
               Ya puede iniciar sesión con su email y contraseña.
             </p>
           </div>
+          {/* A navigation control, so it stays a `<Link>` and takes the shared
+              class constants rather than the `Button` component — `Button`
+              renders a `<button>`, and a link that pretends to be a button
+              loses middle-click, ctrl-click and "open in new tab", plus the
+              status-bar URL. Composing the constants is what DESIGN.md's
+              Buttons section prescribes ("All buttons compose from the shared
+              constants in src/lib/ui.ts ... via cn()"), and it is what lets
+              this pick up the shared focus ring and the `enabled:` hover gate
+              it was missing. A real `ButtonLink` is the honest primitive here;
+              it is reported, not invented here. */}
           <Link
             to="/login"
-            className="btn-motion active:scale-[0.98] flex h-11 w-full items-center justify-center rounded-lg bg-accent hover:bg-action-hover font-medium text-white text-sm"
+            className={cn(
+              BTN_BASE,
+              BTN_VARIANTS.primary,
+              BTN_SIZES.md,
+              "h-11 w-full",
+            )}
           >
             Volver a Login
           </Link>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="mt-8 space-y-4" noValidate>
+          {/* The three inputs are NOT on `Input`/`Field`, for the same reason
+              and with the same consequences as on `LoginPage`: DESIGN.md gives
+              the auth split-screen its own field spec (`text-xs` slate-400
+              labels, `h-11` inputs, a risk-critical/25 focus ring), five
+              deliberate departures from `INPUT_BASE`/`FIELD_LABEL` that
+              `className` cannot bridge, because Tailwind decides between two
+              utilities of the same property by stylesheet order rather than
+              attribute order. See LoginPage.tsx for the full argument and for
+              what this costs: the hand-rolled `focus:` ring that paints on
+              mouse click, and label/error wiring that is visually adjacent
+              rather than programmatically associated.
+
+              The strength meter below the password field stays too — it is not
+              a form control and has no primitive. */}
           <div>
             <label
               htmlFor="username"
@@ -210,6 +242,10 @@ export default function RegisterPage() {
                 minLength={PASSWORD_MIN}
                 className={`${AUTH_INPUT_CLASS} pr-11`}
               />
+              {/* Unmigrated for the same reason as on `LoginPage`: no
+                  icon-only size, and no variant whose resting and hover text
+                  match `slate-500` → `slate-300`. `ghost` would change both
+                  states; `secondary` would add a border and a background. */}
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
@@ -256,13 +292,27 @@ export default function RegisterPage() {
             </p>
           )}
 
-          <button
+          {/* Submit. `type="submit"` is EXPLICIT and load-bearing: `Button`
+              defaults to `type="button"`, so without it this control is inert
+              inside the form — focusable, clickable, and doing nothing.
+
+              `loading` is deliberately not used, matching `LoginPage`: it
+              would replace the reviewed "Creando cuenta..." copy with a
+              spinner, which is a visible change on the control the user is
+              about to press. `disabled` carries the pending state as before.
+
+              DELTA, the same one as on `LoginPage` and the only visual one
+              here: the hand-rolled `disabled:bg-red-800/50` becomes
+              `BTN_BASE`'s `disabled:opacity-50`, so the pending fill is the
+              accent at half opacity rather than red-800 at half opacity. */}
+          <Button
             type="submit"
+            variant="primary"
             disabled={loading}
-            className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-action-hover disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
+            className="h-11 w-full"
           >
             {loading ? "Creando cuenta..." : "Crear Cuenta"}
-          </button>
+          </Button>
         </form>
       )}
 
