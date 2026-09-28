@@ -11,6 +11,7 @@ import { MotionList } from "../components/MotionList";
 import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
 import { AlertLineArt, ErrorState } from "../components/ErrorState";
+import { Button } from "../components/Button";
 import { useCountUp } from "../hooks/useCountUp";
 import type { Icon } from "@phosphor-icons/react";
 import { Bell, ChartBar, CreditCard, ShieldWarning } from "@phosphor-icons/react";
@@ -255,13 +256,39 @@ export default function DashboardPage() {
                 <p className="text-sm text-slate-300">
                   No se pudieron cargar las transacciones.
                 </p>
-                <button
-                  type="button"
+                {/* The page's only interactive control, and the only one the
+                    primitives could take without being bent.
+
+                    `secondary` + `sm` matches every token the hand-rolled
+                    string re-typed: `border-slate-700`, `rounded-lg`,
+                    `font-medium`, `px-3 py-1.5 text-xs`, and `btn-motion
+                    active:scale-[0.98]`. `bg-transparent` is new but describes
+                    what an unclassed button already rendered. `mt-2` is layout,
+                    so it stays on `className`.
+
+                    DELTA, one token, and it is not avoidable: the old string
+                    said `text-slate-200` where `secondary` says
+                    `text-slate-300` (#e2e8e0 → #cbd5e1, one step lighter).
+                    It cannot be pushed back through `className`, and the
+                    reason matters — Tailwind decides between two `text-slate-*`
+                    utilities by stylesheet order, and the built CSS has
+                    `.text-slate-200` (314) BEFORE `.text-slate-300` (315), so
+                    the variant wins whatever the caller writes. Taking the
+                    design system's value over the hand-rolled one is the
+                    point of the migration; the alternative is to leave the
+                    duplication in place and call it neutral.
+
+                    Two wins alongside it: the hover is gated on `enabled:`, so
+                    it no longer fires under the cursor on a disabled control,
+                    and the control gains the shared keyboard-only focus ring. */}
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => void refetchFiltered()}
-                  className="btn-motion active:scale-[0.98] mt-2 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                  className="mt-2"
                 >
                   Reintentar
-                </button>
+                </Button>
               </div>
             )}
             <TransactionTable
