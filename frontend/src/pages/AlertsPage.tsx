@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listAlerts,
@@ -22,20 +22,66 @@ import { RiskMeter } from "../components/RiskMeter";
 import { NUMERIC_CELL } from "../lib/ui";
 import { formatTimestamp } from "../lib/datetime";
 import { MAIN_LANDMARK_ID } from "../lib/focusable";
+import {
+  DEFAULT_PAGE,
+  LIST_PARAMS,
+  clampPage,
+  fetchClampedPage,
+  parseChoice,
+  parsePage,
+  writeListParams,
+} from "../lib/list-query";
 
 // Classification colour and label come from lib/classification. This page used
 // to carry its own map that was missing `pending` entirely, so an unrecognised
 // classification silently fell through to a fourth, undocumented colour.
 type AlertAction = "review" | "false_positive" | "revert";
 
+/**
+ * The status values a link may carry. Unlike the transactions filter, the
+ * alerts API speaks the same words as the tabs, so there is no translation
+ * here and the URL value is the wire value.
+ */
+const ALERT_STATUSES = ["open", "reviewed", "resolved"] as const;
+type AlertStatus = (typeof ALERT_STATUSES)[number];
+
+const ALERT_PAGE_SIZE = 20;
+
 export default function AlertsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(
-    undefined,
+  /* ---------------------------------------------------------------- *
+   * The filter and the page ARE the query string, for the same reason as on
+   * `TransactionsPage` and against the same contract: a filtered list that
+   * cannot be linked cannot be reported. `lib/list-query.ts` owns the
+   * parameter names, the clearing rule and what an unrecognised value does.
+   *
+   * What is deliberately NOT here is the confirm dialog's state. A reason is
+   * typed a character at a time; putting it in the query string would put one
+   * history entry per keystroke into the back button, and would make a shared
+   * link carry whatever half-word the author was on when they hit copy. That
+   * is the same rule that keeps a search box out of the URL.
+   * ---------------------------------------------------------------- */
+  const statusFilter = parseChoice(
+    searchParams.get(LIST_PARAMS.status),
+    ALERT_STATUSES,
   );
+  const page = parsePage(searchParams.get(LIST_PARAMS.page));
+
+  const applyFilters = (patch: Readonly<Record<string, string | null>>) => {
+    setSearchParams(writeListParams(searchParams, patch, { resetPage: true }));
+  };
+
+  const goToPage = (next: number) => {
+    setSearchParams(
+      writeListParams(searchParams, {
+        [LIST_PARAMS.page]: next === DEFAULT_PAGE ? null : String(next),
+      }),
+    );
+  };
+
   const [actionAlertId, setActionAlertId] = useState<string | null>(null);
   const [actionType, setActionType] = useState<AlertAction>("review");
   const [actionReason, setActionReason] = useState("");
@@ -44,11 +90,13 @@ export default function AlertsPage() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["alerts", { page, status: statusFilter }],
     queryFn: () =>
-      listAlerts({
-        page,
-        page_size: 20,
-        status: statusFilter,
-      }),
+      fetchClampedPage(page, (target) =>
+        listAlerts({
+          page: target,
+          page_size: ALERT_PAGE_SIZE,
+          status: statusFilter ?? undefined,
+        }),
+      ),
   });
 
   const actionMutation = useMutation({
@@ -100,7 +148,10 @@ export default function AlertsPage() {
     });
   }, [actionAlertId, actionType, actionReason, actionMutation]);
 
-  const totalPages = Math.ceil((data?.total || 0) / 20);
+  const totalPages = Math.ceil((data?.total || 0) / ALERT_PAGE_SIZE);
+  // The page on screen rather than the one in the address, which differ only
+  // for a stale link — see `fetchClampedPage`.
+  const shownPage = clampPage(page, totalPages);
 
   return (
     <div className="min-h-screen bg-slate-950 flex overflow-x-hidden">
@@ -146,17 +197,21 @@ export default function AlertsPage() {
               have no focus ring at all, because the treatment they carry was
               hand-rolled without `FOCUS_RING`. */}
           <div className="flex gap-2">
-            {[
-              { label: "Todas", value: undefined },
-              { label: "Abiertas", value: "open" },
-              { label: "Revisadas", value: "reviewed" },
-              { label: "Resueltas", value: "resolved" },
-            ].map((f) => (
+            {(
+              [
+                { label: "Todas", value: null },
+                { label: "Abiertas", value: "open" },
+                { label: "Revisadas", value: "reviewed" },
+                { label: "Resueltas", value: "resolved" },
+              ] as { label: string; value: AlertStatus | null }[]
+            ).map((f) => (
               <button
                 key={f.label}
                 onClick={() => {
-                  setStatusFilter(f.value);
-                  setPage(1);
+                  // `null` removes the parameter rather than writing an empty
+                  // one, so "every alert" is the bare path and not a third
+                  // spelling of it.
+                  applyFilters({ [LIST_PARAMS.status]: f.value });
                 }}
                 className={`btn-motion active:scale-[0.98] text-xs px-3 py-1.5 rounded-full ${
                   statusFilter === f.value
@@ -434,19 +489,19 @@ export default function AlertsPage() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-between p-3 border-t border-slate-800">
                   <span className="text-xs text-slate-500">
-                    Pág. {page} de {totalPages}
+                    Pág. {shownPage} de {totalPages}
                   </span>
                   <div className="flex gap-1">
                     <button
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page <= 1}
+                      onClick={() => goToPage(Math.max(DEFAULT_PAGE, shownPage - 1))}
+                      disabled={shownPage <= DEFAULT_PAGE}
                       className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Anterior
                     </button>
                     <button
-                      onClick={() => setPage((p) => p + 1)}
-                      disabled={page >= totalPages}
+                      onClick={() => goToPage(Math.min(totalPages, shownPage + 1))}
+                      disabled={shownPage >= totalPages}
                       className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Siguiente

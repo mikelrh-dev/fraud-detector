@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Plus } from "@phosphor-icons/react";
 import { listTransactions } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
@@ -14,6 +13,16 @@ import { formatMoney } from "../lib/money";
 import { formatTimestamp } from "../lib/datetime";
 import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import {
+  DEFAULT_PAGE,
+  LIST_PARAMS,
+  clampPage,
+  fetchClampedPage,
+  parseChoice,
+  parseIsoDate,
+  parsePage,
+  writeListParams,
+} from "../lib/list-query";
+import {
   FOCUS_RING,
   NUMERIC_CELL,
   TABLE_HEADER_CELL,
@@ -24,43 +33,111 @@ import {
   cn,
 } from "../lib/ui";
 
-type StatusFilter = "all" | "legitimate" | "review" | "fraud";
+/**
+ * The filter values a link may carry. `null` is "no filter" and has no
+ * spelling, which is why the "Todas" pill's key is `null` rather than a
+ * fourth string: an absent parameter and an unrecognised one both mean "every
+ * transaction", and giving that state a value would give it a second spelling
+ * in a shared link.
+ */
+const STATUS_FILTERS = ["legitimate", "review", "fraud"] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
 
-const statusFilterMap: Record<StatusFilter, string | undefined> = {
-  all: undefined,
+/**
+ * The URL's word for a filter, translated into the one the transport takes.
+ *
+ * The link is written in the product's vocabulary because that is the
+ * vocabulary of the screen it lands on — `?status=legitimate` is what the pill
+ * says and what the classification column prints, so a person can read the
+ * link, repeat it, and know what they will see. `approved` is the storage
+ * detail behind it. `lib/list-query.ts` holds the rest of the contract,
+ * including what an unrecognised value does.
+ */
+const STATUS_TO_API: Record<StatusFilter, string | undefined> = {
   legitimate: "approved",
   review: "flagged",
   fraud: "blocked",
 };
 
-const statusPills: { key: StatusFilter; label: string }[] = [
-  { key: "all", label: "Todas" },
+const statusPills: { key: StatusFilter | null; label: string }[] = [
+  { key: null, label: "Todas" },
   { key: "legitimate", label: "Legítimo" },
   { key: "review", label: "Revisión" },
   { key: "fraud", label: "Fraude" },
 ];
 
+const PAGE_SIZE = 10;
+
 export default function TransactionsPage() {
   const navigate = useNavigate();
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  /* ---------------------------------------------------------------- *
+   * The filter, the date range and the page ARE the query string.
+   *
+   * They were `useState` until this commit, which meant a filtered view could
+   * not be linked, bookmarked, reopened after a reload, or walked back to —
+   * and a second copy of a filter in two places is two copies that can
+   * disagree, with the rendered one decided by whichever wrote last. There is
+   * no copy here. `parseChoice` and friends return the DEFAULT for a value
+   * they do not recognise, so a hand-edited link degrades to the default
+   * rather than rendering an empty table; see `lib/list-query.ts` for why the
+   * rejected value is left in the address rather than silently stripped.
+   * ---------------------------------------------------------------- */
+  const statusFilter = parseChoice(
+    searchParams.get(LIST_PARAMS.status),
+    STATUS_FILTERS,
+  );
+  const dateFrom = parseIsoDate(searchParams.get(LIST_PARAMS.from)) ?? "";
+  const dateTo = parseIsoDate(searchParams.get(LIST_PARAMS.to)) ?? "";
+  const page = parsePage(searchParams.get(LIST_PARAMS.page));
+
+  /**
+   * Apply filters and return to the first page.
+   *
+   * The reset is not tidiness. A filter changes how many pages there are, so
+   * carrying `page=4` across to a filter with one page of results lands the
+   * user on a page that does not exist.
+   */
+  const applyFilters = (patch: Readonly<Record<string, string | null>>) => {
+    setSearchParams(writeListParams(searchParams, patch, { resetPage: true }));
+  };
+
+  /** Move pages. Deliberately does NOT reset the page. */
+  const goToPage = (next: number) => {
+    setSearchParams(
+      writeListParams(searchParams, {
+        [LIST_PARAMS.page]: next === DEFAULT_PAGE ? null : String(next),
+      }),
+    );
+  };
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["transactions", statusFilter, dateFrom, dateTo, page],
+    // A shared link outlives the result set that produced it, so a page past
+    // the end is re-requested as the last one. See `fetchClampedPage` for why
+    // that is a second round trip rather than part of the query key.
     queryFn: () =>
-      listTransactions({
-        page,
-        page_size: 10,
-        status: statusFilterMap[statusFilter],
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-      }),
+      fetchClampedPage(page, (target) =>
+        listTransactions({
+          page: target,
+          page_size: PAGE_SIZE,
+          status: statusFilter ? STATUS_TO_API[statusFilter] : undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        }),
+      ),
     refetchOnMount: "always",
   });
 
   const totalPages = data ? Math.ceil(data.total / data.page_size) : 0;
+  /**
+   * The page on screen, which is the requested one except when the link was
+   * stale and the fetch was clamped. The URL keeps the requested number on
+   * purpose: it is what the user asked for, and rewriting it would make the
+   * back button mean "where I was" no longer.
+   */
+  const shownPage = clampPage(page, totalPages);
 
   return (
     <div className="min-h-screen bg-page-bg flex overflow-x-hidden">
@@ -131,8 +208,11 @@ export default function TransactionsPage() {
               <button
                 key={pill.key}
                 onClick={() => {
-                  setStatusFilter(pill.key);
-                  setPage(1);
+                  // `null` for the "Todas" pill: `writeListParams` deletes on
+                  // a null, so choosing "every transaction" REMOVES the
+                  // parameter instead of writing an empty one. The address
+                  // returns to the bare path, which is the one worth sharing.
+                  applyFilters({ [LIST_PARAMS.status]: pill.key });
                 }}
                 className={`btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium ${
                   statusFilter === pill.key
@@ -169,8 +249,9 @@ export default function TransactionsPage() {
               type="date"
               value={dateFrom}
               onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPage(1);
+                // An emptied date control reports "", which deletes the
+                // parameter for the same reason the "Todas" pill does.
+                applyFilters({ [LIST_PARAMS.from]: e.target.value });
               }}
               className={cn(
                 "bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300",
@@ -182,8 +263,7 @@ export default function TransactionsPage() {
               type="date"
               value={dateTo}
               onChange={(e) => {
-                setDateTo(e.target.value);
-                setPage(1);
+                applyFilters({ [LIST_PARAMS.to]: e.target.value });
               }}
               className={cn(
                 "bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300",
@@ -370,19 +450,19 @@ export default function TransactionsPage() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-4">
                 <p className="text-xs text-slate-400">
-                  Página {page} de {totalPages} ({data?.total} transacciones)
+                  Página {shownPage} de {totalPages} ({data?.total} transacciones)
                 </p>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
+                    onClick={() => goToPage(Math.max(DEFAULT_PAGE, shownPage - 1))}
+                    disabled={shownPage <= DEFAULT_PAGE}
                     className="btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Anterior
                   </button>
                   <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page >= totalPages}
+                    onClick={() => goToPage(Math.min(totalPages, shownPage + 1))}
+                    disabled={shownPage >= totalPages}
                     className="btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Siguiente
