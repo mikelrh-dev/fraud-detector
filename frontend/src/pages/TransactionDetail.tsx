@@ -7,6 +7,7 @@ import type { ScoreResponse, Transaction } from "../api/transactions";
 import apiClient from "../api/client";
 import { parseReportLines, type ReportBlock } from "../lib/report-format";
 import { formatMoney } from "../lib/money";
+import { formatTimestamp } from "../lib/datetime";
 import {
   classificationPillClass,
   classificationText,
@@ -406,11 +407,11 @@ export default function TransactionDetail() {
             <DetailField label="Estado" value={tx.status} />
             <DetailField
               label="Creado"
-              value={new Date(tx.created_at).toLocaleString("es-AR")}
+              value={formatTimestamp(tx.created_at)}
             />
             <DetailField
               label="Actualizado"
-              value={new Date(tx.updated_at).toLocaleString("es-AR")}
+              value={formatTimestamp(tx.updated_at)}
             />
           </div>
         </section>

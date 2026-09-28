@@ -11,6 +11,7 @@ import { Sidebar } from "../components/Sidebar";
 import type { Transaction } from "../api/transactions";
 import { formatScore } from "../lib/score";
 import { formatMoney } from "../lib/money";
+import { formatTimestamp } from "../lib/datetime";
 import {
   FOCUS_RING,
   NUMERIC_CELL,
@@ -237,11 +238,7 @@ export default function TransactionsPage() {
                   {/* Footer row: date + badge + score */}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-400">
-                      {new Date(tx.created_at).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })}
+                      {formatTimestamp(tx.created_at)}
                     </span>
                     <div className="flex items-center gap-2">
                       {tx.classification ? (
@@ -333,11 +330,7 @@ export default function TransactionsPage() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-slate-400 text-xs">
-                            {new Date(tx.created_at).toLocaleDateString("es-AR", {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "numeric",
-                            })}
+                            {formatTimestamp(tx.created_at)}
                           </td>
                         </tr>
                       ))}

@@ -214,6 +214,18 @@ Unified chrome (shared constants in `src/lib/ui.ts` — import them, don't copy 
 
 **Numeric-cell rule:** every AMOUNT cell and SCORE value renders right-aligned monospace with fixed-width digits — always via `NUMERIC_CELL` (`text-right font-mono tabular-nums`). Applies to desktop tables and mobile card values alike. Transaction IDs stay mono as before.
 
+### Timestamps
+
+Every timestamp renders through **`formatTimestamp`** (`src/lib/datetime.ts`) — one format, every call site, never an inline `toLocale*` call. Consumers: `TransactionsPage` (mobile card + table), `TransactionTable`, `AlertsPage` (card + table), `TransactionDetail` (created + updated).
+
+- **Format: `DD/MM/AAAA, HH:MM`** — `Intl.DateTimeFormat("es-AR")` with `hourCycle: "h23"`, 2-digit day/month/hour/minute, 4-digit year, no seconds.
+- **Locale is `es-AR`, unchanged and never inferred** — every call site already passed it, `formatMoney` already uses it, and the copy is Argentine Spanish. Switching it would rewrite every amount on screen.
+- **`hourCycle: "h23"` is load-bearing.** Measured: es-AR resolves `{hour: "2-digit"}` to `h12`, so the alerts page was rendering `20/09/2026, 02:30 p. m.` — a 12-hour clock, a dotted meridiem and a U+00A0 before the `m.`, inside a data table. `hour12: false` is not a substitute; its h23-vs-h24 mapping has moved between ICU versions. `datetime.test.ts` pins the digits.
+- **ONE format, date-only deliberately not offered.** `formatMoney`'s note already ruled on the identical question — hiding the cents from an amount under review is a data-fidelity defect, not a cosmetic one. Dropping the hour from a fraud timestamp is the same defect: on a list of charges, two transactions on a day become indistinguishable and an alert triage pass cannot separate a 03:00 burst from a 15:00 one. The three date-only call sites gained the time they were dropping.
+- **Local zone, as before.** The backend sends ISO-8601 with an offset, so the instant is preserved; a viewer elsewhere sees their own wall clock.
+- **Unparseable input → `—`**, not `"Invalid Date"` — same as `formatMoney`.
+- **Tests pin literals, never the formatter's own output.** Rebuilding the expected string from the same `Intl` options would move both sides of the assertion. The `Date`s are built from local components so the literals hold in any timezone.
+
 ### RiskMeter
 
 All score bars render through **`<RiskMeter value={n} />`** (`src/components/RiskMeter.tsx`) — never hand-roll an inline-styled bar:

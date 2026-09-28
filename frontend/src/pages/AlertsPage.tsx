@@ -20,6 +20,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageTransition } from "../components/PageTransition";
 import { RiskMeter } from "../components/RiskMeter";
 import { NUMERIC_CELL } from "../lib/ui";
+import { formatTimestamp } from "../lib/datetime";
 
 // Classification colour and label come from lib/classification. This page used
 // to carry its own map that was missing `pending` entirely, so an unrecognised
@@ -232,13 +233,7 @@ export default function AlertsPage() {
                   </div>
                   {/* Timestamp */}
                   <p className="text-xs text-slate-500 mb-3">
-                    {new Date(alert.created_at).toLocaleDateString("es-AR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatTimestamp(alert.created_at)}
                   </p>
                   {/* Action buttons row — touch target via max-md.
                       `ActionButton` below is NOT migrated: a tonal variant
@@ -380,16 +375,7 @@ export default function AlertsPage() {
                             <AlertStatusBadge status={alert.status} />
                           </td>
                           <td className="p-3 text-xs text-slate-400">
-                            {new Date(alert.created_at).toLocaleDateString(
-                              "es-AR",
-                              {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              },
-                            )}
+                            {formatTimestamp(alert.created_at)}
                           </td>
                           <td className="p-3 text-right">
                             {(alert.status === "open" ||

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { EmptyState, ReceiptLineArt } from "./EmptyState";
 import { classificationPillClass, classificationText } from "../lib/classification";
 import { formatMoney } from "../lib/money";
+import { formatTimestamp } from "../lib/datetime";
 import { RiskMeter } from "./RiskMeter";
 import {
   FOCUS_RING,
@@ -222,11 +223,7 @@ export default function TransactionTable({
                       {tx.status}
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
-                      {new Date(tx.created_at).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })}
+                      {formatTimestamp(tx.created_at)}
                     </td>
                   </tr>
                 );
