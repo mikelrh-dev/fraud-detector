@@ -6,6 +6,9 @@ import { useCreateTransaction } from "../hooks/useCreateTransaction";
 import { ScoreResultCard } from "./ScoreResultCard";
 import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
+import { Button } from "../components/Button";
+import { Field } from "../components/Field";
+import { Input } from "../components/Input";
 import type { ScoreResponse } from "../api/transactions";
 
 const transactionSchema = z.object({
@@ -71,98 +74,85 @@ export default function CreateTransactionPage() {
           className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5 max-w-lg"
         >
           {/* Amount */}
-          <div>
-            <label htmlFor="amount" className="block text-sm text-slate-300 mb-1">
-              Monto
-            </label>
-            <input
-              id="amount"
+          <Field id="amount" label="Monto" error={errors.amount?.message}>
+            <Input
               type="number"
               step="0.01"
               {...register("amount")}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-focus-ring"
               placeholder="0.00"
             />
-            {errors.amount && (
-              <p className="text-xs text-red-400 mt-1">{errors.amount.message}</p>
-            )}
-          </div>
+          </Field>
 
           {/* Currency */}
-          <div>
-            <label htmlFor="currency" className="block text-sm text-slate-300 mb-1">
-              Moneda
-            </label>
-            <input
-              id="currency"
+          <Field id="currency" label="Moneda" error={errors.currency?.message}>
+            <Input
               type="text"
               maxLength={3}
               {...register("currency")}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-focus-ring uppercase"
+              className="uppercase"
               placeholder="USD"
             />
-            {errors.currency && (
-              <p className="text-xs text-red-400 mt-1">{errors.currency.message}</p>
-            )}
-          </div>
+          </Field>
 
           {/* Merchant Name */}
-          <div>
-            <label htmlFor="merchant_name" className="block text-sm text-slate-300 mb-1">
-              Comercio
-            </label>
-            <input
-              id="merchant_name"
+          <Field
+            id="merchant_name"
+            label="Comercio"
+            error={errors.merchant_name?.message}
+          >
+            <Input
               type="text"
               {...register("merchant_name")}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-focus-ring"
               placeholder="Nombre del comercio"
             />
-            {errors.merchant_name && (
-              <p className="text-xs text-red-400 mt-1">{errors.merchant_name.message}</p>
-            )}
-          </div>
+          </Field>
 
           {/* Merchant Category (optional) */}
-          <div>
-            <label htmlFor="merchant_category" className="block text-sm text-slate-300 mb-1">
-              Categoría <span className="text-slate-500">(opcional)</span>
-            </label>
-            <input
-              id="merchant_category"
+          {/* The dimmed "(opcional)" span is gone: `Field`'s `label` is typed
+              `string`, and passing a node means casting around a primitive this
+              pass is not allowed to change. The accessible name is identical
+              either way (a label's text is the sum of its descendants), so this
+              costs styling, not meaning. Restoring it means widening
+              `FieldProps["label"]` to ReactNode — a primitives change. */}
+          <Field id="merchant_category" label="Categoría (opcional)">
+            <Input
               type="text"
               {...register("merchant_category")}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-focus-ring"
               placeholder="Ej: retail, travel"
             />
-          </div>
+          </Field>
 
           {/* Card Last 4 */}
-          <div>
-            <label htmlFor="card_last4" className="block text-sm text-slate-300 mb-1">
-              Últimos 4 dígitos
-            </label>
-            <input
-              id="card_last4"
+          <Field id="card_last4" label="Últimos 4 dígitos" error={errors.card_last4?.message}>
+            <Input
               type="text"
               maxLength={4}
               {...register("card_last4")}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-focus-ring"
               placeholder="1234"
             />
-            {errors.card_last4 && (
-              <p className="text-xs text-red-400 mt-1">{errors.card_last4.message}</p>
-            )}
-          </div>
+          </Field>
 
-          {/* Submit */}
-          <button
+          {/* Submit.
+              `type="submit"` is EXPLICIT and load-bearing: `Button` defaults to
+              `type="button"`, so without it this control is inert inside the
+              form — focusable, clickable, and doing nothing at all. That is the
+              opposite of the bug this page shipped with (a live button that did
+              nothing useful), but it is the same failure mode from the other
+              direction, so it is pinned by a test.
+
+              `loading` carries the pending state instead of swapping the label:
+              DESIGN.md asks for a non-changing label so the button width does
+              not shift mid-action, and "Procesando..." is a different string
+              from "Crear Transacción" — a real layout jump on the one control
+              the user is about to press. `loading` already implies `disabled`. */}
+          <Button
             type="submit"
-            disabled={!isValid || mutation.isPending}
-            className="btn-motion active:scale-[0.98] w-full bg-accent hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 rounded-lg"
+            loading={mutation.isPending}
+            disabled={!isValid}
+            className="w-full"
           >
-            {mutation.isPending ? "Procesando..." : "Crear Transacción"}
-          </button>
+            Crear Transacción
+          </Button>
         </form>
 
         {/* Score Result */}
