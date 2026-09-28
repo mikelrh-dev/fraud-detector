@@ -663,19 +663,57 @@ central zero axis. **Reading guide** (semantics pinned by tests, do not change):
   labels `sm:w-44 truncate` with `title` attribute; direction badge
   `w-auto sm:w-24`.
 
-### Empty States
+### States (empty / error / success)
 
-Composed empty states render through **`<EmptyState>`**
-(`src/components/EmptyState.tsx`) — never hand-roll a centered "no data"
-block. One shared component serves BOTH mobile card views and desktop table
-cells (use `compact` inside `<td>`):
+Composed empty, failure and success states render through **`<State>`**
+(`src/components/State.tsx`) — never hand-roll a centered "no data" or "we
+could not load" block. One shared component serves BOTH mobile card views and
+desktop table cells (use `compact` inside `<td>`). It replaces the former
+`<EmptyState>` and `<ErrorState>`, which were two variants of one layout:
 
-- Props: `icon` (slot — caller supplies inline SVG line-art ~64px),
-  `title` (`text-slate-300`), optional one-line `hint` (`text-slate-500`),
-  optional `action` CTA slot.
-- Built-in line-art glyphs: `ReceiptLineArt` (transactions) and
-  `BellLineArt` (alerts) — stroke-only SVGs inheriting `currentColor`.
-- Consumers: TransactionsPage, AlertsPage (mobile + desktop), TransactionTable.
+- **Props:** `tone` (`empty` | `error` | `success`), `icon` (slot — caller
+  supplies inline SVG line-art ~64px), `title` (`text-slate-300`), optional
+  one-line `hint` (`text-slate-500`), optional `action` CTA slot, `onRetry` +
+  `retryLabel` for the canonical retry control, `compact`.
+- **The tones differ SEMANTICALLY, by live-region politeness — not by colour
+  alone.** `--color-accent` and `--color-risk-critical` are deliberately
+  independent reds (see the Accent contract above), so sharing a colour is not
+  sharing a meaning. `error` → `role="alert"` (assertive, it interrupts);
+  `success` → `role="status"` (polite); `empty` → no role at all (an empty list
+  is absence, not news, and a live region would announce "nothing to see here"
+  on every page load). Icon colour reinforces this: `risk-critical` / `clean` /
+  `slate-600`.
+- **`title` is required for `empty` and `success`, optional for `error`.** The
+  failure state has default copy and the global error boundary depends on it;
+  there is no default empty or success copy in this product, and minting some
+  would be inventing voice. A union encodes it, so `<State />` does not compile
+  and `<State tone="error" />` does.
+- **`onRetry` is not error-only.** The retry control renders iff `onRetry` is
+  given, on any tone — a filter that lands on an empty result is still a
+  failure the user has to be able to clear. It is the shared `Button`
+  (`secondary` / `sm`), so it matches a page's hand-written retry beside it.
+- **`action` and `onRetry` are separate slots** in the same action row. The
+  error sites want a canonical control; the empty sites pass their own
+  `<a>`/`<button>`. No call site uses both.
+- **No `className` prop.** Tailwind resolves two utilities of one property by
+  stylesheet order, not attribute order, so a caller could not change a colour
+  or a size through it anyway; the two call sites that need a border and a
+  background wrap `<State>` in a sibling `div`.
+- **Built-in line-art glyphs:** `ReceiptLineArt` (transactions),
+  `BellLineArt` (alerts) and `AlertLineArt` (failures) — stroke-only SVGs
+  inheriting `currentColor`.
+- **Consumers:** AlertsPage (mobile + desktop, both tones), DashboardPage
+  (metrics + charts failures), TransactionsPage, TransactionTable,
+  ErrorBoundary.
+
+**Known divergence, reported not migrated.** Two hand-rolled state blocks
+remain, because adopting `<State>` would change their pixels and this pass is
+scoped to no visual change:
+`TransactionsPage`'s mobile list error (`text-center py-12` with a single
+`text-red-400` line) and `TransactionDetail`'s report error
+(`flex flex-col items-center px-6 py-8`, no icon, no retry). Both should become
+`<State tone="error">` when the vertical rhythm is decided deliberately rather
+than inherited from a one-off.
 
 ### Loading States
 

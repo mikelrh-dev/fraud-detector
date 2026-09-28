@@ -1,7 +1,7 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { ErrorState, AlertLineArt } from "./ErrorState";
+import { AlertLineArt, State } from "./State";
 import { FOCUS_RING, cn } from "../lib/ui";
 
 export interface ErrorBoundaryProps {
@@ -82,7 +82,7 @@ export class ErrorBoundary extends Component<
 
     if (this.props.fallback) return this.props.fallback(this.reset);
 
-    return <ErrorState icon={<AlertLineArt />} onRetry={this.reset} />;
+    return <State tone="error" icon={<AlertLineArt />} onRetry={this.reset} />;
   }
 }
 
@@ -100,7 +100,8 @@ export function RouteErrorFallback({ reset }: { reset: () => void }) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      <ErrorState
+      <State
+        tone="error"
         icon={<AlertLineArt />}
         title="Esta página no se pudo mostrar"
         hint="Es un error de la aplicación, no de tus datos. Podés reintentar o volver al dashboard."

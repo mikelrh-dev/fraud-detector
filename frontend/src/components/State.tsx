@@ -79,7 +79,7 @@ const TONE_ROLE: Record<StateTone, "alert" | "status" | undefined> = {
   success: "status",
 };
 
-const ERROR_DEFAULT_TITLE = "No se pudieron cargar los datos";
+const ERROR_DEFAULT_TITLE = "";
 const ERROR_DEFAULT_HINT =
   "Revisá tu conexión o intentá de nuevo en unos segundos.";
 

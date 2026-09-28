@@ -10,7 +10,7 @@ import TransactionTable from "../components/TransactionTable";
 import { MotionList } from "../components/MotionList";
 import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
-import { AlertLineArt, ErrorState } from "../components/ErrorState";
+import { AlertLineArt, State } from "../components/State";
 import { Button } from "../components/Button";
 import { useCountUp } from "../hooks/useCountUp";
 import { MAIN_LANDMARK_ID } from "../lib/focusable";
@@ -155,7 +155,8 @@ export default function DashboardPage() {
                     permanent em-dashes, indistinguishable from genuinely zero. */}
             {metricsError && (
               <div className="rounded-lg border border-risk-critical/30 bg-risk-critical/5">
-                <ErrorState
+                <State
+                  tone="error"
                   icon={<AlertLineArt />}
                   title="No se pudieron cargar las métricas"
                   hint="Los valores mostrados pueden estar incompletos. Reintentá la carga."
@@ -227,7 +228,8 @@ export default function DashboardPage() {
                 data-testid="chart-error"
                 className="lg:col-span-2 rounded-xl border border-risk-critical/30 bg-slate-900"
               >
-                <ErrorState
+                <State
+                  tone="error"
                   icon={<AlertLineArt />}
                   title="No se pudieron cargar los gráficos"
                   hint="Sin estos datos no se puede evaluar la tendencia de riesgo."

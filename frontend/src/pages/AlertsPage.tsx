@@ -9,8 +9,7 @@ import {
 } from "../api/alerts";
 import { Sidebar } from "../components/Sidebar";
 import { AlertStatusBadge } from "../components/AlertStatusBadge";
-import { BellLineArt, EmptyState } from "../components/EmptyState";
-import { AlertLineArt, ErrorState } from "../components/ErrorState";
+import { AlertLineArt, BellLineArt, State } from "../components/State";
 import {
   classificationText,
   classificationTextClass,
@@ -237,7 +236,8 @@ export default function AlertsPage() {
                 role="alert"
                 className="rounded-xl border border-risk-critical/30 bg-slate-900"
               >
-                <ErrorState
+                <State
+                  tone="error"
                   icon={<AlertLineArt />}
                   title="No se pudieron cargar las alertas"
                   hint="Puede que las alertas no se estén mostrando. Reintentá la carga."
@@ -246,7 +246,8 @@ export default function AlertsPage() {
                 />
               </div>
             ) : data?.items.length === 0 ? (
-              <EmptyState
+              <State
+                tone="empty"
                 icon={<BellLineArt />}
                 title="No hay alertas"
                 hint="Las alertas aparecen cuando una transacción supera los umbrales de riesgo."
@@ -375,7 +376,8 @@ export default function AlertsPage() {
                             role="alert"
                             className="rounded-xl border border-risk-critical/30 bg-slate-900"
                           >
-                            <ErrorState
+                            <State
+                              tone="error"
                               icon={<AlertLineArt />}
                               title="No se pudieron cargar las alertas"
                               hint="Puede que las alertas no se estén mostrando. Reintentá la carga."
@@ -388,7 +390,8 @@ export default function AlertsPage() {
                     ) : data?.items.length === 0 ? (
                       <tr>
                         <td colSpan={6}>
-                          <EmptyState
+                          <State
+                            tone="empty"
                             icon={<BellLineArt />}
                             title="No hay alertas"
                             hint="Las alertas aparecen cuando una transacción supera los umbrales de riesgo."

@@ -94,7 +94,7 @@ void 0;
 /**
  * Fails only the PAGINATED transactions query (`page_size=10`), which is the
  * one whose failure renders the retry control this page migrated. Failing the
- * whole endpoint would also fail the charts' query, and `ErrorState` renders a
+ * whole endpoint would also fail the charts' query, and `State` renders a
  * second "Reintentar" — the page would then have two and the query would throw
  * on multiple matches.
  */

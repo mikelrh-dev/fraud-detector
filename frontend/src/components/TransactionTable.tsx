@@ -1,6 +1,6 @@
 import type { Transaction } from "../api/transactions";
 import { Link } from "react-router-dom";
-import { EmptyState, ReceiptLineArt } from "./EmptyState";
+import { ReceiptLineArt, State } from "./State";
 import { classificationPillClass, classificationText } from "../lib/classification";
 import { formatMoney } from "../lib/money";
 import { formatTimestamp } from "../lib/datetime";
@@ -158,7 +158,8 @@ export default function TransactionTable({
             ) : transactions.length === 0 ? (
               <tr>
                 <td colSpan={7}>
-                  <EmptyState
+                  <State
+                    tone="empty"
                     icon={<ReceiptLineArt />}
                     title="No se encontraron transacciones"
                     hint="Ajusta los filtros activos o crea una nueva transacción."

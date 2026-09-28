@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Plus } from "@phosphor-icons/react";
 import { listTransactions } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
-import { EmptyState, ReceiptLineArt } from "../components/EmptyState";
+import { ReceiptLineArt, State } from "../components/State";
 import { MotionList } from "../components/MotionList";
 import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
@@ -285,7 +285,8 @@ export default function TransactionsPage() {
             <p className="text-sm text-red-400">Error al cargar transacciones</p>
           </div>
         ) : data && data.items.length === 0 ? (
-          <EmptyState
+          <State
+            tone="empty"
             icon={<ReceiptLineArt />}
             title="No hay transacciones"
             hint="Registra una transacción para comenzar a monitorear su riesgo."
