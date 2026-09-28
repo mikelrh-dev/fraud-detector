@@ -132,8 +132,29 @@ beforeEach(() => {
       const matched = status
         ? all.filter((row) => row.status === status)
         : all;
+      // The date range is honoured too, so "the range reached the wire" is
+      // observable. It was NOT, and a review proved it: setting
+      // `date_from`/`date_to` to `undefined` in the queryFn left all 645 tests
+      // green, because the fixture read only `status` and `page` and the
+      // deep-link test asserted the URL-to-control direction. Two of the four
+      // parameters the module's headline covers could stop being sent and
+      // nothing noticed.
+      const from = url.searchParams.get("date_from");
+      const to = url.searchParams.get("date_to");
+      const inRange = (row: { created_at: string }) => {
+        const day = row.created_at.slice(0, 10);
+        if (from && day < from) return false;
+        if (to && day > to) return false;
+        return true;
+      };
       return HttpResponse.json(
-        resolve(matched, status !== null, page, TX_PAGE_SIZE, TX_TOTAL),
+        resolve(
+          matched.filter(inRange),
+          status !== null || from !== null || to !== null,
+          page,
+          TX_PAGE_SIZE,
+          TX_TOTAL,
+        ),
       );
     }),
     http.get("*/api/v1/alerts", ({ request }) => {
@@ -312,6 +333,31 @@ describe("TransactionsPage — a URL with a filter renders that filter applied",
         "2026-01-05",
         "2026-01-31",
       ]);
+    });
+  });
+
+  it("sends a deep-linked date range to the wire, not just to the inputs", async () => {
+    // The test above asserts the URL-to-CONTROL direction, and the fixture
+    // previously read only `status` and `page`. So setting `date_from` and
+    // `date_to` to `undefined` in the queryFn left the entire suite green: the
+    // inputs would still show the deep-linked range, the list would still
+    // render, and the range would simply never reach the server. Two of the
+    // four parameters the module's headline covers were unpinned.
+    renderTransactions("/transactions?from=2026-01-05&to=2026-01-31");
+    await waitFor(() => expect(txRequests.length).toBeGreaterThan(0));
+
+    // The wire spells them `date_from`/`date_to`, not `from`/`to` — that
+    // translation is part of what this asserts.
+    expect(firstTxRequest().get("date_from")).toBe("2026-01-05");
+    expect(firstTxRequest().get("date_to")).toBe("2026-01-31");
+    // And the list is the range's, not an unfiltered page wearing a range.
+    // `txRow` stamps `created_at` as today, so a range that excludes today must
+    // yield nothing rather than the full page.
+    await waitFor(() => {
+      expect(
+        document.querySelector('a[href^="/transactions/tx-"]'),
+        "the list still shows unfiltered rows",
+      ).toBeNull();
     });
   });
 
@@ -692,6 +738,38 @@ describe("AlertsPage — its filters and pagination live in the URL too", () => 
       expect(selectedLabel("Todas")).toBe("Todas");
     });
     expect(address()).toBe("/alerts");
+  });
+
+  it("walks back through the pages the user paged through, on AlertsPage too", async () => {
+    // The tab case above was the only back-control coverage this page had, and
+    // a review found the asymmetry is exactly where the mirror is easiest to
+    // miss: mirroring the page number into a `useReducer` seeded from the URL
+    // and never re-synced left ALL 645 tests green, because the source scan
+    // only knows two identifier names and the behavioural test never turned the
+    // pager. On `/alerts?page=2` that mirror means Back moves the address to
+    // `/alerts` while the list stays on page 2 and the counter still reads
+    // "Pág. 2 de 3" -- two copies disagreeing, with the rendered one decided
+    // by whichever wrote last.
+    //
+    // The scan is the cheap guard; this is the proof. It is here because the
+    // cheap guard demonstrably does not cover this case.
+    renderAlerts();
+    await waitFor(() => expect(alertRequests.length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Pág\. 2 de 3/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Atrás" }));
+
+    // Both halves must agree after the pop: the address AND what is rendered.
+    // Asserting only the counter would pass with a mirror that the URL no longer
+    // agrees with, which is the bug.
+    await waitFor(() => {
+      expect(screen.getByText(/Pág\. 1 de 3/)).toBeInTheDocument();
+    });
+    expect(addressParams().get("page")).toBeNull();
   });
 
   it("falls back to every alert for a status it does not know", async () => {

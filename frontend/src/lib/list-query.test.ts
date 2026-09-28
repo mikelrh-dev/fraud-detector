@@ -236,4 +236,26 @@ describe("fetchClampedPage", () => {
     await fetchClampedPage(3, fetchPage);
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects a digit run too long to survive the round trip to the wire", () => {
+    // The one page value that is well-FORMED to this parser and malformed to the
+    // API. 21 nines pass `/^\d+$/`; `Number()` gives 1e21; the API client
+    // serialises with `String()`, which writes it in exponent form; FastAPI
+    // declares `page: int` and answers 422. The user saw the error screen
+    // instead of the fallback this module promises.
+    //
+    // `fetchClampedPage` could not rescue it: the clamp resolves a RESPONSE, and
+    // this value was already bad before any response existed. The regex was
+    // correct; the `Number()` conversion was the leak.
+    const huge = "9".repeat(21);
+    expect(parsePage(huge)).toBe(DEFAULT_PAGE);
+    // And the value that is merely enormous but still safe is KEPT, so this is
+    // not a "reject anything big" rule in disguise — it is a range check.
+    expect(parsePage("99999")).toBe(99999);
+    // Number.MAX_SAFE_INTEGER itself is representable, so the boundary is
+    // inclusive where JS says it is.
+    expect(parsePage(String(Number.MAX_SAFE_INTEGER))).toBe(Number.MAX_SAFE_INTEGER);
+    // One digit past it is not.
+    expect(parsePage("9007199254740992")).toBe(DEFAULT_PAGE);
+  });
 });

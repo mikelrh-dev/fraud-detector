@@ -114,10 +114,20 @@ export function parseChoice<T extends string>(
  * There is no upper bound here. A page beyond the end of the result set is
  * well-formed but unanswerable, and it is `fetchClampedPage`'s job to resolve
  * it, because only the response knows how many pages there are.
+ *
+ * EXCEPT THE ONE THAT IS NOT WELL-FORMED, which cost a 422 to find. A run of 21
+ * or more digits passes `/^\d+$/`, and then `Number()` returns a float or
+ * `Infinity`. The API client serialises with `String()`, so a 21-digit page left
+ * the browser as `1e+21`, and FastAPI declares `page: int` — so the request came
+ * back 422 and the user got the error screen instead of the documented graceful
+ * fallback. `fetchClampedPage` could not rescue it either: the clamp resolves the
+ * *response*, and this value was malformed on the wire before any response
+ * existed. The regex was right; the conversion was the leak.
  */
 export function parsePage(raw: string | null | undefined): number {
   if (raw == null || !/^\d+$/.test(raw)) return DEFAULT_PAGE;
   const page = Number(raw);
+  if (!Number.isSafeInteger(page)) return DEFAULT_PAGE;
   return page >= DEFAULT_PAGE ? page : DEFAULT_PAGE;
 }
 
