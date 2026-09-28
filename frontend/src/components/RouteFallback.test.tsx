@@ -40,14 +40,22 @@ describe("RouteFallback", () => {
     expect(status).not.toBeNull();
   });
 
-  it("hides the visible copy from assistive tech, so the label is said once", () => {
+  it("leaves the visible copy IN the accessibility tree, because the region announces by content", () => {
     render(<RouteFallback />);
 
-    // The string lives in the DOM for sighted users; the region's name is the
-    // single source, so the visual cluster is aria-hidden rather than a second
-    // announcement of the same sentence.
+    // This inverted. The previous version asserted the copy was `aria-hidden`,
+    // on the reasoning that the region's `aria-label` is the name source so the
+    // text would otherwise be "said twice". That is wrong: a live region is
+    // announced by its CONTENT, and `aria-label` names it for a name-and-role
+    // query without becoming the announcement text. With every text node hidden,
+    // a screen reader announcing by content had nothing to say -- the region was
+    // well named and mute.
+    //
+    // One string, no duplication, and the announcement has content: the text is
+    // both the visible copy and the announced copy.
     const visible = screen.getByText("Cargando página…");
-    expect(visible.closest("[aria-hidden='true']")).not.toBeNull();
+    expect(visible.closest("[aria-hidden='true']")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Cargando página");
   });
 
   it("reserves the same surface the page it replaces occupies", () => {
@@ -64,15 +72,26 @@ describe("RouteFallback", () => {
     );
   });
 
-  it("keeps the busy animation but opts out under prefers-reduced-motion", () => {
+  it("keeps the busy animation, and relies on the global reduced-motion guard", () => {
     render(<RouteFallback />);
 
     const spinner = document.querySelector(".animate-spin");
     expect(spinner).not.toBeNull();
-    // DESIGN.md (Reduced-motion guarantee) says reduced-motion users get the
-    // final state immediately. The global guard in index.css does not cover
-    // `animate-spin`, so the opt-out has to be at the call site.
-    expect(spinner!.classList.contains("motion-reduce:animate-none")).toBe(true);
+
+    // The opt-out is NOT at the call site. The global `prefers-reduced-motion`
+    // guard in index.css covers `animate-spin` for every spinner in the product,
+    // so a per-call-site class would be dead weight -- and this test previously
+    // PINNED that dead weight on a comment asserting the global guard was
+    // incomplete, which is exactly the kind of self-justifying test that keeps
+    // redundancy alive after its reason has expired.
+    //
+    // What replaces it is the assertion that the spinner is decoration: it is
+    // aria-hidden, so assistive tech is not told about a spinning ring, while
+    // the label text beside it stays readable. A live region is announced by its
+    // content, so hiding that content would leave the region well named and
+    // mute.
+    expect(spinner!.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("status").textContent).toContain("Cargando");
   });
 
   it("uses no risk or accent colour — a loading indicator is not a fraud state", () => {

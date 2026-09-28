@@ -14,13 +14,19 @@
  * edit that swaps the role for a bare `div` would silently remove the
  * announcement. A test can see the attribute; it cannot see the implication.
  *
- * `aria-label` is the name source, NOT visually hidden text. `role="status"`
- * takes its accessible name from the author only — it does not compute one from
- * its contents — so a region containing only a glyph has an empty accessible
- * name and the announcement carries nothing useful. The visible copy below is
- * therefore wrapped in one `aria-hidden` cluster: the string exists once in the
- * source, sighted users read it, and assistive tech is not handed the same
- * sentence twice.
+ * THE TEXT STAYS IN THE ACCESSIBILITY TREE, and an earlier version of this
+ * comment argued the opposite -- that the `aria-label` is the name source and the
+ * visible copy could therefore be hidden, so the string would not be "handed to
+ * assistive tech twice". That reasoning is wrong, and the review that caught it
+ * is worth recording because the claim sounds reasonable. A live region is
+ * announced by its CONTENT. `aria-label` names the region for a name-and-role
+ * query; it does not reliably become the announcement text. With every text node
+ * inside one `aria-hidden` cluster, a screen reader announcing by content had
+ * nothing at all to say -- the region was well named and mute.
+ *
+ * So: the SPINNER is `aria-hidden` (it is a pure decoration, and it is what the
+ * `aria-label` stands in for), and the label text is left readable. One string,
+ * no duplication, and the announcement actually has content.
  *
  * Honest limit on live regions: a live region is only announced reliably when
  * it is in the DOM *before* the content that changed. This one is mounted at the
@@ -58,13 +64,23 @@ export function RouteFallback() {
       // RouteFallback.test.tsx — drop `min-h-screen` and that test goes red.
       className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-3"
     >
-      {/* Decorative: the region's `aria-label` already carries this. */}
-      <div aria-hidden="true" className="flex flex-col items-center gap-3">
+      {/* Only the SPINNER is hidden from assistive tech. The label beside it
+          stays in the accessibility tree, because a live region is announced by
+          its content -- see the header. */}
+      <div className="flex flex-col items-center gap-3">
         {/* Same busy idiom as Button's spinner, one size up. Track is the
             `slate-700` divider tone and the sweep is muted `slate-400`:
             deliberately NOT `risk-*` or `accent`, which DESIGN.md reserves
-            for fraud states and brand actions. A loading indicator is neither. */}
-        <span className="size-5 rounded-full border-2 border-slate-700 border-t-slate-400 animate-spin motion-reduce:animate-none" />
+            for fraud states and brand actions. A loading indicator is neither.
+
+            No `motion-reduce:animate-none` here on purpose: the global
+            `prefers-reduced-motion` guard in index.css now covers
+            `animate-spin`, so a per-call-site opt-out would be dead weight
+            justified by a claim that stopped being true. */}
+        <span
+          aria-hidden="true"
+          className="size-5 rounded-full border-2 border-slate-700 border-t-slate-400 animate-spin"
+        />
         <span className="text-xs text-slate-400">{LOADING_LABEL}…</span>
       </div>
     </div>

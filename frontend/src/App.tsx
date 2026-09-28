@@ -55,10 +55,13 @@ export default function App() {
         ONE boundary around the outlet, not one per route. Chosen deliberately:
 
         1. There is no state a per-route boundary could preserve. Every page is
-           already torn down on navigation — `PageTransition` keys its wrapper
-           on `location.pathname` (pinned by PageTransition.test.tsx), and
-           moving between two different routes swaps the component type
-           regardless of where a boundary sits. A per-route boundary would add
+           already torn down on navigation, because moving between two different
+           routes swaps the component type regardless of where a boundary sits.
+           (This sentence previously also credited `PageTransition`'s key, and
+           that credit was wrong on two counts: the key lives on a div INSIDE the
+           five pages that render it, so a descendant's key cannot remount its own
+           ancestor, and `LoginPage` and `RegisterPage` do not render it at all.
+           The conclusion holds without the key.) A per-route boundary would add
            seven remounts and buy back nothing.
         2. One live region, not seven. Each boundary renders its own
            `role="status"`, so a per-route layout hands assistive tech a
