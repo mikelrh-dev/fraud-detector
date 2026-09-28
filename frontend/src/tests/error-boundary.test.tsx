@@ -150,7 +150,10 @@ describe("ErrorBoundary — el fallback por defecto ofrece reintentar", () => {
     const seen: string[] = [];
 
     class Consumer extends Component<{ children: ReactNode }> {
-      render() {
+      // The annotation is load-bearing, not decoration: React 19 types `render`
+      // as returning `ReactNode`, and a body with no `return` infers `void`.
+      // This method always throws, so `ReactNode` is accurate and unreachable.
+      render(): ReactNode {
         seen.push("child");
         throw new Error("boom");
       }

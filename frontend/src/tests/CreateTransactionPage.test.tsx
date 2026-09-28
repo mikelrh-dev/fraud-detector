@@ -89,11 +89,15 @@ const FIELDS = [
  * `error={errors.card_last4?.message}` left all 13 tests green -- the commit
  * claimed a four-field accessibility fix and the suite proved one.
  */
+// `thenClear` is present on every entry, not only the one that needs it: a
+// heterogeneous `as const` array destructures into a union, and reading a key
+// that only some members carry is a type error at the call site. `false` is
+// what the missing entries already evaluated to under `if (thenClear)`.
 const ERROR_BEARING_FIELDS = [
-  { id: "amount", label: "Monto", type: "0" },
-  { id: "currency", label: "Moneda", type: "0" },
+  { id: "amount", label: "Monto", type: "0", thenClear: false },
+  { id: "currency", label: "Moneda", type: "0", thenClear: false },
   { id: "merchant_name", label: "Comercio", type: "x", thenClear: true },
-  { id: "card_last4", label: /dígitos/i, type: "abcd" },
+  { id: "card_last4", label: /dígitos/i, type: "abcd", thenClear: false },
 ] as const;
 
 /** Fills every REQUIRED field. `merchant_category` is optional by schema. */
@@ -120,6 +124,7 @@ describe("CreateTransactionPage", () => {
           token: "mock-token",
           refreshToken: null,
           login: vi.fn(),
+          setTokens: vi.fn(),
         };
         return selector ? selector(state) : state;
       },
@@ -238,6 +243,7 @@ describe("CreateTransactionPage — primitives migration", () => {
           token: "mock-token",
           refreshToken: null,
           login: vi.fn(),
+          setTokens: vi.fn(),
         };
         return selector ? selector(state) : state;
       },

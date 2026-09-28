@@ -60,6 +60,7 @@ describe("TransactionsPage", () => {
           token: "mock-token",
           refreshToken: null,
           login: vi.fn(),
+          setTokens: vi.fn(),
         };
         return selector ? selector(state) : state;
       },
@@ -144,6 +145,7 @@ describe("TransactionsPage — primitives migration", () => {
           token: "mock-token",
           refreshToken: null,
           login: vi.fn(),
+          setTokens: vi.fn(),
         };
         return selector ? selector(state) : state;
       },

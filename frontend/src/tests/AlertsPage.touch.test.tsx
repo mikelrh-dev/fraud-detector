@@ -38,6 +38,7 @@ describe("AlertsPage — mobile touch targets and dual-mode", () => {
           token: "mock-token",
           refreshToken: null,
           login: vi.fn(),
+          setTokens: vi.fn(),
         };
         return selector ? selector(state) : state;
       },

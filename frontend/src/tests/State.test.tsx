@@ -215,6 +215,14 @@ describe("State — the error copy is a component guarantee, not a call-site hab
     // minting some would be inventing voice the design system has not written.
     // The types require a title for those two tones; this is the runtime
     // backstop for a JS consumer.
+    //
+    // `@ts-expect-error` is the assertion, not a workaround. The union is
+    // working exactly as designed and a TS caller cannot reach this line; the
+    // directive makes that guarantee a live pin — if anyone ever widens
+    // `StateProps` so a titleless empty state compiles, this directive stops
+    // being an error and `tsc` fails, which is the correct outcome. The only
+    // honest way to delete it is to delete the test with it.
+    // @ts-expect-error -- no title: rejected by StateProps, by design.
     const { container } = render(<State hint="sólo un hint" />);
     expect(container.querySelectorAll("p").length).toBe(1);
   });

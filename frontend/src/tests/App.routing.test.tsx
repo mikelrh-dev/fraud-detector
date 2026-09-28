@@ -38,6 +38,7 @@ function authState() {
     token: "mock-token",
     refreshToken: null,
     login: vi.fn(),
+    setTokens: vi.fn(),
   };
 }
 

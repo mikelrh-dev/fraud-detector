@@ -76,6 +76,7 @@ describe("A31 — a failed report request is not an absent report", () => {
           token: "mock-token",
           refreshToken: null,
           login: vi.fn(),
+          setTokens: vi.fn(),
         };
         return selector ? selector(state) : state;
       },

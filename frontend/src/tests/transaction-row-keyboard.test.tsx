@@ -23,6 +23,30 @@ const TX: Transaction = {
   created_at: "2026-09-20T10:00:00Z",
 } as Transaction;
 
+/**
+ * `TransactionTable` grew pagination and sorting after this file was written,
+ * and it stopped type-checking the moment the tests entered the program.
+ *
+ * The component's contract is real — a pager cannot render without `total` and
+ * `pageSize` — so the fix is to satisfy it, not to loosen the props. The values
+ * are chosen so the rendered DOM is what it always was: `total: 1` over
+ * `pageSize: 10` gives `totalPages === 1`, and the pager is behind
+ * `totalPages > 1`, so exactly one row renders and no extra control appears
+ * that the keyboard walk below would have to account for.
+ */
+function tableProps(onTransactionClick: (id: string) => void) {
+  return {
+    transactions: [TX],
+    total: 1,
+    page: 1,
+    pageSize: 10,
+    onSort: vi.fn(),
+    onPageChange: vi.fn(),
+    onFilterChange: vi.fn(),
+    onTransactionClick,
+  };
+}
+
 function Router({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter initialEntries={["/transactions"]}>
@@ -46,7 +70,7 @@ describe("TransactionTable — row keyboard access", () => {
   it("exposes the merchant as a real link with the detail href", () => {
     render(
       <Router>
-        <TransactionTable transactions={[TX]} onTransactionClick={vi.fn()} />
+        <TransactionTable {...tableProps(vi.fn())} />
       </Router>,
     );
 
@@ -59,7 +83,7 @@ describe("TransactionTable — row keyboard access", () => {
     const onClick = vi.fn();
     render(
       <Router>
-        <TransactionTable transactions={[TX]} onTransactionClick={onClick} />
+        <TransactionTable {...tableProps(onClick)} />
       </Router>,
     );
 
@@ -79,7 +103,7 @@ describe("TransactionTable — row keyboard access", () => {
     const onClick = vi.fn();
     render(
       <Router>
-        <TransactionTable transactions={[TX]} onTransactionClick={onClick} />
+        <TransactionTable {...tableProps(onClick)} />
       </Router>,
     );
 
@@ -95,7 +119,7 @@ describe("TransactionTable — link does not double-navigate", () => {
     const onClick = vi.fn();
     render(
       <Router>
-        <TransactionTable transactions={[TX]} onTransactionClick={onClick} />
+        <TransactionTable {...tableProps(onClick)} />
       </Router>,
     );
 

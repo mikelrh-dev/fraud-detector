@@ -26,7 +26,9 @@ describe("MotionList", () => {
       </MotionList>,
     );
     for (let n = 0; n < 3; n += 1) {
-      const el = container.querySelector(`[data-testid="item-${n}"]`)!;
+      // `querySelector` without a type argument hands back `Element`, which has
+      // no `style` — the custom property is only reachable on `HTMLElement`.
+      const el = container.querySelector<HTMLElement>(`[data-testid="item-${n}"]`)!;
       expect(el.style.getPropertyValue("--i")).toBe(String(n));
     }
   });

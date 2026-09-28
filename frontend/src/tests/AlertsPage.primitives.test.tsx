@@ -53,6 +53,7 @@ function mockAuth() {
         token: "mock-token",
         refreshToken: null,
         login: vi.fn(),
+        setTokens: vi.fn(),
       };
       return selector ? selector(state) : state;
     },
@@ -99,7 +100,9 @@ async function openReasonDialog(): Promise<HTMLTextAreaElement> {
   const revert = (await screen.findAllByRole("button", { name: "Revertir" }))[0];
   await user.click(revert);
 
-  return screen.getByPlaceholderText("Razón (requerida)");
+  // `getByPlaceholderText` is typed `HTMLElement` by default; the dialog's
+  // reason control is a real `<textarea>`, and every caller below types it.
+  return screen.getByPlaceholderText<HTMLTextAreaElement>("Razón (requerida)");
 }
 
 /**

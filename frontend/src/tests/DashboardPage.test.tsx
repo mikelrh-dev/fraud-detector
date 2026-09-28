@@ -54,6 +54,7 @@ function mockAuth() {
         token: "mock-token",
         refreshToken: null,
         login: vi.fn(),
+        setTokens: vi.fn(),
       };
       return selector ? selector(state) : state;
     },
@@ -113,7 +114,9 @@ function failPaginatedTransactionList() {
 /** The retry control, located through the banner that owns it. */
 async function findRetryControl(): Promise<HTMLButtonElement> {
   const banner = await screen.findByTestId("table-error");
-  return within(banner).getByRole("button", { name: "Reintentar" });
+  // `getByRole` is typed `HTMLElement` by default; the retry is a real
+  // `<button>`, and every caller below types it as one.
+  return within(banner).getByRole<HTMLButtonElement>("button", { name: "Reintentar" });
 }
 
 /**

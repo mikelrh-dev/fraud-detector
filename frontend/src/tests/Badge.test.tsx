@@ -5,9 +5,18 @@ import { render } from "@testing-library/react";
 import { CheckCircle } from "@phosphor-icons/react";
 import { Badge, type BadgeTone } from "../components/Badge";
 
-const TONES: BadgeTone[] = ["clean", "warn", "critical", "info"];
+/**
+ * `BadgeTone` also carries `neutral`, and neutral is deliberately NOT here: it
+ * is not backed by a risk token but by slate, so it breaks the `/10` bg + `/30`
+ * border pattern these assertions check. It gets its own explicit test below.
+ * Typing the map as a total `Record<BadgeTone, string>` is what made this file
+ * a type error — the map is a partial map of the four token-backed tones.
+ */
+type TokenTone = Exclude<BadgeTone, "neutral">;
 
-const EXPECTED_COLOR_TOKEN: Record<BadgeTone, string> = {
+const TONES: TokenTone[] = ["clean", "warn", "critical", "info"];
+
+const EXPECTED_COLOR_TOKEN: Record<TokenTone, string> = {
   clean: "risk-clean",
   warn: "risk-warn",
   critical: "risk-critical",
