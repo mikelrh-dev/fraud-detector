@@ -169,22 +169,33 @@ describe("App — every path still resolves to its own page", () => {
 describe("App — every route exposes exactly one main landmark", () => {
   /**
    * WHY A ROUTER-LEVEL ASSERTION AND NOT SEVEN PAGE TESTS: the invariant is
-   * about the assembled document, not about a component in isolation. A page
-   * rendered inside a test harness can carry a `<main>` that is nested in
-   * sectioning content in the real tree — and an element inside `<article>`,
-   * `<aside>`, `<nav>` or `<section>` loses the implicit `main` role entirely,
-   * so `getByRole("main")` would find nothing while the markup still reads
-   * like a landmark. Only rendering through `<App>` at a real path can catch
-   * that, and only here can "exactly one" be checked across all seven pages
-   * at once.
+   * about the assembled document, not about a component in isolation, and only
+   * here can "exactly one" be checked across all seven routes at once. Each
+   * page test renders one page in a harness; a shell that added its own
+   * `<main>` would leave every one of them green.
    *
-   * TWO pages were missing the landmark (TransactionsPage and
-   * CreateTransactionPage rendered a plain `<div>` in the slot where
-   * DashboardPage and AlertsPage already render `<main>`). The shell does NOT
-   * provide one — `<Sidebar>` is a sibling of the content region, not a
-   * wrapper — so the page owns it. Had the shell owned it, adding one here
-   * would have produced two nested landmarks, which `toHaveLength(1)` is
-   * exactly there to catch.
+   * THE REASON, CORRECTED. An earlier version of this comment claimed the
+   * router-level render was needed because a `<main>` nested in sectioning
+   * content loses the implicit `main` role, so `getByRole("main")` would find
+   * nothing. That mechanism is real in a BROWSER accessibility tree and
+   * `@testing-library/dom` does not implement it — measured across twelve host
+   * elements (`div`, `nav`, `section`, `aside`, `article`, `form`, `header`,
+   * `footer`, `blockquote`, `li`, `dd`, `fieldset`), and a `<main>` inside every
+   * one of them still resolves to role `main`. So the test could not have
+   * caught what that paragraph said, and anyone reading it would have believed
+   * a guarantee it does not provide.
+   *
+   * THE REAL REASON, which is narrower and actually load-bearing: the failure
+   * this guards against is a SECOND landmark, not a hidden one. The shell does
+   * not wrap the pages — `<Sidebar>` is a sibling of the content region, so
+   * every page owns its own `<main>` — and the obvious future refactor is a
+   * layout route with an `<Outlet/>`, which would make it natural to lift the
+   * landmark into the shell. That is the change which produces two nested
+   * `main` elements, and `toHaveLength(1)` is exactly the assertion that goes
+   * red when it happens. Two pages were missing the landmark when the rule was
+   * added (TransactionsPage and CreateTransactionPage rendered a plain `<div>`
+   * where DashboardPage and AlertsPage already rendered `<main>`), so the
+   * assertion is not theoretical.
    */
   const PATHS: Array<[string, string]> = [
     ["/login", "Iniciar sesión"],

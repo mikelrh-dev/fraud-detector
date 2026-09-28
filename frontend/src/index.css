@@ -225,22 +225,32 @@ body {
 /* Skip link — "skip to content", first focusable element in the document
    (src/components/SkipLink.tsx, rendered above <Suspense> in App.tsx).
 
-   WHY HAND-WRITTEN AND NOT `sr-only` + `focus:not-sr-only` + `focus:absolute`:
-   those three utilities all set `position`. `not-sr-only` restores
-   `position: static`, `focus:absolute` sets `position: absolute`, and which
-   declaration applies is decided by Tailwind's internal stylesheet order and
-   by nothing else. It happens to come out right today — measured, the
-   `focus:absolute` rule does land after the `focus:not-sr-only` one — and
-   relying on that is the same class of bet as "className order decides the
-   cascade", which this codebase has already had to correct twice. One authored
-   rule per state, sharing identical values for every property both of them
-   declare, so no two declarations compete at all.
+   WHY HAND-WRITTEN AND NOT THE THREE-UTILITY SPELLING: there is a conventional
+   way to hide-then-reveal a skip link — one utility that clips a screen-reader
+   element to 1px, and two more attached to the bare focus state that undo the
+   clip and take the element out of the flow. All three of those utilities set
+   `position`, and the two focus-state ones set it to different values. Which
+   declaration wins is decided by Tailwind's internal stylesheet order and by
+   nothing else. It happens to come out right today — measured, the
+   out-of-flow rule does land after the static-position one — and relying on
+   that is the same class of bet as "className order decides the cascade",
+   which this codebase has already had to correct twice. One authored rule per
+   state, sharing identical values for every property both of them declare, so
+   no two declarations compete at all.
 
-   `fixed` rather than `absolute` in BOTH states: a skip link is reached by
-   Shift+Tab from anywhere in a long list, and an absolutely positioned one sits
-   1rem from the top of the DOCUMENT — so after a 2000px scroll the user would
-   land on a focused but off-screen link. Same value in both rules, so this
-   choice cannot become an ordering question. */
+   The three utilities are described in words rather than written out on
+   purpose. Tailwind's scanner reads raw source text, comments included, so
+   naming them here made the build EMIT rules for two of them — rules no
+   element in the product can match, in every build since 9c41f06 added the
+   skip link. This file and `SkipLink.tsx` both used to spell them. Same reason
+   as the note in `lib/ui.ts`; the remedy is the same one.
+
+   `fixed` rather than the out-of-flow alternative a bare focus state would give
+   you: a skip link is reached by Shift+Tab from anywhere in a long list, and an
+   absolutely positioned one sits 1rem from the top of the DOCUMENT — so after a
+   2000px scroll the user would land on a focused but off-screen link. Only the
+   at-rest rule declares a position at all, so this choice can never become an
+   ordering question. */
 .skip-link {
   position: fixed;
   left: 1rem;

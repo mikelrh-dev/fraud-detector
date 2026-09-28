@@ -40,11 +40,16 @@ import type { AuthState } from "../store/authStore";
  * design changes underneath.
  *
  * ROUTES CHOSEN: `/transactions` (sidebar shell, the case where a link placed
- * inside a page would NOT be first) and `/login` (the auth split shell, which
- * has no sidebar and proves the link is above the routes rather than inside
- * either shell). Deliberately NOT `/dashboard`: recharts' ResponsiveContainer
- * needs a ResizeObserver stub that this file does not install, and the chart
- * then throws into the route boundary.
+ * inside a page would NOT be first), `/login` (the auth split shell, which has
+ * no sidebar and proves the link is above the routes rather than inside either
+ * shell) and `/dashboard` (the chart shell). The dashboard used to be skipped
+ * here because recharts' `ResponsiveContainer` needs a `ResizeObserver` stub
+ * that this file did not install, and the chart then threw into the route
+ * boundary. That stub moved to `src/tests/setup.ts` in 252d942 — infrastructure
+ * belongs in the setup, not in whichever test first needed it — so the reason
+ * for the exclusion expired and the route was added rather than the excuse
+ * quietly refreshed. Verified before adding it: the first Tab at `/dashboard`
+ * lands on the link and the route boundary does not fire.
  *
  * NOTE ON TAILWIND AND THIS FILE: naming a Tailwind class in a source comment
  * is enough for the build to EMIT a rule for it — the scanner reads raw text,
@@ -84,7 +89,11 @@ function renderAppAt(path: string) {
 }
 
 beforeAll(async () => {
-  await Promise.all([import("../pages/TransactionsPage"), import("../pages/LoginPage")]);
+  await Promise.all([
+    import("../pages/TransactionsPage"),
+    import("../pages/LoginPage"),
+    import("../pages/DashboardPage"),
+  ]);
 }, 120_000);
 
 beforeEach(() => {
@@ -129,6 +138,21 @@ describe("skip link", () => {
     expect(document.activeElement).toBe(skipLink());
   });
 
+  it("is the first element focus reaches on the chart shell too", async () => {
+    // The third shell, added once the ResizeObserver stub moved into the
+    // setup. `/transactions` and `/login` already cover the two orderings
+    // that matter — nav before content, and no nav at all — so this is
+    // coverage rather than a new claim: it is a third shell, and a skip link
+    // that regressed on exactly one of them would be a shell-specific bug.
+    const user = userEvent.setup();
+    renderAppAt("/dashboard");
+    await screen.findByRole("heading", { name: "Dashboard de detección de fraude" });
+
+    await user.tab();
+
+    expect(document.activeElement).toBe(skipLink());
+  });
+
   it("carries the class the reveal rule is written against", () => {
     renderAppAt("/transactions");
     expect(skipLink().className).toContain("skip-link");
@@ -165,8 +189,13 @@ describe("skip link", () => {
     expect(focus).toContain("clip-path: none");
     expect(focus).toMatch(/width: auto/);
     expect(css).not.toContain(".skip-link:focus-visible");
-    // Both states declare the same positioning, so no declaration competes for
-    // it on stylesheet order — the reason the geometry is hand-written at all.
+    // ONE state declares the position and the other declares none, so there is
+    // no second declaration of `position` to compete with the first — which is
+    // the whole reason the geometry is hand-written instead of three utilities
+    // that each set it. The assertion is deliberately asymmetric: `rest` must
+    // declare `position: fixed`, and `focus` must declare NO `position` at
+    // all. An earlier version of this comment claimed "both states declare the
+    // same positioning", which the line below it disproves.
     expect(rest).toMatch(/position: fixed/);
     expect(focus).not.toMatch(/position:/);
   });

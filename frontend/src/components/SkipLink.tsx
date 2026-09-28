@@ -14,13 +14,22 @@ import { MAIN_LANDMARK_ID } from "../lib/focusable";
  * that disappears while a lazy chunk is in flight is useless exactly when a
  * keyboard user is most likely to be tabbing.
  *
- * WHY THE GEOMETRY IS HAND-WRITTEN CSS AND NOT UTILITIES: the obvious spelling
- * — `sr-only` + `focus:not-sr-only` + `focus:absolute` — has three utilities
- * all setting `position`, so which declaration applies is decided by Tailwind's
- * internal stylesheet order and nothing else. It works today (measured) and
- * would stop working silently on an upgrade. `index.css` authors one rule per
- * state instead, sharing identical values wherever they overlap. The note
- * there has the full argument.
+ * WHY THE GEOMETRY IS HAND-WRITTEN CSS AND NOT UTILITIES: there is a
+ * conventional three-utility spelling for a hide-then-reveal skip link — one
+ * that clips a screen-reader element to 1px, and two attached to the bare
+ * focus state that undo the clip and take the element out of the flow. All
+ * three set `position`, and the two focus-state ones set it to different
+ * values, so which declaration applies is decided by Tailwind's internal
+ * stylesheet order and nothing else. It works today (measured) and would stop
+ * working silently on an upgrade. `index.css` authors one rule per state
+ * instead, and only the at-rest one declares a position, so there is no second
+ * declaration to compete. The note there has the full argument.
+ *
+ * The three utilities are described rather than written out, deliberately: this
+ * comment used to spell them, and Tailwind's scanner reads raw source text —
+ * comments included — so spelling them made the build emit two rules that no
+ * element in the product can match. The reasoning is worth keeping; the
+ * scannable form of it is not.
  *
  * WHY `href` IS KEPT ALONGSIDE THE CLICK HANDLER. The handler exists because
  * "skip to content" has to *move focus*, and that is two separate mechanisms:

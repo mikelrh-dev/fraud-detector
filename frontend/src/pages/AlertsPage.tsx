@@ -594,7 +594,25 @@ export default function AlertsPage() {
                 value={actionReason}
                 onChange={(e) => setActionReason(e.target.value)}
                 placeholder="Razón (requerida)"
-                // eslint-disable-next-line ui/no-raw-class-tokens -- the two focus-ring divergences, documented in the block above
+                /* eslint-disable-next-line ui/no-raw-class-tokens -- TWO
+                   divergences on this one line, not one. (1) bareFocus: the
+                   accent ring at 40% on a bare `focus:` prefix. (2)
+                   rawInputChrome: `placeholder-slate-500` + `bg-slate-800` +
+                   `rounded-lg` together, i.e. INPUT_BASE re-typed — with
+                   `text-slate-200` where the constant carries `text-slate-100`,
+                   so it is a real re-type and not a near-miss. Both are
+                   documented in the block above and both are owed to the visual
+                   pass.
+
+                   WHY ONE SUPPRESSION AND NOT TWO: `eslint-disable-next-line`
+                   takes rule names, not message ids, so two directives on one
+                   line is not expressible. The consequence has to be named
+                   instead, because it is the sharp edge here: the
+                   unused-directive guard only fires when BOTH divergences are
+                   resolved. Fixing the ring alone leaves (2) reporting, the
+                   directive stays "used", and the residual input-chrome drift
+                   is hidden under a focus-ring note — measured, and the reason
+                   this line says TWO rather than something vaguer. */
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 mb-3"
                 rows={2}
               />

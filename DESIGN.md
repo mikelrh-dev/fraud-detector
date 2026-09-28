@@ -486,26 +486,75 @@ here is a *copy*, not a missing import).
 
 | Check | Fires on | Use instead |
 |---|---|---|
-| `bareFocus` | any `focus:`-prefixed class | `FOCUS_RING` (which is `focus-visible:`-prefixed on purpose) |
+| `bareFocus` | a bare `focus:`-prefixed class whose utility **paints** | `FOCUS_RING` (which is `focus-visible:`-prefixed on purpose) |
 | `rawFocusRing` | `focus-visible:outline-none` / `:ring-2` / `:ring-focus-ring` typed by hand | `FOCUS_RING` |
 | `rawInputChrome` | `placeholder-slate-500` + `bg-slate-800` + `rounded-lg` in one class list | `<Input>` or `cn(INPUT_BASE, …)` |
 | `rawBtnBase` | `btn-motion` + `active:scale-[0.98]` + `touch-manipulation` in one class list | `<Button>` or `cn(BTN_BASE, …)` |
-| `rawHex` | a raw hex literal in a `className` | an `@theme` token in `index.css` |
+| `rawHex` | a raw hex literal in a class list | an `@theme` token in `index.css` |
+
+**One scope: class POSITIONS.** All five checks apply in exactly two places —
+a `className` / `class` attribute value, and an argument of `cn(...)` (resolved
+through its import from `src/lib/ui`, at any scope, because module scope is
+where a shared helper gets written). Everywhere else the rule reads nothing.
+
+An earlier version applied the two focus checks to *every* string literal in a
+file, on the theory that a focus ring is a correctness contract wherever it is
+written. Measured, that read prose (`"Invalid focus: the ring did not apply"`),
+an `aria-label` that mentions focus, and a `data-x` attribute — `startsWith("focus:")`
+cannot tell a class from a message. The tree was clean by luck, not by design.
+
+**The declared limit.** A class string written into a constant and only ever
+*referenced* is out of reach: the rule does not follow references, because a
+lint rule that follows references is a type checker and the heuristics that
+approximate one produce false positives. `AUTH_INPUT_RING` in
+`AuthSplitLayout.tsx` is the case in point; it is pinned by tests in both
+directions (`LoginPage.test.tsx`, `RegisterPage.test.tsx`) instead, which is
+this codebase's mechanism for a divergence that is deliberately kept.
+
+**`bareFocus` covers PAINTING utilities only.** The rationale is a focus
+*indicator* firing on mouse click, so a bare `focus:` is banned on a property
+namespace that changes how the element looks — `ring`, `outline`, `border`,
+`shadow`, `bg`, `text`, `opacity`, the transform utilities, and so on. It is
+allowed on everything else: `focus:z-10`, `focus:scroll-mt-24`,
+`focus:absolute`, `focus:not-sr-only` are layout and scroll adjustments that
+paint nothing and are correct on any state. The two rejected utilities the
+hand-written skip link exists to avoid are in that second group on purpose —
+that bug is an ordering trap between three rules that all set `position`, and
+has nothing to do with the pseudo-class. The house ring itself does not depend
+on the namespace list: `rawFocusRing` matches three exact tokens, no vocabulary
+required.
 
 **Why the last two are combinations and not single tokens.** `bg-slate-800`,
 `rounded-lg` and `px-3` are used by cards, panels and buttons; `btn-motion` and
-`active:scale-[0.98]` are a PAIR that ten filter-chip, pill and icon-toggle call
-sites legitimately want *without* the rest of `BTN_BASE`, because a filter chip
-is not a button. Banning either token alone would ban the design system;
-banning the pair would force `inline-flex` + `font-medium` onto a chip, which is
-a visual change dressed up as lint compliance. What identifies a hand-rolled
-base is the token that belongs to the base alone — `touch-manipulation`.
+`active:scale-[0.98]` are a PAIR. Banning any one token alone would ban the
+design system.
 
-**Two scopes.** The two focus checks apply to *every* string literal in a file,
-including module-level constants, because a focus ring is a correctness
-contract and it has to hold wherever the class string is written. The three
-composition checks apply to `className` values only, since a class list away
-from a call site is not a composition.
+**The button-base discriminator, and its measured weakness.** Ten call sites
+carry the motion pair, and they are **not ten of the same thing**:
+
+- **Four are chips and pills** — `AlertsPage.tsx:161` and `:643`,
+  `TransactionTable.tsx:89`, `TransactionsPage.tsx:137`. They are not buttons
+  and must not be made into them. The harm of forcing the base on a chip is
+  smaller than it was first claimed to be: for a single short label
+  `inline-flex items-center justify-center gap-1.5` changes nothing a reader can
+  see, and only `font-medium` is a real visual delta — which
+  `TransactionsPage.tsx:137` already carries.
+- **Six are real buttons** re-typing most of `BTN_BASE` — `ConfirmDialog.tsx`
+  `:201` and `:212`, `ErrorBoundary.tsx:118`, `TransactionDetail.tsx:178`,
+  `TransactionsPage.tsx:379` and `:386`. They are the drift this check exists to
+  catch, and they escape it, because each omits `touch-manipulation` — one token
+  out of fourteen.
+
+`touch-manipulation` is the only token that belongs to the base alone, and a
+partial copy does not include the whole base, so the discriminator is weak by
+measurement. **The check is kept anyway**, because the alternatives are worse:
+dropping `touch-manipulation` fires on the pair, which flags all ten sites the
+moment the rule lands — ten suppressions and a rule nobody reads, plus one per
+new chip. Tightening it to catch the six means six more suppressions, or six
+rewrites onto a `<Button>` for which no `BTN_SIZES` entry fits (an icon-only
+`h-8 w-8`, a filled-neutral pagination button) and no `BTN_VARIANTS` entry
+exists for two of them. Those are DESIGN additions already recorded as debt at
+their call sites; the fix for the six is the missing primitives, not a wider net.
 
 **Exemptions, all deliberate.**
 - `src/lib/ui.ts` — the module that owns the patterns.
@@ -514,18 +563,40 @@ from a call site is not a composition.
   tautology, since mutating the constant moves both sides of the assertion. The
   tests are the layer that holds the tokens honest, so they are the one place
   the rule must not reach.
-- Two inline, rule-specific `eslint-disable` comments, one per **recorded**
-  focus-ring divergence that predates the rule: `AUTH_INPUT_CLASS` in
-  `AuthSplitLayout.tsx` and the `<textarea>` in `AlertsPage.tsx`. Both are
-  documented at length at their call sites and both are owed to the visual pass.
-  `reportUnusedDisableDirectives` is on, so resolving either divergence without
-  deleting its suppression fails the lint run.
+- **Two** inline, rule-specific `eslint-disable` comments, and the reasons are
+  not the same shape. `SkipLink.tsx:52` covers one recorded divergence: a skip
+  link must reveal on any focus, not `focus-visible:`. The `<textarea>` in
+  `AlertsPage.tsx:597` covers **two** on one line — a focus ring *and* an
+  `INPUT_BASE` re-type (it carries `bg-slate-800 rounded-lg
+  placeholder-slate-500`, with `text-slate-200` where the constant has
+  `text-slate-100`), and the reason says so. `eslint-disable-next-line` takes
+  rule names, not message ids, so two directives on one line is not
+  expressible; the consequence is named at the site instead, because the
+  unused-directive guard only fires when **both** are resolved.
+
+`reportUnusedDisableDirectives` is `"error"`, not ESLint's `"warn"` default.
+That default is a lie wherever the promise is made: `npm run lint` is plain
+`eslint .` with no `--max-warnings 0`, so a warning exits 0. Verified: an
+orphaned suppression, and both live suppressions with their divergence resolved
+but the excuse kept, now exit 1. **New `npm run lint` baseline: 0, with the 3
+pre-existing `react-refresh` warnings; non-zero if any suppression has expired.**
+
+**The rule is tested.** `frontend/eslint-rules/ui-class-tokens.test.js` is a
+`RuleTester` suite (95 cases) covering every check, its valid half, the scoping
+decisions and the reported node kind, plus a namespace-by-namespace check of
+the painting list. 26 deliberate mutations of the rule were run against it and
+all 26 go red — which is the only reason to believe it. The suite is the one
+file whose purpose is to contain class strings the build must **not** emit, so
+`src/index.css` carries `@source not "../eslint-rules"`: without it the tests
+alone shipped 30 unmatchable rules (3.6 kB), every one of them a class the rule
+exists to forbid.
 
 **Prose does not trip the rule.** The rule reads the AST, not raw text, so the
 many comments in this codebase that quote `focus:` or `focus-visible:` to explain
 a decision are invisible to it. Tailwind's scanner, by contrast, reads comments
 — see the note in `src/lib/ui.ts` about a comment that emitted the rule it
-denied.
+denied, and the `@source not` line above for what that costs when a test file
+cannot avoid naming a class.
 
 ---
 
