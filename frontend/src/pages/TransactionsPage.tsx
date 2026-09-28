@@ -12,9 +12,14 @@ import type { Transaction } from "../api/transactions";
 import { formatScore } from "../lib/score";
 import { formatMoney } from "../lib/money";
 import {
+  FOCUS_RING,
   NUMERIC_CELL,
   TABLE_HEADER_CELL,
   TABLE_HEADER_NUMERIC,
+  BTN_BASE,
+  BTN_SIZES,
+  BTN_VARIANTS,
+  cn,
 } from "../lib/ui";
 
 type StatusFilter = "all" | "legitimate" | "review" | "fraud";
@@ -63,9 +68,24 @@ export default function TransactionsPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-lg font-bold text-text-primary">Transacciones</h1>
+          {/* A navigation control, so it stays a `<Link>` and composes the
+              shared class constants rather than becoming a `Button`.
+              `Button` renders a `<button>`, and making this one a button would
+              cost middle-click, ctrl-click, "open in new tab" and the
+              status-bar URL for no gain. DESIGN.md's Buttons section already
+              prescribes exactly this composition, and it is what lets the link
+              pick up the two things the hand-rolled string lacked: the shared
+              keyboard-only focus ring, and an `enabled:`-gated hover.
+
+              A real `ButtonLink` is the honest primitive for this shape; it is
+              reported rather than invented in a migration commit. */}
           <Link
             to="/transactions/new"
-            className="btn-motion active:scale-[0.98] inline-flex items-center gap-1.5 bg-accent hover:bg-action-hover text-white text-sm font-medium px-4 py-2 rounded-lg"
+            className={cn(
+              BTN_BASE,
+              BTN_VARIANTS.primary,
+              BTN_SIZES.md,
+            )}
           >
             <Plus size={16} aria-hidden="true" />
             Nueva Transacción
@@ -74,7 +94,25 @@ export default function TransactionsPage() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          {/* Status pills */}
+          {/* Status pills. NOT migrated, and this is a gap in the design system
+              rather than a divergence from it.
+
+              A segmented filter needs a SELECTED state, and `BTN_VARIANTS` has
+              no pair for it: the selected treatment is `bg-slate-700
+              text-slate-200` and the unselected is `bg-slate-800/50
+              text-slate-400`, neither of which is `primary`, `secondary` or
+              `ghost`. The SIZE is not the obstacle — these are `rounded-lg
+              px-3 py-1.5 text-xs`, which is exactly `BTN_SIZES.sm` — so a
+              selected/unselected pair is the only thing missing.
+
+              Minting one is a DESIGN change, so it is reported rather than made.
+              What it costs meanwhile, and what the test pins: these four
+              controls have no focus ring at all, because the treatment they do
+              carry was hand-rolled without `FOCUS_RING`. `AlertsPage` has the
+              same pair in `rounded-full`, where a `Button` would additionally
+              lose the radius — the built CSS orders `.rounded` (216),
+              `.rounded-full` (218) and `.rounded-lg` (219) in that order, so
+              `BTN_SIZES` would win. */}
           <div className="flex gap-1.5">
             {statusPills.map((pill) => (
               <button
@@ -94,7 +132,24 @@ export default function TransactionsPage() {
             ))}
           </div>
 
-          {/* Date range */}
+          {/* Date range. The two inputs keep their own chrome and take only the
+              shared FOCUS treatment, which is the half of the problem that is
+              actually a defect.
+
+              They cannot be `Input`: `INPUT_BASE` carries `w-full`, and these
+              are intrinsic-width controls in a `flex ... ml-auto` row. The
+              built CSS has `.w-auto` (160) before `.w-full` (162), so
+              `className="w-auto"` loses and both fields would stretch to fill
+              the row. The same applies to `px-3` over `px-2` and `py-2` over
+              `py-1.5` — the base sorts later, so the compact padding would be
+              silently dropped and the control would grow.
+
+              The focus ring IS fixed, and this is the landmine-3 change: a bare
+              `focus:` ring paints on mouse click, which is wrong for a mouse
+              user and the reason `FOCUS_RING` exists. It now paints on
+              keyboard focus only, same hue (`--color-focus-ring`), same
+              2px width. The only difference a user can observe is that clicking
+              the field no longer flashes a ring. */}
           <div className="flex items-center gap-2 ml-auto">
             <input
               type="date"
@@ -103,7 +158,10 @@ export default function TransactionsPage() {
                 setDateFrom(e.target.value);
                 setPage(1);
               }}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              className={cn(
+                "bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300",
+                FOCUS_RING,
+              )}
             />
             <span className="text-xs text-slate-500">a</span>
             <input
@@ -113,7 +171,10 @@ export default function TransactionsPage() {
                 setDateTo(e.target.value);
                 setPage(1);
               }}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              className={cn(
+                "bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300",
+                FOCUS_RING,
+              )}
             />
           </div>
         </div>
@@ -161,7 +222,10 @@ export default function TransactionsPage() {
                   <div className="flex items-center justify-between mb-2">
                     <Link
                       to={`/transactions/${tx.id}`}
-                      className="text-sm font-medium text-slate-200 truncate rounded hover:text-slate-100 hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      className={cn(
+                        "text-sm font-medium text-slate-200 truncate rounded hover:text-slate-100 hover:underline underline-offset-2",
+                        FOCUS_RING,
+                      )}
                     >
                       {tx.merchant_name}
                     </Link>
@@ -224,7 +288,10 @@ export default function TransactionsPage() {
                           <td className="px-4 py-3 text-slate-200">
                             <Link
                               to={`/transactions/${tx.id}`}
-                              className="rounded hover:text-slate-100 hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                              className={cn(
+                                "rounded hover:text-slate-100 hover:underline underline-offset-2",
+                                FOCUS_RING,
+                              )}
                             >
                               {tx.merchant_name}
                             </Link>
@@ -279,7 +346,21 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            {/* Pagination */}
+            {/* Pagination. NOT migrated, and this is the design system's gap
+                rather than a divergence from it.
+
+                Both controls are a FILLED neutral (`bg-slate-800` resting,
+                `bg-slate-700` hover) with `disabled:opacity-40`. `secondary` is
+                the closest variant and is a different control: transparent with
+                a border at rest, filling to `slate-800` on hover, dimmed to
+                `disabled:opacity-50`. Adopting it would invert the resting and
+                hovered states, which is the V-07 class of defect this
+                refactor exists to remove.
+
+                A filled-neutral variant is a DESIGN addition, so it is reported
+                rather than made. Note that `TransactionTable` and `AlertsPage`
+                carry the same two treatments, so the gap is product-wide, not
+                local to this page. */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-4">
                 <p className="text-xs text-slate-400">
