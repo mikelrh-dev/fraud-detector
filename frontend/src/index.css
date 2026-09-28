@@ -161,6 +161,16 @@ body {
   .motion-stagger > * {
     animation: none;
   }
+  /* Spinners and pulses are the LOOPING ones, and a loop is exactly what
+     reduced motion exists to stop. These were missing here while every other
+     animation in this file was covered, so eight call sites — Button's spinner,
+     the loading skeletons on the list pages, the pending-route fallback — kept
+     moving for users who asked the OS not to have things move. Fixed once, at
+     the guard, rather than per call site. */
+  .animate-spin,
+  .animate-pulse {
+    animation: none;
+  }
   .nav-indicator {
     transition-duration: 0.01ms;
   }
