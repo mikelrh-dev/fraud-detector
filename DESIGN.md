@@ -532,16 +532,16 @@ design system.
 **The button-base discriminator, and its measured weakness.** Ten call sites
 carry the motion pair, and they are **not ten of the same thing**:
 
-- **Four are chips and pills** — `AlertsPage.tsx:161` and `:643`,
-  `TransactionTable.tsx:89`, `TransactionsPage.tsx:137`. They are not buttons
+- **Four are chips and pills** — `AlertsPage.tsx:215` and `:717`,
+  `TransactionTable.tsx:89`, `TransactionsPage.tsx:217`. They are not buttons
   and must not be made into them. The harm of forcing the base on a chip is
   smaller than it was first claimed to be: for a single short label
   `inline-flex items-center justify-center gap-1.5` changes nothing a reader can
   see, and only `font-medium` is a real visual delta — which
-  `TransactionsPage.tsx:137` already carries.
+  `TransactionsPage.tsx:217` already carries.
 - **Six are real buttons** re-typing most of `BTN_BASE` — `ConfirmDialog.tsx`
-  `:201` and `:212`, `ErrorBoundary.tsx:118`, `TransactionDetail.tsx:178`,
-  `TransactionsPage.tsx:379` and `:386`. They are the drift this check exists to
+  `:201` and `:212`, `ErrorBoundary.tsx:119`, `TransactionDetail.tsx:178`,
+  `TransactionsPage.tsx:472` and `:479`. They are the drift this check exists to
   catch, and they escape it, because each omits `touch-manipulation` — one token
   out of fourteen.
 
@@ -564,15 +564,33 @@ their call sites; the fix for the six is the missing primitives, not a wider net
   tests are the layer that holds the tokens honest, so they are the one place
   the rule must not reach.
 - **Two** inline, rule-specific `eslint-disable` comments, and the reasons are
-  not the same shape. `SkipLink.tsx:52` covers one recorded divergence: a skip
+  not the same shape. `SkipLink.tsx:61` covers one recorded divergence: a skip
   link must reveal on any focus, not `focus-visible:`. The `<textarea>` in
-  `AlertsPage.tsx:597` covers **two** on one line — a focus ring *and* an
+  `AlertsPage.tsx:653` covers **two** on one line — a focus ring *and* an
   `INPUT_BASE` re-type (it carries `bg-slate-800 rounded-lg
   placeholder-slate-500`, with `text-slate-200` where the constant has
   `text-slate-100`), and the reason says so. `eslint-disable-next-line` takes
   rule names, not message ids, so two directives on one line is not
   expressible; the consequence is named at the site instead, because the
   unused-directive guard only fires when **both** are resolved.
+
+  **Both were measured, not read off the reasons.** Deleting each directive and
+  running ESLint is the only way to know what a suppression actually silences:
+  `SkipLink.tsx` silences exactly one check (`bareFocus`), and the `<textarea>`
+  exactly two (`bareFocus` and `rawInputChrome`) — which is what its reason
+  claims, and the reason names both by id. A suppression that covered more than
+  its reason is invisible to review, which is the failure this pair was audited
+  for.
+
+**On the line numbers above.** This section carries the most line-numbered
+citations in the file, and a stale one is a specific failure mode: it survives
+review because nobody checks it, and it rots silently into pointing at the wrong
+line. Every one of them was recomputed against the tree rather than spot-fixed,
+which turned up **eight** wrong out of fourteen — not the one or two a review
+would have suspected. Two habits keep them honest: prefer a symbol (the named
+`ActionButton` in AlertsPage) wherever a line number adds nothing, and when a
+cited file is edited in the same pass, re-check its citations afterwards rather
+than assuming they moved.
 
 `reportUnusedDisableDirectives` is `"error"`, not ESLint's `"warn"` default.
 That default is a lie wherever the promise is made: `npm run lint` is plain
@@ -712,9 +730,13 @@ desktop table cells (use `compact` inside `<td>`). It replaces the former
   gets two rows — visible in review rather than silently resolved.
 - **No `className` prop.** Tailwind resolves two utilities of one property by
   stylesheet order, not attribute order, so a caller could not change a colour
-  or a size through it anyway; the **four** call sites that need a border and a
-  background (both AlertsPage failure blocks, both DashboardPage failure
-  blocks) wrap `<State>` in a sibling `div`.
+  or a size through it anyway. **Four** call sites need a border and a
+  background — both AlertsPage failure blocks and both DashboardPage failure
+  blocks — and three of them wrap `<State>` in a sibling `div`. The fourth,
+  DashboardPage's transactions banner, is hand-rolled inside its own bordered
+  `div` and never renders `<State>` at all, so the count of "wrapper `div`s" is
+  four and the count of "`<State>` call sites needing a wrapper" is **three**.
+  The two numbers were the same until the fourth was checked.
 - **Built-in line-art glyphs:** `ReceiptLineArt` (transactions),
   `BellLineArt` (alerts) and `AlertLineArt` (failures) — stroke-only SVGs
   inheriting `currentColor`.
