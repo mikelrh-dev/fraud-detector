@@ -277,6 +277,68 @@ describe("TransactionDetail — primitives migration (non-migration, pinned)", (
     expect(copy.classList.contains("max-md:min-h-[40px]")).toBe(true);
   });
 
+  it("a transaction that could not be loaded announces itself", async () => {
+    // A review found the fix for the list's failure UI was PARTIAL, and that its
+    // commit message cited the wrong block in this file as the precedent. The
+    // `reportError` block cited had `role="alert"` and always did. The block that
+    // is the actual twin -- the page-level failure at `if (error || !tx)` -- had
+    // no live region at all, so a deep link to a transaction that cannot be
+    // fetched told a screen-reader user nothing.
+    server.use(
+      http.get("*/api/v1/transactions/:id", () =>
+        HttpResponse.json({ detail: "boom" }, { status: 500 }),
+      ),
+    );
+    renderDetail();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Error al cargar la transacción");
+  });
+
+  it("a 404 announces itself, and says so as a request failure", async () => {
+    // Worth being precise about, because the copy surprised me: a 404 makes
+    // `error` truthy, so the block renders "Error al cargar la transaccion" and
+    // NOT "Transaccion no encontrada". The second string belongs to the other
+    // branch -- a request that SUCCEEDED and returned no record -- which this
+    // component cannot reach, because the API answers a missing row with 404.
+    //
+    // So the announced claim is the honest one: the request failed. A user
+    // following a stale deep link to a deleted transaction is told the fetch
+    // failed, which is what happened from their side.
+    server.use(
+      http.get("*/api/v1/transactions/:id", () =>
+        HttpResponse.json({ detail: "not found" }, { status: 404 }),
+      ),
+    );
+    renderDetail();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Error al cargar la transacci");
+    // And the string that would claim the record is absent, which would be a
+    // different claim and is not what happened.
+    expect(alert.textContent).not.toContain("no encontrada");
+  });
+
+  it("a report that came back failed announces itself, like the one beside it", async () => {
+    // The `report.status === "failed"` branch sat 40 lines from the `reportError`
+    // branch, which has announced itself all along. One page, two failure UIs,
+    // one of them silent.
+    server.use(
+      http.get("*/api/v1/transactions/:id/report", () =>
+        HttpResponse.json({
+          ...completedReport,
+          status: "failed",
+          report_text: null,
+          error_detail: "El modelo no devolvio salida",
+        }),
+      ),
+    );
+    renderDetail();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("El modelo no devolvio salida");
+  });
+
   it("the not-found back control has an accessible name", async () => {
     // This test used to assert the OPPOSITE — that the control has no name —
     // on the reasoning that reporting a defect is better than quietly changing

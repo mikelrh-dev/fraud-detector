@@ -678,11 +678,20 @@ desktop table cells (use `compact` inside `<td>`). It replaces the former
 - **The tones differ SEMANTICALLY, by live-region politeness — not by colour
   alone.** `--color-accent` and `--color-risk-critical` are deliberately
   independent reds (see the Accent contract above), so sharing a colour is not
-  sharing a meaning. `error` → `role="alert"` (assertive, it interrupts);
-  `success` → `role="status"` (polite); `empty` → no role at all (an empty list
+  sharing a meaning. `error` is assertive (`role="alert"`, it interrupts);
+  `success` is polite (`role="status"`); `empty` has no role (an empty list
   is absence, not news, and a live region would announce "nothing to see here"
   on every page load). Icon colour reinforces this: `risk-critical` / `clean` /
   `slate-600`.
+- **The one exception: an `empty` state that offers `onRetry` IS a
+  `role="status"`.** `onRetry` is legal on every tone, so an empty state can be
+  the RESULT OF SOMETHING THE USER JUST DID - filters applied, a retry pressed -
+  and announcing nothing leaves them pressing a button with no feedback at all.
+  Same shape as `data?.total || 0` rendering "0 alertas" on a failed query,
+  which is what made the error tone necessary in the first place. So the role is
+  not a property of the tone ALONE: empty-with-retry speaks, empty-without stays
+  silent. All four current `empty` call sites pass no `onRetry`, so the rule is
+  latent and no page load has become chattier.
 - **`title` is required for `empty` and `success`, optional for `error`.** The
   failure state has default copy and the global error boundary depends on it;
   there is no default empty or success copy in this product, and minting some
@@ -713,14 +722,33 @@ desktop table cells (use `compact` inside `<td>`). It replaces the former
   (metrics + charts failures), TransactionsPage, TransactionTable,
   ErrorBoundary.
 
-**Known divergence, reported not migrated.** Two hand-rolled state blocks
+**Known divergence, reported not migrated.** Four hand-rolled state blocks
 remain, because adopting `<State>` would change their pixels and this pass is
-scoped to no visual change:
-`TransactionsPage`'s mobile list error (`text-center py-12` with a single
-`text-red-400` line) and `TransactionDetail`'s report error
-(`flex flex-col items-center px-6 py-8 text-center`, no icon, no retry). Both
-should become `<State tone="error">` when the vertical rhythm is decided
-deliberately rather than inherited from a one-off.
+scoped to no visual change. All four now carry `role="alert"` - a review found
+two of them silent while their siblings in the same files announced, and fixing
+that was a defect fix rather than a migration:
+
+1. `TransactionsPage`'s mobile list error (`text-center py-12`, one
+   `text-red-400` line).
+2. `TransactionDetail`'s page-level failure at `if (error || !tx)`
+   (`text-center` + `text-red-400`). Note the copy: a 404 makes `error`
+   truthy, so it renders "Error al cargar la transaccion" and NOT
+   "Transaccion no encontrada" - the API answers a missing row with 404, so
+   the second string belongs to a branch this component cannot reach.
+3. `TransactionDetail`'s report error (`flex flex-col items-center px-6 py-8
+   text-center`, no icon, no retry). This one always had a live region.
+4. `TransactionDetail`'s `report.status === "failed"` block. It sat 40 lines
+   from #3 and did not announce, so one page had two failure UIs and one of
+   them was silent.
+
+All four should become `<State tone="error">` when the vertical rhythm is
+decided deliberately rather than inherited from a one-off.
+
+**`success` currently has ZERO call sites.** It exists because the merge that
+produced `<State>` was justified by exactly this gap: with only empty and error
+available, there was no way to say "it worked" in the same idiom. So the tone is
+untested in production and the gap it was added for is still open. Treat a
+`something succeeded` panel as the first thing to reach for it.
 
 ### Loading States
 

@@ -315,7 +315,16 @@ export default function TransactionDetail() {
   if (error || !tx) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-center">
+        {/* `role="alert"`: the transaction could not be fetched, or does not
+            exist. A link deep to a transaction that an analyst cannot open is
+            the exact case where silence is worst -- the user has no other way to
+            learn the request failed rather than the record being absent.
+
+            This is the block the fix for the list's failure UI was justified by,
+            and it had no live region at all. The `reportError` block further
+            down the same file has had one all along, so the two failure UIs in
+            one page were inconsistent with each other. */}
+        <div role="alert" className="text-center" data-testid="detail-error">
           <p className="text-red-400 mb-4">
             {error ? "Error al cargar la transacción" : "Transacción no encontrada"}
           </p>
@@ -498,7 +507,11 @@ export default function TransactionDetail() {
               Generando reporte...
             </div>
           ) : report.status === "failed" ? (
-            <div>
+            /* `role="alert"`, matching the `reportError` block above it: a
+               report that came back failed is a failure the user asked about and
+               is waiting on, and this file already had one announced failure
+               next to an unannounced one. */
+            <div role="alert" data-testid="report-status-failed">
               <p className="text-sm text-red-400 mb-2">
                 {report.error_detail || "El reporte no pudo generarse."}
               </p>
