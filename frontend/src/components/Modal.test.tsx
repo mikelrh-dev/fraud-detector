@@ -341,4 +341,75 @@ describe("Modal", () => {
     expect(screen.getByRole("dialog").classList.contains("max-w-lg")).toBe(true);
     expect(screen.getByRole("dialog").classList.contains("max-w-sm")).toBe(false);
   });
+
+  it("pins the close button as absolutely positioned", () => {
+    // THE LOAD-BEARING CSS BEHIND THE DOM-ORDER DECISION. The close button is
+    // last in the DOM so opening a dialog focuses the first CONTENT control
+    // rather than "Cerrar" -- and that only works because the panel is
+    // `relative` and the button is `absolute`, decoupled from flow order. Make
+    // the button static and it visually renders first, which looks like a bug
+    // and is one, even though every focus test still passes. Asserted as
+    // literals: comparing to a constant moves both sides of the assertion.
+    render(<Harness />);
+    openIt();
+
+    const close = screen.getByRole("button", { name: /cerrar/i });
+    expect(close.classList.contains("absolute")).toBe(true);
+    expect(close.classList.contains("top-2")).toBe(true);
+    expect(close.classList.contains("right-2")).toBe(true);
+    // Static would defeat the ordering; assert its absence explicitly.
+    expect(close.classList.contains("static")).toBe(false);
+
+    expect(screen.getByRole("dialog").classList.contains("relative")).toBe(true);
+  });
+
+  it("traps Shift+Tab from the panel itself", () => {
+    // The trap's own escape hatch, and the one branch nothing tested. Focus can
+    // land on the panel when `initialFocusSelector` misses, or when the user
+    // clicks the panel padding rather than a control. Without the
+    // `active === panel` guard, Shift+Tab from there is not intercepted at all
+    // and the native browser walks focus OUT of the dialog -- the exact failure
+    // the trap exists to prevent.
+    render(<Harness />);
+    openIt();
+
+    const panel = screen.getByRole("dialog");
+    panel.focus();
+    expect(document.activeElement).toBe(panel);
+
+    const notCancelled = fireEvent.keyDown(panel, { key: "Tab", shiftKey: true });
+
+    expect(notCancelled, "Shift+Tab from the panel was not intercepted").toBe(
+      false,
+    );
+    expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
+  });
+
+  it("skips a control hidden from assistive tech", () => {
+    // `aria-hidden` removes a control from the tab order without changing its
+    // attributes, so the selector still matches it. Without the visibility
+    // filter the trap would try to focus an element the user cannot reach.
+    function HiddenHarness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Abrir
+          </button>
+          {open && (
+            <Modal title="Editar" onClose={() => setOpen(false)}>
+              <div aria-hidden="true">
+                <input aria-label="Oculto" />
+              </div>
+              <textarea aria-label="Motivo" />
+            </Modal>
+          )}
+        </>
+      );
+    }
+    render(<HiddenHarness />);
+    openIt();
+
+    expect(document.activeElement).toBe(screen.getByLabelText("Motivo"));
+  });
 });

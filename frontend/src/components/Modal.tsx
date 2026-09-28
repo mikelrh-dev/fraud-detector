@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
 import { Button } from "./Button";
 import { cn } from "../lib/ui";
+import { FOCUSABLE, isFocusable } from "../lib/focusable";
 
 export type ModalSize = "sm" | "md" | "lg";
 
@@ -34,17 +35,6 @@ export interface ModalProps {
   closeLabel?: string;
   className?: string;
 }
-
-/**
- * Markup check, never layout check.
- *
- * `offsetParent` is null for `position: fixed` elements in a real browser and
- * always in jsdom, so a filter built on it silently collapses a focus trap to a
- * single element. Also excludes `[disabled]` and `[tabindex="-1"]`, which
- * `querySelectorAll` would otherwise return.
- */
-const FOCUSABLE =
-  'textarea, input, select, button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 const MODAL_BACKDROP =
   "fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4";
@@ -108,13 +98,14 @@ const MODAL_SIZES = {
  * still works, which is exactly why the failure survives review: the automated
  * check passes while the user is still stuck.
  *
- * The tempting inverse — "require the caller to bring a close button" — trades
- * that for a SILENT failure. A caller who forgets produces a trap with no
- * visible symptom in a test, no type error, and no lint error. So the unsafe
- * case is the DEFAULT one. `hideCloseButton` exists for the legitimate opt-out
- * (a dialog that already shows a named "Cancelar"), and because it has to be
- * written down at the call site, opting out is visible and reviewable instead
- * of being an omission.
+ * The tempting inverse - "require the caller to bring a close button" - would
+ * NOT be silent: a required prop is a compile error. So that is not the
+ * argument, and claiming it was would be arguing against a straw man. The
+ * real reason is consistency and reviewability. A built-in default keeps the
+ * dismiss affordance identical across every dialog in the product, and the
+ * legitimate opt-out has to be TYPED at the call site, which makes opting out
+ * greppable in review instead of an omission nobody notices. A required prop
+ * buys the compile-time safety and gives up the uniformity.
  *
  * DOM ORDER, NOT VISUAL ORDER, for that button: it is rendered LAST, after
  * `children` and `footer`, and positioned into the top-right corner with
@@ -126,11 +117,22 @@ const MODAL_SIZES = {
  * sequence; that is the smaller of the two wrongs.
  *
  * KNOWN LIMITS, stated rather than papered over:
- * - No portal. `position: fixed` is contained by any transformed or
- *   `filter`ed ancestor, so a modal rendered inside one would be clipped
- *   rather than cover the viewport. Every current call site is at the root of
- *   its page, so nothing hits it today; the first call site nested inside a
- *   transformed wrapper needs `createPortal`.
+ * - No portal, and this is NOT a hypothetical. `position: fixed` is contained
+ *   by any transformed ancestor, and `PageTransition` wraps EVERY page's
+ *   content in `animate-fade-slide-up`, whose `animation-fill-mode: both`
+ *   persists the `to` keyframe's transform as `matrix(1, 0, 0, 1, 0, 0)` --
+ *   not `none`. So every page establishes a containing block for fixed
+ *   descendants. Measured in headless Edge: a fixed element inside that wrapper
+ *   is 1241x4000 and CLIPPED; the same element outside any transform is
+ *   1241x581, the viewport.
+ *
+ *   The reason nothing breaks today is a non-obvious invariant: `Modal` and
+ *   `ConfirmDialog` are rendered as SIBLINGS of `<PageTransition>`, not inside
+ *   it. `AlertsPage` happens to place its dialog after the closing tag. Nothing
+ *   tests that and no type enforces it, so the next person who renders a dialog
+ *   next to its trigger gets a silent clip. The fix is `createPortal`, which
+ *   changes the mount target and needs its own test; until then, keep dialogs
+ *   outside `PageTransition`.
  * - The body lock is a plain save/restore, not a counter. Two modals open at
  *   once would restore each other out of order and leave the body locked. Not
  *   reachable from the current call sites (one dialog at a time), and a shared
@@ -159,9 +161,20 @@ export function Modal({
 
     const panel = panelRef.current;
     if (panel) {
-      const target = initialFocusSelector
-        ? panel.querySelector<HTMLElement>(initialFocusSelector)
-        : panel.querySelector<HTMLElement>(FOCUSABLE);
+      // Both paths filter through `isFocusable`, and that is not redundant with
+      // the selector. `FOCUSABLE` matches by ATTRIBUTES, so an `aria-hidden` or
+      // `display: none` control still matches and is still a dead end. An
+      // earlier version filtered only inside the Tab trap, so opening a dialog
+      // whose first control was hidden moved focus onto it while the trap itself
+      // behaved correctly -- the two halves of the same feature disagreeing.
+      const candidates = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          initialFocusSelector ?? FOCUSABLE,
+        ),
+      ).filter(isFocusable);
+      const target = candidates[0];
+      // Falling back to the panel keeps focus INSIDE the dialog. Leaving it on
+      // the trigger is the failure the component exists to prevent.
       (target ?? panel).focus();
     }
 
@@ -189,7 +202,7 @@ export function Modal({
       // Filter on markup, never on layout — see FOCUSABLE above.
       const focusable = Array.from(
         panel.querySelectorAll<HTMLElement>(FOCUSABLE),
-      ).filter((el) => !el.hidden && el.getAttribute("aria-hidden") !== "true");
+      ).filter(isFocusable);
 
       if (focusable.length === 0) {
         // Nothing to move to; keep focus on the panel itself.

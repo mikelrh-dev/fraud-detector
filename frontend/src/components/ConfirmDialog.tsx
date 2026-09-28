@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
+import { FOCUSABLE, isFocusable } from "../lib/focusable";
 
 export interface ConfirmDialogProps {
   /** Dialog heading; also the accessible name via aria-labelledby. */
@@ -22,8 +23,6 @@ export interface ConfirmDialogProps {
   initialFocusSelector?: string;
 }
 
-const FOCUSABLE =
-  'textarea, input, select, button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 /**
  * Accessible confirmation dialog.
@@ -63,9 +62,14 @@ export function ConfirmDialog({
 
     const panel = panelRef.current;
     if (panel) {
-      const target = initialFocusSelector
-        ? panel.querySelector<HTMLElement>(initialFocusSelector)
-        : panel.querySelector<HTMLElement>(FOCUSABLE);
+      // Filtered, not a bare querySelector. FOCUSABLE matches by ATTRIBUTES, so
+      // a control that is aria-hidden or display:none still matches, and
+      // focusing it is a no-op -- which leaves focus on the opener, outside the
+      // dialog. The Tab trap below already filtered; this path did not, so the
+      // two halves of the same feature could disagree.
+      const target = Array.from(
+        panel.querySelectorAll<HTMLElement>(initialFocusSelector ?? FOCUSABLE),
+      ).filter(isFocusable)[0];
       (target ?? panel).focus();
     }
 
