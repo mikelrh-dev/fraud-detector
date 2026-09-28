@@ -166,6 +166,47 @@ describe("App — every path still resolves to its own page", () => {
   });
 });
 
+describe("App — every route exposes exactly one main landmark", () => {
+  /**
+   * WHY A ROUTER-LEVEL ASSERTION AND NOT SEVEN PAGE TESTS: the invariant is
+   * about the assembled document, not about a component in isolation. A page
+   * rendered inside a test harness can carry a `<main>` that is nested in
+   * sectioning content in the real tree — and an element inside `<article>`,
+   * `<aside>`, `<nav>` or `<section>` loses the implicit `main` role entirely,
+   * so `getByRole("main")` would find nothing while the markup still reads
+   * like a landmark. Only rendering through `<App>` at a real path can catch
+   * that, and only here can "exactly one" be checked across all seven pages
+   * at once.
+   *
+   * TWO pages were missing the landmark (TransactionsPage and
+   * CreateTransactionPage rendered a plain `<div>` in the slot where
+   * DashboardPage and AlertsPage already render `<main>`). The shell does NOT
+   * provide one — `<Sidebar>` is a sibling of the content region, not a
+   * wrapper — so the page owns it. Had the shell owned it, adding one here
+   * would have produced two nested landmarks, which `toHaveLength(1)` is
+   * exactly there to catch.
+   */
+  const PATHS: Array<[string, string]> = [
+    ["/login", "Iniciar sesión"],
+    ["/register", "Crear cuenta"],
+    ["/dashboard", "Dashboard de detección de fraude"],
+    ["/alerts", "Alertas"],
+    ["/transactions", "Transacciones"],
+    ["/transactions/new", "Nueva Transacción"],
+    ["/transactions/test-uuid", "Detalle de Transacción"],
+  ];
+
+  for (const [path, heading] of PATHS) {
+    it(`has one main at ${path}`, async () => {
+      renderAppAt(path);
+      // Wait for the page itself first, or this would measure the Suspense
+      // fallback instead of the route.
+      await screen.findByRole("heading", { name: heading });
+      expect(screen.getAllByRole("main")).toHaveLength(1);
+    });
+  }
+});
+
 describe("App — the guard is unchanged", () => {
   it("redirects an unauthenticated visitor away from /dashboard to /login", async () => {
     mockUseAuthStore.mockImplementation(

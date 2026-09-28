@@ -66,7 +66,10 @@ export default function CreateTransactionPage() {
   return (
     <div className="min-h-screen bg-page-bg flex overflow-x-hidden">
       <Sidebar activeItem="transactions" />
-      <div className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
+      {/* The main landmark, for the same reason as the other list pages: the
+          shell renders `<Sidebar>` as a sibling and no `<main>` of its own, and
+          the page that owns the content owns the landmark. Exactly one. */}
+      <main className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
         <PageTransition>
         <h1 className="text-lg font-bold text-text-primary mb-6">Nueva Transacción</h1>
 
@@ -174,7 +177,7 @@ export default function CreateTransactionPage() {
         {/* Score Result */}
             <ScoreResultCard result={result} isLoading={mutation.isPending} />
         </PageTransition>
-      </div>
+      </main>
     </div>
   );
 }

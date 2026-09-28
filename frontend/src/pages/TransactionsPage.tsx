@@ -64,7 +64,13 @@ export default function TransactionsPage() {
   return (
     <div className="min-h-screen bg-page-bg flex overflow-x-hidden">
       <Sidebar activeItem="transactions" />
-      <div className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
+      {/* The main landmark. The shell does not provide one — `<Sidebar>` is a
+          sibling, and an element only gets the implicit `main` role when it is
+          not inside sectioning content — so the page that owns the content has
+          to own the landmark too. One per page: a second `<main>` is not a
+          second landmark, it is invalid, and the skip link's target would
+          become ambiguous. */}
+      <main className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
         <PageTransition>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -381,7 +387,7 @@ export default function TransactionsPage() {
           </>
         )}
         </PageTransition>
-      </div>
+      </main>
     </div>
   );
 }
