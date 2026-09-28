@@ -1,5 +1,5 @@
 import { cloneElement } from "react";
-import type { InputHTMLAttributes, ReactElement } from "react";
+import type { InputHTMLAttributes, ReactElement, ReactNode } from "react";
 import { FIELD_ERROR, FIELD_HINT, FIELD_LABEL } from "../lib/ui";
 
 /**
@@ -40,7 +40,15 @@ export interface FieldProps {
    * the three relationships cannot be wired inconsistently at the call site.
    */
   id: string;
-  label: string;
+  /**
+   * A node, not a string, because a label is often more than its text.
+   * `CreateTransactionPage` marks two fields "(opcional)" in a dimmed span;
+   * typing this as `string` forced that page to either drop the annotation or
+   * cast around the primitive. Widening costs nothing: a label's accessible
+   * name is the sum of its descendant text, so a node gives the same name plus
+   * whatever the markup adds.
+   */
+  label: ReactNode;
   hint?: string;
   error?: string;
   children: ReactElement<FieldControlProps>;

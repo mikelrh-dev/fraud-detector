@@ -8,6 +8,7 @@ import { PageTransition } from "../components/PageTransition";
 import { Sidebar } from "../components/Sidebar";
 import { Button } from "../components/Button";
 import { Field } from "../components/Field";
+import { LABEL_MUTED } from "../lib/ui";
 import { Input } from "../components/Input";
 import type { ScoreResponse } from "../api/transactions";
 
@@ -108,13 +109,14 @@ export default function CreateTransactionPage() {
           </Field>
 
           {/* Merchant Category (optional) */}
-          {/* The dimmed "(opcional)" span is gone: `Field`'s `label` is typed
-              `string`, and passing a node means casting around a primitive this
-              pass is not allowed to change. The accessible name is identical
-              either way (a label's text is the sum of its descendants), so this
-              costs styling, not meaning. Restoring it means widening
-              `FieldProps["label"]` to ReactNode — a primitives change. */}
-          <Field id="merchant_category" label="Categoría (opcional)">
+          <Field
+            id="merchant_category"
+            label={
+              <>
+                Categoría <span className={LABEL_MUTED}>(opcional)</span>
+              </>
+            }
+          >
             <Input
               type="text"
               {...register("merchant_category")}

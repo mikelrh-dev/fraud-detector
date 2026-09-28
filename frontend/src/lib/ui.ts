@@ -134,6 +134,16 @@ export const INVALID_INPUT =
 /** Block-level so the label stacks above its input; never an error colour. */
 export const FIELD_LABEL = "block text-sm text-slate-300 mb-1";
 
+/**
+ * A dimmed qualifier inside a label, e.g. "(opcional)".
+ *
+ * Deliberately NOT `FIELD_HINT`: that is a `text-xs` block with top margin for
+ * use UNDER a control. This is an inline continuation of the label text, at the
+ * label's own size, with no margin. Two different roles that happened to share
+ * a colour are not the same constant.
+ */
+export const LABEL_MUTED = "text-slate-500";
+
 /** Error and hint share every class but the colour — that is the whole signal. */
 export const FIELD_ERROR = "text-xs text-risk-critical mt-1";
 export const FIELD_HINT = "text-xs text-slate-500 mt-1";

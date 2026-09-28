@@ -8,6 +8,8 @@ import {
   FIELD_LABEL,
   FIELD_ERROR,
   FIELD_HINT,
+  INVALID_INPUT,
+  LABEL_MUTED,
   cn,
   type ButtonVariant,
   type ButtonSize,
@@ -174,6 +176,78 @@ describe("ui class constants", () => {
   it("input base carries the focus ring", () => {
     expect(INPUT_BASE).toContain(FOCUS_RING);
     expect(INPUT_BASE).toContain("placeholder-slate-500");
+  });
+
+  it("PINNED: the literal tokens these fragments are made of", () => {
+    // WHY LITERALS AND NOT THE IMPORTED CONSTANTS: every other assertion in
+    // this file compares a constant to something derived from it, which means
+    // it TRACKS the constant instead of PINNING it. Deleting
+    // `disabled:opacity-50` from INPUT_BASE left all 337 tests in the repo
+    // green -- a disabled input could have looked identical to an enabled one
+    // and nothing would have said so. Component tests have the same hole, for
+    // the same reason: they assert the DOM matches `INPUT_BASE`, so mutating
+    // `INPUT_BASE` moves both sides together.
+    //
+    // This block is deliberately redundant with the invariant tests above.
+    // Those say WHY each token is here; this one says WHICH tokens are here,
+    // as a literal that the implementation cannot drag along with it.
+    expect(INPUT_BASE.split(" ")).toEqual(
+      expect.arrayContaining([
+        "w-full",
+        "bg-slate-800",
+        "border",
+        "border-slate-700",
+        "px-3",
+        "py-2",
+        "rounded-lg",
+        "text-sm",
+        "text-slate-100",
+        "placeholder-slate-500",
+        // A disabled input must LOOK disabled, not merely refuse clicks. This
+        // token was the one the whole repo failed to pin: deleting it left all
+        // 337 tests green.
+        "disabled:opacity-50",
+        // Keyboard focus must never be absent, and must not fire on click.
+        "focus-visible:outline-none",
+        "focus-visible:ring-2",
+        "focus-visible:ring-focus-ring",
+      ]),
+    );
+    // Deliberately NOT pinned on an input, and worth saying so: a text field
+    // keeps a text cursor (you can still select its content), so
+    // `cursor-not-allowed` would be wrong here even though `BTN_BASE` has it.
+    // Touch-action belongs to buttons, not to a control the keyboard drives.
+    expect(INPUT_BASE).not.toContain("cursor-not-allowed");
+    expect(INPUT_BASE).not.toContain("touch-manipulation");
+
+    expect(FOCUS_RING.split(" ")).toEqual([
+      "focus-visible:outline-none",
+      "focus-visible:ring-2",
+      "focus-visible:ring-focus-ring",
+    ]);
+
+    expect(BTN_BASE.split(" ")).toEqual(
+      expect.arrayContaining([
+        "btn-motion",
+        "touch-manipulation",
+        "disabled:opacity-50",
+        "disabled:cursor-not-allowed",
+        // Keyboard focus must never be absent, and must not fire on click.
+        "focus-visible:outline-none",
+        "focus-visible:ring-2",
+        "focus-visible:ring-focus-ring",
+      ]),
+    );
+
+    // The invalid treatment is the fix for "announced but not painted" and
+    // "painted but not announced", so its attribute gate is part of the
+    // contract, not an implementation detail.
+    expect(INVALID_INPUT.split(" ")).toEqual([
+      "aria-invalid:border-risk-critical",
+      "aria-invalid:focus-visible:ring-risk-critical",
+    ]);
+
+    expect(LABEL_MUTED.split(" ")).toEqual(["text-slate-500"]);
   });
 
   it("field error uses the risk-critical token, not a raw red", () => {
