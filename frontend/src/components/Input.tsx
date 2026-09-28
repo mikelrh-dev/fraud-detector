@@ -1,39 +1,35 @@
 import type { InputHTMLAttributes } from "react";
-import { INPUT_BASE, cn } from "../lib/ui";
+import { INPUT_BASE, INVALID_INPUT, cn } from "../lib/ui";
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;
 }
 
 /**
- * The invalid treatment.
- *
- * WHY AN `aria-invalid:` VARIANT AND NOT `invalid && "..."`: two signals for
+ * WHY AN `aria-invalid:` VARIANT AND NOT A PROP-DRIVEN CLASS: two signals for
  * one state is a bug factory. `Field` owns the ARIA wiring and injects
  * `aria-invalid` into whatever control it is handed; had the red border hung
  * off a separate `invalid` prop, every call site would have to pass both, and
  * the two could diverge — an input painted red but never announced, or
- * announced but not painted. Driving the colour off the attribute means the
- * visual and the announced state are the same fact.
+ * announced but not painted. Driving the colour off the attribute makes the
+ * visual and the announced state the same fact. `INVALID_INPUT` lives in
+ * `lib/ui.ts` rather than here because it is keyed off the attribute, not the
+ * element: a `<select>` or `<textarea>` gets it for free.
  *
- * It is also the only version that WINS the cascade. `INPUT_BASE` already
- * carries `focus-visible:ring-focus-ring` (specificity 0-1-0), so an
- * `invalid && "focus-visible:ring-risk-critical"` would tie with it and lose
- * or win on stylesheet order alone — the same dead-CSS class of bug Button
- * just had, where the loaded state was computed and then silently shadowed.
- * `[aria-invalid="true"]` is an attribute selector, so
- * `aria-invalid:focus-visible:ring-risk-critical` is 0-2-0 and wins on
- * specificity, deterministically.
- *
- * Held as a contiguous literal: Tailwind scans raw source text, so an
- * interpolated class here would emit no CSS and raise no error (see lib/ui.ts).
+ * It is also the only version that WINS the cascade, which is why the ring
+ * override is written as an `aria-invalid:` variant instead of a plain
+ * focus-visible ring in the risk tone. `INPUT_BASE` already carries a
+ * focus-visible ring, so a plain override would TIE with it and be decided by
+ * stylesheet order alone — the same dead-CSS class of bug Button just had,
+ * where the loading state was computed and then silently shadowed. Prefix it
+ * with `[aria-invalid="true"]` and it becomes an attribute selector, which
+ * raises specificity from 0-2-0 to 0-3-0 and wins deterministically on
+ * specificity rather than on Tailwind's internal sort.
  */
-const INVALID_INPUT =
-  "aria-invalid:border-risk-critical aria-invalid:focus-visible:ring-risk-critical";
 
 /**
- * A thin `<input>` over `INPUT_BASE`. It adds no chrome of its own — the
- * invalid treatment above is the whole addition.
+ * A thin `<input>` over `INPUT_BASE`. The invalid treatment above is the whole
+ * addition.
  */
 export function Input({ invalid = false, className, ...rest }: InputProps) {
   return (

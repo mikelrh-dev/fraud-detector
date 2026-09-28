@@ -3,14 +3,8 @@ import { render, screen } from "@testing-library/react";
 import { Input } from "./Input";
 import { Field } from "./Field";
 import { FIELD_ERROR, FIELD_HINT, FIELD_LABEL } from "../lib/ui";
+import { expectCarries } from "../test-utils/className";
 
-/** Token-wise comparison, as in Button.test.tsx. Duplicated rather than shared
- *  because this task is scoped to two components and their own test files. */
-function expectCarries(el: Element, fragment: string) {
-  for (const cls of fragment.split(" ").filter(Boolean)) {
-    expect(el.classList.contains(cls), `missing class ${cls}`).toBe(true);
-  }
-}
 
 /** Plain DOM assertions, not jest-dom matchers — `tsconfig.json` excludes
  *  `src/tests`, so the matcher types are invisible under `src/components`. */
@@ -179,7 +173,14 @@ describe("Field", () => {
     );
   });
 
-  it("gives the error node role=alert, so a failure is announced on appearance", () => {
+  it("gives the error node role=alert, matching the WAI-ARIA form-error pattern", () => {
+    // `role="alert"` pairs with `aria-describedby` in the WAI-ARIA form-error
+    // technique, where describedby is the "conveyed again" path on focus.
+    //
+    // It is NOT what makes the error announce by itself — the always-present
+    // live region is (see "the live region exists before it has anything to
+    // say"). This asserts the role is set; the announcement behaviour is not
+    // observable from jsdom and is not claimed here.
     // Without a live region the text only reaches a screen reader when the
     // user happens to focus the field — which, on a submit-triggered
     // validation, they may never do.
@@ -234,7 +235,7 @@ describe("Field", () => {
     expect(select.getAttribute("aria-describedby")).toBe("category-error");
   });
 
-  it("an empty error string renders nothing and marks nothing", () => {
+  it("an empty error string marks nothing and announces nothing", () => {
     // Form libraries routinely hand over `""` where they mean "no error".
     render(
       <Field id="amount" label="Monto" error="">
@@ -243,6 +244,47 @@ describe("Field", () => {
     );
     expect(control().hasAttribute("aria-invalid")).toBe(false);
     expect(control().hasAttribute("aria-describedby")).toBe(false);
-    expect(node("amount-error")).toBeNull();
+  });
+
+  it("the live region exists before it has anything to say", () => {
+    // THE REASON the error node is always rendered. W3C ARIA19 requires a live
+    // region to be present in the DOM BEFORE its content changes; a node
+    // mounted already-populated generally does not announce. So the region
+    // standing empty when there is no error is not wasted markup — it is what
+    // makes the announcement work when the error arrives.
+    //
+    // This is the assertion that would have caught the old conditional mount,
+    // and it is deliberately about PRESENCE, not about the error being visible.
+    const { rerender } = render(
+      <Field id="amount" label="Monto">
+        <Input />
+      </Field>,
+    );
+    const region = node("amount-error");
+    expect(region).not.toBeNull();
+    expect(region!.getAttribute("role")).toBe("alert");
+    expect(region!.textContent).toBe("");
+
+    // And the same node then receives the content, rather than being replaced.
+    rerender(
+      <Field id="amount" label="Monto" error="Importe obligatorio">
+        <Input />
+      </Field>,
+    );
+    expect(node("amount-error")).toBe(region);
+    expect(region!.textContent).toBe("Importe obligatorio");
+  });
+
+  it("an empty live region costs no vertical gap", () => {
+    // The spacing class rides on the content, not on the container, so the
+    // always-present region does not push the hint down in the common
+    // no-error case.
+    render(
+      <Field id="amount" label="Monto" hint="Maximo 5000">
+        <Input />
+      </Field>,
+    );
+    expect(node("amount-error")!.getAttribute("class")).toBeNull();
+    expect(node("amount-hint")!.getAttribute("class")).toContain("mt-1");
   });
 });

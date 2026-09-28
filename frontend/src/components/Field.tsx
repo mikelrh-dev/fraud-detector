@@ -9,15 +9,24 @@ import { FIELD_ERROR, FIELD_HINT, FIELD_LABEL } from "../lib/ui";
  * WHY THE `Pick` RATHER THAN `ReactElement`: `cloneElement`'s fallback
  * overload is `cloneElement<P>(element: ReactElement<P>, props?: Partial<P> &
  * Attributes)`, so a bare `children: ReactElement` means `P = unknown` and
- * `Partial<unknown>` is `{}` — the injected attributes are then checked against
- * nothing, and the compiler stays silent about a control that cannot receive
- * them. Pinning `P` to the three attributes makes the compiler reject a child
- * that does not accept them.
+ * `Partial<unknown>` is `{}` — the injected attributes would then be checked
+ * against nothing at all. `Pick` at least constrains the injected literal
+ * against real DOM attribute names and types.
  *
- * THE RESIDUAL HOLE, stated plainly: a control can accept these attributes and
- * still swallow them, if it destructures only the props it knows about instead
- * of spreading the rest onto its DOM node. No type can catch that, so the tests
- * assert the wiring reached the real DOM element.
+ * WHAT IT DOES NOT DO — and this is the important part: pinning `P` does NOT
+ * make the compiler reject a child that cannot accept these attributes.
+ * `JSX.Element` is `ReactElement<any, any>`, which is bidirectionally
+ * assignable, so a component taking zero props type-checks clean. Verified.
+ * This type is a guard on what `Field` SENDS, not a check on what the child
+ * ACCEPTS.
+ *
+ * THE HOLE, stated plainly, because for components it is the whole surface:
+ * three of four misuses fail SILENTLY. A control that destructures only the
+ * props it knows about, instead of spreading the rest onto its DOM node, drops
+ * all three attributes with no error. So does a component that takes no props
+ * at all, and so does a Fragment. Only a non-element child throws. The tests
+ * assert the wiring reached the real DOM element, which is the only thing that
+ * catches this — no type can.
  */
 type FieldControlProps = Pick<
   InputHTMLAttributes<HTMLInputElement>,
@@ -85,11 +94,15 @@ export function Field({ id, label, hint, error, children }: FieldProps) {
         "aria-describedby": describedBy,
       })}
 
-      {error && (
-        <p id={errorId} role="alert" className={FIELD_ERROR}>
-          {error}
-        </p>
-      )}
+      {/* The live region is ALWAYS rendered, and only its content toggles.
+          W3C ARIA19 requires the region to exist in the DOM *before* its
+          content changes; a node mounted already-populated generally does not
+          announce. Mounting this conditionally meant the announcement we were
+          claiming to provide never actually happened. The spacing class is
+          applied with the content so an empty region costs no vertical gap. */}
+      <p id={errorId} role="alert" className={error ? FIELD_ERROR : undefined}>
+        {error}
+      </p>
       {/* The hint is NOT hidden by an error. It stays rendered so the format
           requirement survives the failure, and so the id in `aria-describedby`
           is never a reference to a node that does not exist. */}

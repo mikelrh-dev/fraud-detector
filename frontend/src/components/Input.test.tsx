@@ -4,15 +4,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Input } from "./Input";
 import { INPUT_BASE } from "../lib/ui";
+import { expectCarries } from "../test-utils/className";
 
-/** Token-wise comparison, as in Button.test.tsx: a substring check on the whole
- *  class string would pass on a partial match. Duplicated rather than shared
- *  because this task is scoped to two components and their own test files. */
-function expectCarries(el: Element, fragment: string) {
-  for (const cls of fragment.split(" ").filter(Boolean)) {
-    expect(el.classList.contains(cls), `missing class ${cls}`).toBe(true);
-  }
-}
 
 /** Plain DOM assertions, not jest-dom matchers — `tsconfig.json` excludes
  *  `src/tests`, so the matcher types are invisible under `src/components`.

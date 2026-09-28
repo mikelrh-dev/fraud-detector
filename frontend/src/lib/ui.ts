@@ -110,6 +110,27 @@ export const INPUT_BASE =
   `text-slate-100 placeholder-slate-500 disabled:opacity-50 ` +
   FOCUS_RING;
 
+/**
+ * The invalid treatment for any form control.
+ *
+ * Keyed off the `aria-invalid` ATTRIBUTE, not the element, so a `<select>` or
+ * `<textarea>` gets it for free — it lives here rather than in `Input.tsx`
+ * precisely so the next control primitive does not have to rediscover that.
+ *
+ * The `aria-invalid:` prefix is load-bearing, not decoration. `INPUT_BASE`
+ * already carries a focus-visible ring, so a plain risk-tone ring override
+ * would tie with it and be decided by stylesheet order alone. Prefixed, it
+ * becomes an attribute selector and wins on specificity instead. That matters:
+ * Button's loading state was computed and then silently shadowed by exactly
+ * this mechanism, and no class-presence test can see it, because jsdom does no
+ * cascade.
+ *
+ * Held as contiguous literals: Tailwind scans raw source text, so an
+ * interpolated class here would emit no CSS and raise no error.
+ */
+export const INVALID_INPUT =
+  "aria-invalid:border-risk-critical aria-invalid:focus-visible:ring-risk-critical";
+
 /** Block-level so the label stacks above its input; never an error colour. */
 export const FIELD_LABEL = "block text-sm text-slate-300 mb-1";
 

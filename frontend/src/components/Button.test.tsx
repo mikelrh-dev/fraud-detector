@@ -5,15 +5,8 @@ import { join } from "node:path";
 import type { FormEvent } from "react";
 import { Button } from "./Button";
 import { BTN_SIZES, BTN_VARIANTS } from "../lib/ui";
+import { expectCarries } from "../test-utils/className";
 
-/** Token-wise comparison. A substring check on the whole class string would
- *  pass on a partial match and fail on a class that `className` legitimately
- *  interleaves; the contract is that every class in a fragment is present. */
-function expectCarries(el: Element, fragment: string) {
-  for (const cls of fragment.split(" ").filter(Boolean)) {
-    expect(el.classList.contains(cls), `missing class ${cls}`).toBe(true);
-  }
-}
 
 const variantNames = Object.keys(BTN_VARIANTS) as (keyof typeof BTN_VARIANTS)[];
 const sizeNames = Object.keys(BTN_SIZES) as (keyof typeof BTN_SIZES)[];
