@@ -74,15 +74,22 @@ function mockAuth() {
  * A no-op is the right stub. `ResponsiveContainer` uses it to size itself, and
  * jsdom has no layout to report; DESIGN.md's testing note is explicit that
  * these tests assert classNames, not computed geometry.
+ *
+ * The stub itself now lives in `tests/setup.ts`. It used to be declared here,
+ * with an argument against a global one: a global shim would hide the fact that
+ * the other suites never exercise the chart code paths at all. The argument about
+ * the coverage gap is right and still recorded. The conclusion about WHERE the
+ * stub lives was not, and the repo proved it: `App.routing.test.tsx` renders
+ * this page at four paths, declared no stub, and recharts threw into the route
+ * ErrorBoundary AFTER the page's own assertions had already passed. The test
+ * reported green while the route had failed.
+ *
+ * A per-file stub enforces a fact at the cost of a silent one. The missing chart
+ * coverage is discoverable by reading which suites mount a chart; a swallowed
+ * render error is not discoverable at all.
  */
-class StubResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-globalThis.ResizeObserver =
-  globalThis.ResizeObserver ??
-  (StubResizeObserver as unknown as typeof ResizeObserver);
+/** The chart paths are exercised only here; see the note above. */
+void 0;
 
 /**
  * Fails only the PAGINATED transactions query (`page_size=10`), which is the
