@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "./Button";
 
 export interface ErrorStateProps {
   /** Primary message, text-slate-300. */
@@ -49,13 +50,18 @@ export function ErrorState({
       <p className="mt-1 max-w-xs text-xs text-slate-500">{hint}</p>
       {onRetry && (
         <div className="mt-4">
-          <button
-            type="button"
-            onClick={onRetry}
-            className="btn-motion active:scale-[0.98] rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
-          >
+          {/* The shared `Button`, so this retry matches the hand-written retry a
+              page renders beside it. On DashboardPage both appear in the same
+              view -- `ErrorState` for the failed metrics request, plus a retry
+              on the empty table -- and they were a text-colour step apart, so
+              the same label looked like two different actions.
+
+              It also gains what the raw button never had: the keyboard-only
+              focus ring, `touch-manipulation`, and the `enabled:` gate that
+              stops the hover firing on a disabled retry. */}
+          <Button variant="secondary" size="sm" onClick={onRetry}>
             {retryLabel}
-          </button>
+          </Button>
         </div>
       )}
     </div>
