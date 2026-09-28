@@ -59,6 +59,54 @@ const RAW_BTN_BASE =
   "btn-motion + active:scale-[0.98] + touch-manipulation is BTN_BASE re-typed. Render a <Button> (src/components/Button.tsx) or compose cn(BTN_BASE, …).";
 const RAW_HEX =
   "Raw hex in a class list. Add a token to the @theme block in src/index.css and use the utility — DESIGN.md sanctions hex in index.css, lib/chart-theme.ts, index.html and favicon.svg only.";
+const RAW_SEMANTIC_COLOR =
+  "Raw chromatic palette value where the design system defines a token. Pick the token that means this element's ROLE: risk-clean / risk-warn / risk-critical for a risk state, accent for brand or primary action, status-info for informational. The neutral slate ramp stays legal — DESIGN.md names it as its own values.";
+
+/**
+ * One representative per chromatic family, as an INDEPENDENT literal list.
+ *
+ * Written out here rather than imported from the rule, because importing the
+ * rule's own list would be the tautology this file exists to avoid: delete
+ * `"rose"` from the rule and an imported list loses it too, so the test would
+ * pass having checked one family fewer.
+ *
+ * It has to be one CASE PER FAMILY, not one case holding all sixteen, and a
+ * mutation proved why: the rule reports once per VALUE, so sixteen families in
+ * a single `className` still draw one report, and dropping `"rose"` from the
+ * rule left that case green. Sixteen cases cannot hide a removal.
+ *
+ * The limitation this leaves, stated rather than hidden: it pins "each of these
+ * sixteen is caught", not "nothing beyond these sixteen is caught". A family
+ * ADDED to the rule would go unnoticed here until it met real code.
+ */
+const CHROMATIC_FAMILY_SAMPLES = [
+  "text-red-500",
+  "text-orange-500",
+  "text-amber-500",
+  "text-yellow-500",
+  "text-lime-500",
+  "text-green-500",
+  "text-emerald-500",
+  "text-teal-500",
+  "text-cyan-500",
+  "text-sky-500",
+  "text-blue-500",
+  "text-indigo-500",
+  "text-violet-500",
+  "text-purple-500",
+  "text-fuchsia-500",
+  "text-pink-500",
+  "text-rose-500",
+];
+
+/** The neutral families, one per case, for the same reason as above. */
+const NEUTRAL_FAMILY_SAMPLES = [
+  "text-slate-400",
+  "text-zinc-400",
+  "text-stone-400",
+  "text-neutral-400",
+  "text-gray-400",
+];
 
 // --------------------------------------------------------------------------
 // 1. bareFocus — a bare `focus:` PAINTING utility in a class position
@@ -385,7 +433,141 @@ describe("ui/no-raw-class-tokens — rawHex", () => {
 });
 
 // --------------------------------------------------------------------------
-// 6. Scope. The part of the rule that was wrong.
+// 6. rawSemanticColor — a raw CHROMATIC value where a token is defined
+// --------------------------------------------------------------------------
+
+describe("ui/no-raw-class-tokens - rawSemanticColor", () => {
+  ruleTester.run("rawSemanticColor", ui.rules["no-raw-class-tokens"], {
+    valid: [
+      // THE NEUTRAL RAMP IS LEGAL, and this is the load-bearing case in the
+      // whole check. DESIGN.md's own Surfaces and Text tables NAME these
+      // spellings, and line 419 says the default palette is not re-declared.
+      // A check that flagged `bg-slate-800` would need a suppression on every
+      // one of the ~200 neutral values in this tree.
+      { code: `const a = <div className="bg-slate-900 border border-slate-800 text-slate-200" />;` },
+      { code: `const a = <div className="text-slate-400 hover:text-slate-100" />;` },
+      { code: `const a = <div className="bg-zinc-900 text-stone-400 text-neutral-500" />;` },
+      // One case per neutral family, so adding a chromatic family that happens
+      // to be one of these, or removing a neutral carve-out, is visible here.
+      ...NEUTRAL_FAMILY_SAMPLES.map((cls) => ({
+        code: `const a = <div className="${cls}" />;`,
+      })),
+      // The sanctioned form: every token the project actually defines.
+      { code: `const a = <div className="text-risk-critical bg-risk-clean/10 border-risk-warn/30" />;` },
+      { code: `const a = <div className="text-accent hover:bg-action-hover" />;` },
+      { code: `const a = <div className="text-status-info bg-page-bg border-divider text-text-muted" />;` },
+      // A family-looking name that is not a Tailwind family.
+      { code: `const a = <div className="text-burgundy-400 bg-forest-100" />;` },
+      // No numeric step: `red` alone is not a colour step, and a bare `red`
+      // is not a utility this project emits.
+      { code: `const a = <div className="text-red border-red" />;` },
+      {
+        // THE NUMERIC-STEP GUARD, and this case is admitted to be contrived,
+        // on the same terms as the hex word-boundary case in the `rawHex`
+        // suite: no real Tailwind utility pairs a chromatic family with a
+        // non-numeric step, because every colour step is a number.
+        //
+        // It is pinned anyway because a mutation showed the guard is otherwise
+        // unobservable. With it removed, `text-risk-critical` still does not
+        // report — `risk` is not a chromatic family either — so the guard
+        // changes nothing any other case in this file can see, and a branch of
+        // a predicate that no test reaches is a claim nobody checked. The cost
+        // of a contrived valid case is far lower than the cost of a false
+        // positive the day someone hand-writes a colour-shaped token.
+        code: `const a = <div className="bg-red-500x" />;`,
+      },
+      // Non-class positions, for the same reason every other check has them.
+      { code: `const a = <div data-x="text-red-400" />;` },
+      { code: `const a = <div aria-label="text-red-400" />;` },
+      { code: `const t = "text-red-400";` },
+    ],
+    invalid: [
+      {
+        // The plain form, and the reason the check exists: an error message in
+        // raw red-400 sitting in a file whose other error message uses the
+        // risk token.
+        code: `const a = <p className="text-red-400" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // A variant prefix. `hover:text-red-400` is what a hand-rolled
+        // destructive hover looked like.
+        code: `const a = <button className="hover:text-red-400" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // `focus-visible:` is a state, and the colour after it is still the
+        // offence. This is the case a naive `startsWith("hover:")`-style
+        // stripper gets wrong in the other direction.
+        code: `const a = <input className="focus-visible:ring-green-500" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // TWO variants stacked. Each segment is a state or breakpoint.
+        code: `const a = <div className="md:enabled:hover:bg-green-600" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // An alpha modifier, which is the shape the fired-rules chip used:
+        // `bg-red-900/30 text-red-400 border-red-800/30`.
+        code: `const a = <span className="bg-red-900/30 text-red-400 border border-red-800/30" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // A SIDE-SPECIFIC border, where the namespace is `border-t` and not
+        // `border`. `border-t-red-400` must not be read as family `t-red`.
+        code: `const a = <div className="border-t-red-400" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // A variant that is a MOTION or breakpoint modifier rather than a
+        // state. The variant is orthogonal to the colour, so a raw red under
+        // `motion-safe:` is still a raw red. This case is here because the
+        // obvious implementation — strip only the segments it recognises as
+        // states — would either wave this through or crash on it.
+        code: `const a = <div className="motion-safe:text-red-400" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      // Every chromatic family, ONE PER CASE, to pin the LIST rather than one
+      // member of it. See `CHROMATIC_FAMILY_SAMPLES` for why one case each.
+      ...CHROMATIC_FAMILY_SAMPLES.map((cls) => ({
+        code: `const a = <div className="${cls}" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      })),
+      {
+        // ONE report for fifteen tokens, because a class list is one VALUE and
+        // the rule reports per value — the same de-duplication every other
+        // check has, pinned here so this check cannot quietly grow a
+        // fifteen-line report for one element.
+        code: `const a = <div className="text-orange-500 text-amber-500 text-yellow-500 text-lime-500 text-emerald-500 text-teal-500 text-cyan-500 text-sky-500 text-blue-500 text-indigo-500 text-violet-500 text-purple-500 text-fuchsia-500 text-pink-500 text-rose-500" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // A non-`text` namespace, so the namespace list is pinned and not just
+        // the one the project's own code happened to use.
+        code: `const a = <div className="fill-red-500 stroke-blue-300 from-green-200 via-yellow-300 to-orange-400" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // The `!` important prefix.
+        code: `const a = <div className="!text-red-400" />;`,
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+      {
+        // A `cn(...)` argument at module scope — the second class position,
+        // so the new check is proved at the same places as the other five.
+        code: [
+          `import { cn } from "./lib/ui";`,
+          `const BAD = cn("text-green-500", x);`,
+        ].join("\n"),
+        errors: [{ message: RAW_SEMANTIC_COLOR }],
+      },
+    ],
+  });
+});
+
+// --------------------------------------------------------------------------
+// 7. Scope. The part of the rule that was wrong.
 // --------------------------------------------------------------------------
 
 describe("ui/no-raw-class-tokens — what counts as a class string", () => {

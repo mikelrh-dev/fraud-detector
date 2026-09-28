@@ -65,7 +65,7 @@ function UserSection({ user, onLogout }: UserSectionProps) {
       </div>
       <button
         onClick={onLogout}
-        className="w-full flex items-center gap-2 text-xs text-slate-500 hover:text-red-400 transition-colors py-1"
+        className="w-full flex items-center gap-2 text-xs text-slate-500 hover:text-risk-critical transition-colors py-1"
       >
         <SignOut size={16} aria-hidden="true" />
         Cerrar sesión
@@ -118,7 +118,7 @@ export function Sidebar({ activeItem }: SidebarProps) {
       {/* Brand */}
       <div className="p-4 border-b border-slate-800">
         <div className="flex items-center gap-2">
-          <BrandShield className="h-5 w-5 text-red-400" />
+          <BrandShield className="h-5 w-5 text-accent" />
           <span className="text-sm font-bold text-slate-100">Fraud Detector</span>
         </div>
       </div>

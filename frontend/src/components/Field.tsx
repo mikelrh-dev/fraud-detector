@@ -63,11 +63,17 @@ export interface FieldProps {
  * Label + control + hint/error, with the ARIA wiring done once, here.
  *
  * WHAT THIS FIXES: the audit found the error text visually adjacent to its
- * input but not programmatically associated with it — `<p className="text-xs
- * text-red-400 mt-1">` under an `<input>` with no id on the paragraph, no
- * `aria-describedby` on the control, and no `aria-invalid` anywhere. A sighted
- * user saw the failure; a screen reader announced the label, the value and
- * nothing else, so the validation failure was never spoken.
+ * input but not programmatically associated with it — a small red paragraph
+ * under an `<input>` with no id on the paragraph, no `aria-describedby` on the
+ * control, and no `aria-invalid` anywhere. A sighted user saw the failure; a
+ * screen reader announced the label, the value and nothing else, so the
+ * validation failure was never spoken.
+ *
+ * The old class list is described in words rather than written out, on purpose.
+ * Tailwind's scanner reads comments as plain text, so spelling the utilities
+ * here emits real rules for them — and the colour one had become dead weight
+ * the moment the last call site moved to the risk token. Same trap as the note
+ * in `lib/ui.ts`.
  */
 export function Field({ id, label, hint, error, children }: FieldProps) {
   const errorId = `${id}-error`;

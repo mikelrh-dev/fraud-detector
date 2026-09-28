@@ -211,11 +211,202 @@ const looksLikeBtnBase = (tokens) =>
   BTN_BASE_TOKENS.every((t) => tokens.includes(t));
 
 /**
+ * The CHROMATIC half of the Tailwind palette — the families that carry a hue.
+ *
+ * WHY CHROMATIC ONLY, AND NOT EVERY RAW PALETTE VALUE
+ * ---------------------------------------------------
+ * The obvious reading of "no raw palette values, use semantic tokens" would ban
+ * `slate-800` too, and that rule does not exist in this project — DESIGN.md
+ * says the opposite. Its Surfaces and Text tables (lines 16-31) NAME the raw
+ * spellings as the design system's own values ("Card background | #0f172a |
+ * `slate-900`"), and line 419 states it outright: the default palette is NOT
+ * re-declared, use the native utilities. `slate-*` is the neutral ink here, and
+ * there are ~200 of them.
+ *
+ * So a check that fired on every raw palette value would need a suppression on
+ * every one of them. A 200-entry suppression list is worse than no check: it
+ * reads as coverage, and every entry is a lie the next reviewer has to audit.
+ * That is the failure mode this check is designed to avoid, so it draws its
+ * line where DESIGN.md actually draws one.
+ *
+ * WHERE THE LINE IS: hue means something here. `index.css` declares the
+ * `risk-*` triad to be the "SINGLE SOURCE for risk/status coloring", and
+ * DESIGN.md's accent contract says "Never use accent to color data or
+ * badges". Both rules are about MEANING, and a chromatic raw value is exactly
+ * how you break one silently: `text-red-400` next to `text-risk-critical` for
+ * the same failure state, neither following a theme change, no build error
+ * either way. The neutral ramp carries no meaning that a theme could change,
+ * which is why it stays legal and why excluding it is not a loophole.
+ */
+const CHROMATIC_FAMILIES = [
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "lime",
+  "green",
+  "emerald",
+  "teal",
+  "cyan",
+  "sky",
+  "blue",
+  "indigo",
+  "violet",
+  "purple",
+  "fuchsia",
+  "pink",
+  "rose",
+];
+
+/**
+ * A raw chromatic colour utility, with its variants and alpha modifier intact.
+ *
+ * Examples that ARE caught:
+ *   text-red-400            bg-red-900/30      border-red-800/30
+ *   hover:text-red-400      focus-visible:bg-red-500/10
+ *   enabled:hover:bg-green-600
+ *
+ * Examples that are NOT (and the reasons are load-bearing, not gaps):
+ *   text-risk-critical       — a semantic token, which is the whole point
+ *   text-slate-400          — the neutral ramp; see CHROMATIC_FAMILIES
+ *   text-brandish-400       — `brandish` is not a Tailwind family
+ *   text-red                — `red` with no numeric shade is not a colour step
+ *   text-burgundy-400       — not a family
+ *   reduced-motion:text-red-400 — a VARIANT named `reduced-motion`, not a
+ *     painting utility; see VARIANT_ALLOWLIST
+ */
+const COLOR_NAMESPACES = new Set([
+  "bg",
+  "text",
+  "border",
+  "border-t",
+  "border-r",
+  "border-b",
+  "border-l",
+  "ring",
+  "outline",
+  "fill",
+  "stroke",
+  "from",
+  "via",
+  "to",
+  "shadow",
+  "accent",
+  "caret",
+  "decoration",
+  "divide",
+  "placeholder",
+]);
+
+/**
+ * A leading `foo:` segment that is NOT a state or breakpoint variant.
+ *
+ * Without this, `reduced-motion:text-red-400` and `motion-safe:text-red-400`
+ * would be read as colour utilities. The value after the colon is what decides:
+ * a variant is followed by a `:` or the utility itself, never by a bare colour
+ * step, so the test is "does the segment name a Tailwind state".
+ */
+const STATE_VARIANTS = new Set([
+  "hover",
+  "focus",
+  "focus-visible",
+  "focus-within",
+  "active",
+  "visited",
+  "target",
+  "disabled",
+  "enabled",
+  "checked",
+  "indeterminate",
+  "default",
+  "required",
+  "valid",
+  "invalid",
+  "in-range",
+  "out-of-range",
+  "placeholder-shown",
+  "autofill",
+  "read-only",
+  "first",
+  "last",
+  "odd",
+  "even",
+  "first-of-type",
+  "last-of-type",
+  "only",
+  "empty",
+  "selection",
+]);
+
+/** Breakpoint / container / motion variants, all of which precede a utility. */
+const NON_STATE_PREFIXES = [
+  "sm",
+  "md",
+  "lg",
+  "xl",
+  "2xl",
+  "min",
+  "max",
+  "motion",
+  "print",
+  "portrait",
+  "landscape",
+  "rtl",
+  "ltr",
+  "dark",
+  "group",
+  "peer",
+  "container",
+];
+
+const isVariantSegment = (segment) =>
+  STATE_VARIANTS.has(segment) ||
+  NON_STATE_PREFIXES.some((p) => segment === p || segment.startsWith(`${p}-`));
+
+/** Strip a trailing `/<alpha>` modifier, and any `!` important prefix. */
+const stripAlpha = (token) => token.split("/")[0].replace(/^!/, "");
+
+/**
+ * @param {string} token one whitespace-separated class
+ * @returns {boolean}
+ */
+const isRawChromaticColor = (token) => {
+  let body = stripAlpha(token);
+  // Drop leading variant segments, longest first so `focus-visible` is not
+  // mistaken for `focus` + `-visible`.
+  const segments = body.split(":");
+  while (segments.length > 1 && isVariantSegment(segments[0])) {
+    segments.shift();
+  }
+  if (segments.length !== 1) return false;
+  body = segments[0];
+
+  // A colour utility is `<namespace>-<family>-<step>`. `text-risk-critical` has
+  // a family but no numeric step; `text-red-400` has both.
+  for (const ns of COLOR_NAMESPACES) {
+    if (body === ns) continue;
+    if (!body.startsWith(`${ns}-`)) continue;
+    const rest = body.slice(ns.length + 1);
+    const dash = rest.lastIndexOf("-");
+    if (dash === -1) continue;
+    const family = rest.slice(0, dash);
+    const step = rest.slice(dash + 1);
+    if (!/^\d{2,3}$/.test(step)) continue;
+    if (!CHROMATIC_FAMILIES.includes(family)) continue;
+    // `border-t-red-400` is a real utility and `border-t` is listed above; the
+    // loop reaches `border` first only for tokens that start with `border-`,
+    // and `border-t-red-400` starts with `border-t-`, so ordering is safe.
+    return true;
+  }
+  return false;
+};
+
+/**
  * @typedef {{ id: string, scope: "token" | "value", message: string,
  *             test: (tokens: string[], token: string) => boolean }} Check
  */
 
-/** @type {Check[]} All five checks; all of them apply at a class position. */
+/** @type {Check[]} All six checks; all of them apply at a class position. */
 const CHECKS = [
   {
     id: "bareFocus",
@@ -254,6 +445,13 @@ const CHECKS = [
     message:
       "Raw hex in a class list. Add a token to the @theme block in src/index.css and use the utility — DESIGN.md sanctions hex in index.css, lib/chart-theme.ts, index.html and favicon.svg only.",
   },
+  {
+    id: "rawSemanticColor",
+    scope: "token",
+    test: (_tokens, token) => isRawChromaticColor(token),
+    message:
+      "Raw chromatic palette value where the design system defines a token. Pick the token that means this element's ROLE: risk-clean / risk-warn / risk-critical for a risk state, accent for brand or primary action, status-info for informational. The neutral slate ramp stays legal — DESIGN.md names it as its own values.",
+  },
 ];
 
 /** @type {import("eslint").Rule.RuleModule} */
@@ -272,6 +470,7 @@ const rule = {
       rawInputChrome: "{{message}}",
       rawBtnBase: "{{message}}",
       rawHex: "{{message}}",
+      rawSemanticColor: "{{message}}",
     },
   },
   create(context) {

@@ -182,7 +182,7 @@ export default function DashboardPage() {
               icon={ShieldWarning}
               tone="critical"
               highlight={
-                (metrics?.fraud_percentage || 0) > 5 ? "text-red-400" : "text-green-400"
+                (metrics?.fraud_percentage || 0) > 5 ? "critical" : "clean"
               }
             />
             <MetricCard
@@ -199,7 +199,7 @@ export default function DashboardPage() {
               icon={Bell}
               tone="warn"
               highlight={
-                (metrics?.active_alerts || 0) > 0 ? "text-yellow-400" : "text-green-400"
+                (metrics?.active_alerts || 0) > 0 ? "warn" : "clean"
               }
             />
             </MotionList>
@@ -332,10 +332,30 @@ export default function DashboardPage() {
   );
 }
 
-/** Metric icon tone → token color class (no hex; see DESIGN.md tokens). */
+/** Metric tone → token colour class (no hex; see DESIGN.md tokens). */
 type MetricTone = "info" | "warn" | "critical" | "clean";
 
-const ICON_TONE_CLASSES: Record<MetricTone, string> = {
+/**
+ * ONE table for both the icon and the value.
+ *
+ * It used to be `ICON_TONE_CLASSES`, used by the icon only, and the VALUE took
+ * a ready-made class string through a `highlight?: string` prop. That prop is
+ * how three raw palette steps — a red, a green and a yellow, none of them a
+ * token — reached this component: raw values standing in for risk semantics
+ * that this file already had tokens for, one line above, in the same card. The
+ * icon said "critical" in `--color-risk-critical` while the number next to it
+ * said it in a lighter, unnamed red, and neither followed a theme change.
+ *
+ * (Described in words rather than spelled out: Tailwind's scanner reads
+ * comments, so writing the utilities here emits rules for them. Same trap as
+ * the note in `lib/ui.ts`.)
+ *
+ * `highlight` is now a TONE, not a class, so the value cannot name a colour
+ * that the design system has not defined. The tone is still data-driven — the
+ * fraud card's icon is always `critical` while its value is `clean` when the
+ * rate is low — which is why this is a lookup and not a reuse of `tone`.
+ */
+const TONE_TEXT_CLASSES: Record<MetricTone, string> = {
   info: "text-status-info",
   warn: "text-risk-warn",
   critical: "text-risk-critical",
@@ -356,7 +376,8 @@ function MetricCard({
   format: (n: number) => string;
   icon: Icon;
   tone: MetricTone;
-  highlight?: string;
+  /** Tone of the VALUE, when it is data-driven. Omitted = neutral ink. */
+  highlight?: MetricTone;
 }) {
   return (
     // Hover = lift + border tint only. NO shadow animation (DESIGN.md non-goals):
@@ -365,12 +386,16 @@ function MetricCard({
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs text-slate-500 font-medium">{label}</span>
         <span
-          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${ICON_TONE_CLASSES[tone]}`}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${TONE_TEXT_CLASSES[tone]}`}
         >
           <Icon size={18} weight="regular" />
         </span>
       </div>
-      <p className={`text-2xl font-bold ${highlight || "text-slate-100"}`}>
+      <p
+        className={`text-2xl font-bold ${
+          highlight ? TONE_TEXT_CLASSES[highlight] : "text-slate-100"
+        }`}
+      >
         {value === null ? (
           "—"
         ) : (

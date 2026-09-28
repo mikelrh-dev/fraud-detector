@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Brain, Circuitry, Scales } from "@phosphor-icons/react";
 import type { ScoreResponse } from "../api/transactions";
+import { Badge } from "../components/Badge";
 import { ClassificationBadge } from "../components/ClassificationBadge";
 import { MotionList } from "../components/MotionList";
 import { formatScore, isMLTrained } from "../lib/score";
@@ -204,6 +205,26 @@ function BreakdownCard({
   );
 }
 
+/**
+ * The rules that fired, one chip each.
+ *
+ * These were hand-rolled on a dark red fill at 30% alpha, a darker red border
+ * at the same alpha, and a lighter red for the label — three raw steps of the
+ * red palette, none of which is a design-system token, so the chips ignored a
+ * theme change entirely. `critical` is the tone they were already reaching for,
+ * and `Badge` is where that tone is defined, so the choice is the intended
+ * pairing rather than a hand-rolled approximation of it: `--color-risk-critical`
+ * at `/10` for the fill, `/30` for the border, full strength for the text
+ * (DESIGN.md — "Badge bg pattern").
+ *
+ * The three old utilities are described in words, not written out, because
+ * Tailwind's scanner reads comments: naming them here emits rules for exactly
+ * the three classes this migration exists to delete. Same trap as the note in
+ * `lib/ui.ts`, and the first version of this comment caused it.
+ *
+ * `size="sm"` is the compact pill the alert-status badges use, which is what
+ * these already were in spirit: `px-2 py-0.5 text-[11px]`.
+ */
 function FiredRulesChips({ rules }: { rules: string[] }) {
   if (rules.length === 0) return null;
   return (
@@ -211,12 +232,9 @@ function FiredRulesChips({ rules }: { rules: string[] }) {
       <h4 className="text-xs text-slate-400 font-medium mb-2">Reglas Activadas</h4>
       <MotionList className="flex flex-wrap gap-2">
         {rules.map((rule) => (
-          <span
-            key={rule}
-            className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-red-900/30 text-red-400 border border-red-800/30"
-          >
+          <Badge key={rule} tone="critical" size="sm">
             {rule}
-          </span>
+          </Badge>
         ))}
       </MotionList>
     </div>

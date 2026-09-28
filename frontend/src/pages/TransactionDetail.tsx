@@ -10,12 +10,13 @@ import { formatMoney } from "../lib/money";
 import { formatTimestamp } from "../lib/datetime";
 import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import {
-  classificationPillClass,
   classificationText,
+  classificationTone,
 } from "../lib/classification";
 import { ScoreResultCard } from "./ScoreResultCard";
 import { PageTransition } from "../components/PageTransition";
 import { ShapAttributionCard } from "../components/ShapAttributionCard";
+import { Badge } from "../components/Badge";
 
 interface ReportResponse {
   transaction_id: string;
@@ -325,7 +326,7 @@ export default function TransactionDetail() {
             down the same file has had one all along, so the two failure UIs in
             one page were inconsistent with each other. */}
         <div role="alert" className="text-center" data-testid="detail-error">
-          <p className="text-red-400 mb-4">
+          <p className="text-risk-critical mb-4">
             {error ? "Error al cargar la transacción" : "Transacción no encontrada"}
           </p>
           {/* Unmigrated: a text link, not a button. `ghost` would drop the
@@ -343,7 +344,6 @@ export default function TransactionDetail() {
   }
 
   const classification = statusToClassification(tx.status);
-  const colorKey = classificationPillClass(classification);
   const classificationLabel = classificationText(classification);
 
   return (
@@ -406,10 +406,10 @@ export default function TransactionDetail() {
             Detalle de Transacción
           </h1>
           <span className="text-xs font-mono text-slate-500 truncate min-w-0">{tx.id}</span>
-          <span
-            className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium border ${colorKey}`}
-          >
-            {classificationLabel}
+          <span className="ml-auto">
+            <Badge tone={classificationTone(classification)} size="sm">
+              {classificationLabel}
+            </Badge>
           </span>
         </div>
       </header>
@@ -497,7 +497,7 @@ export default function TransactionDetail() {
               No hay reporte disponible para esta transacción.
             </div>
           ) : report.status === "pending" ? (
-            <div className="flex items-center gap-3 text-sm text-yellow-400">
+            <div className="flex items-center gap-3 text-sm text-risk-warn">
               <svg
                 className="w-4 h-4 animate-spin"
                 fill="none"
@@ -525,7 +525,7 @@ export default function TransactionDetail() {
                is waiting on, and this file already had one announced failure
                next to an unannounced one. */
             <div role="alert" data-testid="report-status-failed">
-              <p className="text-sm text-red-400 mb-2">
+              <p className="text-sm text-risk-critical mb-2">
                 {report.error_detail || "El reporte no pudo generarse."}
               </p>
               {report.report_text && (

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Plus } from "@phosphor-icons/react";
 import { listTransactions } from "../api/transactions";
 import { ClassificationBadge } from "../components/ClassificationBadge";
+import { Badge, type BadgeTone } from "../components/Badge";
 import { ReceiptLineArt, State } from "../components/State";
 import { MotionList } from "../components/MotionList";
 import { PageTransition } from "../components/PageTransition";
@@ -65,6 +66,37 @@ const statusPills: { key: StatusFilter | null; label: string }[] = [
   { key: "review", label: "Revisión" },
   { key: "fraud", label: "Fraude" },
 ];
+
+/**
+ * The STATUS column's pill: storage status → tone, and storage status → label.
+ *
+ * This was a four-armed ternary of class strings built on the `status-*` alias
+ * tokens, and it is now the `Badge` primitive. Two reasons, and the second is
+ * the one that matters:
+ *
+ *  1. The `status-approved/flagged/blocked` tokens are documented in
+ *     `index.css` as LEGACY ALIASES derived from `risk-*`, and they resolve to
+ *     the same three hexes `Badge` uses. So this is not a colour change.
+ *  2. It was a hand-rolled pill: no border, `rounded` instead of
+ *     `rounded-full`, and no `/30` border tone. Four shape/border differences
+ *     from the one primitive every other status pill in the app renders, which
+ *     is the drift the migration exists to stop.
+ *
+ * The label half moves here for the same reason it was a ternary: a status with
+ * no tone and no label is one map, not two, and the unknown branch falls
+ * through to `Badge`'s neutral plus the raw status, which is what it did.
+ */
+const STATUS_TONES: Record<string, BadgeTone> = {
+  approved: "clean",
+  flagged: "warn",
+  blocked: "critical",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  approved: "Legítimo",
+  flagged: "Revisión",
+  blocked: "Fraude",
+};
 
 const PAGE_SIZE = 10;
 
@@ -296,12 +328,17 @@ export default function TransactionsPage() {
           // were inconsistent with each other, and this one was the silent half.
           //
           // Left hand-rolled rather than migrated to `State`, deliberately: it
-          // uses a raw `text-red-400` instead of the risk token and a bare
-          // `py-12`, and migrating it would change the pixels, which this pass
-          // is scoped not to do. The live-region role is the part that is a
-          // defect, so that is the part fixed here.
+          // uses a bare `py-12` and `State` brings its own spacing, so migrating
+          // it would change the layout, which this pass is scoped not to do.
+          // The live-region role is the part that is a defect, so that is the
+          // part fixed here.
+          //
+          // The colour WAS a raw red palette step and is now the risk token, so
+          // this failure block matches every other failure block in the app
+          // instead of being the one that does not follow a theme change.
+          // (Named in words: Tailwind's scanner reads comments.)
           <div role="alert" className="text-center py-12" data-testid="list-error">
-            <p className="text-sm text-red-400">Error al cargar transacciones</p>
+            <p className="text-sm text-risk-critical">Error al cargar transacciones</p>
           </div>
         ) : data && data.items.length === 0 ? (
           <State
@@ -411,25 +448,9 @@ export default function TransactionsPage() {
                 </td>
                           <td className="px-4 py-3 text-slate-400">{tx.currency}</td>
                           <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                tx.status === "approved"
-                                  ? "bg-status-approved/10 text-status-approved"
-                                  : tx.status === "flagged"
-                                    ? "bg-status-flagged/10 text-status-flagged"
-                                    : tx.status === "blocked"
-                                      ? "bg-status-blocked/10 text-status-blocked"
-                                      : "bg-slate-800 text-slate-400"
-                              }`}
-                            >
-                              {tx.status === "approved"
-                                ? "Legítimo"
-                                : tx.status === "flagged"
-                                  ? "Revisión"
-                                  : tx.status === "blocked"
-                                    ? "Fraude"
-                                    : tx.status}
-                            </span>
+                            <Badge tone={STATUS_TONES[tx.status] ?? "neutral"} size="sm">
+                              {STATUS_LABELS[tx.status] ?? tx.status}
+                            </Badge>
                           </td>
                           <td className={`px-4 py-3 text-slate-300 ${NUMERIC_CELL}`}>
                             {formatScore(tx.risk_score)}

@@ -1,9 +1,10 @@
 import type { Transaction } from "../api/transactions";
 import { Link } from "react-router-dom";
 import { ReceiptLineArt, State } from "./State";
-import { classificationPillClass, classificationText } from "../lib/classification";
+import { classificationTone, classificationText } from "../lib/classification";
 import { formatMoney } from "../lib/money";
 import { formatTimestamp } from "../lib/datetime";
+import { Badge } from "./Badge";
 import { RiskMeter } from "./RiskMeter";
 import {
   FOCUS_RING,
@@ -214,11 +215,9 @@ export default function TransactionTable({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${classificationPillClass(classification)}`}
-                      >
+                      <Badge tone={classificationTone(classification)} size="sm">
                         {classificationText(classification)}
-                      </span>
+                      </Badge>
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs capitalize">
                       {tx.status}

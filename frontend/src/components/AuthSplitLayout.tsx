@@ -77,7 +77,7 @@ function BrandPanel() {
 
       <div className="relative">
         <div className="w-fit rounded-2xl border border-slate-800 bg-slate-900 p-3">
-          <BrandShield className="h-16 w-16 text-red-400" />
+          <BrandShield className="h-16 w-16 text-accent" />
         </div>
 
         <h1 className="mt-8 text-4xl lg:text-5xl font-semibold tracking-tighter leading-[1.05] text-slate-100">
@@ -127,7 +127,7 @@ export function AuthSplitLayout({ children }: AuthSplitLayoutProps) {
         className="md:hidden flex h-14 items-center gap-2 border-b border-slate-800/60 px-4"
         style={{ "--i": 0 } as StaggerStyle}
       >
-        <BrandShield className="h-7 w-7 text-red-400" />
+        <BrandShield className="h-7 w-7 text-accent" />
         <span className="text-sm font-semibold text-slate-100">
           Fraud Detector
         </span>
