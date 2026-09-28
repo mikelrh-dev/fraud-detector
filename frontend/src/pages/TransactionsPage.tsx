@@ -12,6 +12,7 @@ import type { Transaction } from "../api/transactions";
 import { formatScore } from "../lib/score";
 import { formatMoney } from "../lib/money";
 import { formatTimestamp } from "../lib/datetime";
+import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import {
   FOCUS_RING,
   NUMERIC_CELL,
@@ -70,7 +71,12 @@ export default function TransactionsPage() {
           to own the landmark too. One per page: a second `<main>` is not a
           second landmark, it is invalid, and the skip link's target would
           become ambiguous. */}
-      <main className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
+      <main
+        id={MAIN_LANDMARK_ID}
+        tabIndex={-1}
+        className="flex-1 p-6 overflow-y-auto"
+        style={{ maxWidth: "var(--spacing-max-content)" }}
+      >
         <PageTransition>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

@@ -13,6 +13,7 @@ import { Sidebar } from "../components/Sidebar";
 import { AlertLineArt, ErrorState } from "../components/ErrorState";
 import { Button } from "../components/Button";
 import { useCountUp } from "../hooks/useCountUp";
+import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import type { Icon } from "@phosphor-icons/react";
 import { Bell, ChartBar, CreditCard, ShieldWarning } from "@phosphor-icons/react";
 
@@ -140,7 +141,7 @@ export default function DashboardPage() {
       <Sidebar activeItem="dashboard" />
 
       {/* Main content — route entrance animates once per navigation */}
-      <main className="flex-1 overflow-auto p-6">
+      <main id={MAIN_LANDMARK_ID} tabIndex={-1} className="flex-1 overflow-auto p-6">
             <PageTransition>
               <div className="max-w-7xl mx-auto space-y-6">
                 {/* The dashboard had no h1 at all: its first heading was the

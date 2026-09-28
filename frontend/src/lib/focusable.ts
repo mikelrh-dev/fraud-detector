@@ -22,6 +22,21 @@ export const FOCUSABLE =
   'button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])';
 
 /**
+ * The `id` carried by every page's `<main>` landmark, and the href target of
+ * the skip link in `components/SkipLink.tsx`.
+ *
+ * WHY A SHARED CONSTANT AND NOT THE STRING "main" IN SIX FILES: this module
+ * already exists to hold "one definition, two bugs gone" — `FOCUSABLE` was
+ * duplicated byte-identically in `Modal.tsx` and `ConfirmDialog.tsx`, and when a
+ * real focus bug turned up in one copy, duplication meant fixing one and leaving
+ * the other live. The skip link has the same shape of hazard and a worse
+ * failure mode: a skip link that targets an id nobody renders is a link that
+ * goes nowhere, and a sighted keyboard user cannot tell, because the only
+ * visible evidence is the URL fragment. One exported name, five imports.
+ */
+export const MAIN_LANDMARK_ID = "main";
+
+/**
  * Whether a matched element can actually take focus right now.
  *
  * A control can match `FOCUSABLE` and still be a dead end, and there are TWO

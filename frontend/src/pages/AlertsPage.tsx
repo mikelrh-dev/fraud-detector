@@ -21,6 +21,7 @@ import { PageTransition } from "../components/PageTransition";
 import { RiskMeter } from "../components/RiskMeter";
 import { NUMERIC_CELL } from "../lib/ui";
 import { formatTimestamp } from "../lib/datetime";
+import { MAIN_LANDMARK_ID } from "../lib/focusable";
 
 // Classification colour and label come from lib/classification. This page used
 // to carry its own map that was missing `pending` entirely, so an unrecognised
@@ -106,7 +107,7 @@ export default function AlertsPage() {
       <Sidebar activeItem="alerts" />
 
       {/* Main — route entrance animates once per navigation */}
-      <main className="flex-1 overflow-auto p-6">
+      <main id={MAIN_LANDMARK_ID} tabIndex={-1} className="flex-1 overflow-auto p-6">
         <PageTransition>
         <div className="max-w-7xl mx-auto space-y-4">
           <div className="flex items-center justify-between">

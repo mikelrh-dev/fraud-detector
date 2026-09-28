@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { ShieldCheck, Scales, Sparkle } from "@phosphor-icons/react";
 import { BrandShield } from "./BrandShield";
+import { MAIN_LANDMARK_ID } from "../lib/focusable";
 
 type StaggerStyle = CSSProperties & { "--i"?: number };
 
@@ -122,6 +123,8 @@ export function AuthSplitLayout({ children }: AuthSplitLayoutProps) {
 
       {/* Form panel */}
       <main
+        id={MAIN_LANDMARK_ID}
+        tabIndex={-1}
         className="flex items-center justify-center px-6 py-10 md:p-8"
         style={{ "--i": 1 } as StaggerStyle}
       >

@@ -9,6 +9,7 @@ import { Sidebar } from "../components/Sidebar";
 import { Button } from "../components/Button";
 import { Field } from "../components/Field";
 import { LABEL_MUTED } from "../lib/ui";
+import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import { Input } from "../components/Input";
 import type { ScoreResponse } from "../api/transactions";
 
@@ -69,7 +70,12 @@ export default function CreateTransactionPage() {
       {/* The main landmark, for the same reason as the other list pages: the
           shell renders `<Sidebar>` as a sibling and no `<main>` of its own, and
           the page that owns the content owns the landmark. Exactly one. */}
-      <main className="flex-1 p-6 overflow-y-auto" style={{ maxWidth: "var(--spacing-max-content)" }}>
+      <main
+        id={MAIN_LANDMARK_ID}
+        tabIndex={-1}
+        className="flex-1 p-6 overflow-y-auto"
+        style={{ maxWidth: "var(--spacing-max-content)" }}
+      >
         <PageTransition>
         <h1 className="text-lg font-bold text-text-primary mb-6">Nueva Transacción</h1>
 

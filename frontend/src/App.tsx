@@ -6,6 +6,7 @@ import {
   RouteErrorFallback,
 } from "./components/ErrorBoundary";
 import { RouteFallback } from "./components/RouteFallback";
+import { SkipLink } from "./components/SkipLink";
 import { logRenderError } from "./lib/logRenderError";
 import type { ReactNode } from "react";
 
@@ -94,6 +95,15 @@ export default function App() {
         makes the new failure recoverable — clicking any other link clears it
         without the user pressing "Reintentar".
       */}
+      {/*
+        The skip link goes ABOVE <Suspense> and is the first child of the
+        boundary, so it is the first focusable element in the document on every
+        route — including while a lazy chunk is in flight, which is exactly when
+        a keyboard user is tabbing. See SkipLink.tsx for why the app does not
+        wrap the pages in a layout route to host it.
+      */}
+      <SkipLink />
+
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

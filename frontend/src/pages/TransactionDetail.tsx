@@ -8,6 +8,7 @@ import apiClient from "../api/client";
 import { parseReportLines, type ReportBlock } from "../lib/report-format";
 import { formatMoney } from "../lib/money";
 import { formatTimestamp } from "../lib/datetime";
+import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import {
   classificationPillClass,
   classificationText,
@@ -391,7 +392,7 @@ export default function TransactionDetail() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto p-6 space-y-6">
+      <main id={MAIN_LANDMARK_ID} tabIndex={-1} className="max-w-5xl mx-auto p-6 space-y-6">
         <PageTransition>
         {/* Transaction details */}
         <section className="bg-slate-900 rounded-lg border border-slate-800 p-5">

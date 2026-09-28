@@ -199,6 +199,74 @@ body {
   transition-timing-function: var(--ease-out-expo-like);
 }
 
+/* Skip link — "skip to content", first focusable element in the document
+   (src/components/SkipLink.tsx, rendered above <Suspense> in App.tsx).
+
+   WHY HAND-WRITTEN AND NOT `sr-only` + `focus:not-sr-only` + `focus:absolute`:
+   those three utilities all set `position`. `not-sr-only` restores
+   `position: static`, `focus:absolute` sets `position: absolute`, and which
+   declaration applies is decided by Tailwind's internal stylesheet order and
+   by nothing else. It happens to come out right today — measured, the
+   `focus:absolute` rule does land after the `focus:not-sr-only` one — and
+   relying on that is the same class of bet as "className order decides the
+   cascade", which this codebase has already had to correct twice. One authored
+   rule per state, sharing identical values for every property both of them
+   declare, so no two declarations compete at all.
+
+   `fixed` rather than `absolute` in BOTH states: a skip link is reached by
+   Shift+Tab from anywhere in a long list, and an absolutely positioned one sits
+   1rem from the top of the DOCUMENT — so after a 2000px scroll the user would
+   land on a focused but off-screen link. Same value in both rules, so this
+   choice cannot become an ordering question. */
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 50;
+
+  /* Clipped, not hidden. The same trick `sr-only` uses: the link stays in the
+     accessibility tree and stays focusable, it is simply 1px and effectively
+     unclickable until it is focused. */
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Bare `:focus`, not `:focus-visible` — the one documented exception to
+   `ui/no-raw-class-tokens`, and the reason it is worth an exception. A skip
+   link is reached by Tab, by an assistive technology's "activate first link",
+   and by `element.focus()` from anywhere in the app, and it has to become
+   visible in ALL of those cases. `:focus-visible` is a heuristic about input
+   modality; a link that receives focus without the heuristic matching stays 1px
+   wide and invisible, so the user is tabbing onto something they cannot see.
+   The failure is asymmetric — revealing a moment early costs nothing, failing
+   to reveal strands a keyboard user — so it reveals on any focus.
+
+   The focus INDICATOR is deliberately NOT here. It stays a Tailwind
+   `focus:ring-2 focus:ring-focus-ring` on the element, so the skip link wears
+   the same ring, from the same token, at the same width as every other control
+   in the app. Spelling a ring out in hand-written CSS would put a second,
+   divergent copy of the focus treatment inside the very rule whose job is to
+   stop the design system growing one. */
+.skip-link:focus {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  border-radius: var(--radius-lg);
+  background-color: var(--color-slate-900);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
 /* Custom scrollbar for dark theme */
 ::-webkit-scrollbar {
   width: 8px;

@@ -422,7 +422,55 @@ The following custom tokens are defined in `frontend/src/index.css` via the `@th
 
 ---
 
-## Anti-rot lint — `ui/no-raw-class-tokens`
+## Landmarks & the skip link
+
+- **One `<main>` per route, owned by the page.** The app shell does not provide
+  one: `App.tsx` renders `<Routes>` directly and each page mounts its own
+  `<Sidebar>`, so a landmark has to live in the page whose content it labels.
+  Every `<main>` carries `id={MAIN_LANDMARK_ID}` and `tabIndex={-1}` —
+  programmatically focusable (a skip target) without becoming a tab stop (it
+  must not add a second stop between the shell and the first control). The id is
+  a single exported constant in `src/lib/focusable.ts`, not a literal in five
+  files: that module already exists to hold "one definition, two bugs gone", and
+  a skip link pointing at an id nobody renders goes nowhere invisibly.
+- **`<SkipLink>` (`src/components/SkipLink.tsx`) is the first focusable
+  element in the document on every route** — rendered as the first child of the
+  route `ErrorBoundary` in `App.tsx`, ABOVE `<Suspense>` so it survives a lazy
+  chunk in flight. It lives there rather than in a layout route with an
+  `<Outlet/>` because introducing a layout route changes the element tree,
+  which is a different change than this one.
+- **It reveals on bare `focus:`, not `focus-visible:`** — the single documented
+  exception to `ui/no-raw-class-tokens`. A skip link is reached by Tab, by an
+  assistive technology's "activate first link", and by `element.focus()` from
+  anywhere in the app, and it must become visible in all of them. `sr-only`
+  clips rather than removes, so a link that misses the focus-visible heuristic
+  is left 1px wide and invisible while a keyboard user tabs onto it: the worst
+  outcome for a link whose whole purpose is to be seen. The ring is
+  `focus:`-prefixed for the same reason.
+- **The geometry is hand-written CSS in `index.css` (`.skip-link` /
+  `.skip-link:focus`), not utilities.** The obvious spelling —
+  `sr-only` + `focus:not-sr-only` + `focus:absolute` — has three utilities all
+  setting `position`, so which one applies is decided by Tailwind's internal
+  stylesheet order and nothing else. It comes out right today (measured) and
+  would break silently on an upgrade. One authored rule per state, sharing
+  identical values for every property both declare. `fixed`, not `absolute`, in
+  both states: a skip link is reached by Shift+Tab from anywhere in a long list.
+- **The focus INDICATOR stays a Tailwind `focus:ring-2 focus:ring-focus-ring`**
+  on the element, so the skip link wears the same ring, from the same token, as
+  every other control. Spelling a ring out in hand-written CSS would put a
+  second divergent copy of the focus treatment inside the rule whose job is to
+  stop the design system growing one.
+- **`href="#main"` AND an explicit `focus()` call, deliberately both.** The href
+  is what makes it a link — fragment to copy, status-bar URL, middle-click, and
+  a working link with JS disabled. The handler is what makes the focus move
+  testable: jsdom implements fragment navigation (it updates the hash) but does
+  not move focus, so without it the one assertion that matters could not be
+  written. No `preventDefault()`, so a real engine runs both onto the same
+  element.
+- Pinned by `src/tests/SkipLink.test.tsx` with `user.tab()`, so the real tab
+  order is walked rather than proxied for.
+
+---
 
 `src/lib/ui.ts` is the single source for the focus treatment, the button base and
 the input chrome. Every class string that used to be re-typed button by button
