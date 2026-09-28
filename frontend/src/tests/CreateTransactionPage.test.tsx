@@ -68,8 +68,32 @@ const FIELDS = [
   { id: "amount", label: "Monto", value: "500" },
   { id: "currency", label: "Moneda", value: "USD" },
   { id: "merchant_name", label: "Comercio", value: "Test Store" },
-  { id: "merchant_category", label: /Categor/i, value: "retail" },
+  { id: "merchant_category", label: "Categoría (opcional)", value: "retail" },
   { id: "card_last4", label: /dígitos/i, value: "1234" },
+] as const;
+
+/**
+ * Every field that can carry a validation error, paired with how to make it
+ * invalid.
+ *
+ * Not arbitrary. The resolver runs in `mode: "onChange"`, so a field that is
+ * merely EMPTY has not been validated and shows no error: `merchant_name`
+ * (`min(1)`) needs a change event to fire, so it is primed with a character and
+ * cleared. `card_last4` carries `maxLength={4}`, so "12345" truncates to a
+ * VALID "1234" and no error appears -- it takes four non-digits, which satisfy
+ * the length and fail the digit regex. `currency` has `maxLength={3}` but one
+ * character still fails its length rule.
+ *
+ * The announcement test iterates THIS list rather than one hard-coded field. It
+ * used to query `getByLabelText("Monto")` directly, which meant deleting
+ * `error={errors.card_last4?.message}` left all 13 tests green -- the commit
+ * claimed a four-field accessibility fix and the suite proved one.
+ */
+const ERROR_BEARING_FIELDS = [
+  { id: "amount", label: "Monto", type: "0" },
+  { id: "currency", label: "Moneda", type: "0" },
+  { id: "merchant_name", label: "Comercio", type: "x", thenClear: true },
+  { id: "card_last4", label: /dígitos/i, type: "abcd" },
 ] as const;
 
 /** Fills every REQUIRED field. `merchant_category` is optional by schema. */
@@ -278,32 +302,43 @@ describe("CreateTransactionPage — primitives migration", () => {
     }
   });
 
-  it("announces a validation error: the control points at the alert holding the text", async () => {
-    // The whole point of `Field`'s `error` prop. Before the migration the error
-    // <p> sat next to the input, visually attached and programmatically
-    // unattached: no id on the paragraph, no `aria-describedby` on the control
-    // and no `aria-invalid` anywhere. Sighted users saw the failure, screen
-    // readers announced the label and the value and nothing else.
-    const user = userEvent.setup();
-    renderPage();
-    const control = screen.getByLabelText("Monto");
-    await user.type(control, "0"); // not positive -> zod error, mode is onChange
+  it.each(ERROR_BEARING_FIELDS)(
+    "announces the $id validation error: the control points at the alert holding the text",
+    async ({ id, label, type, thenClear }) => {
+      // The whole point of `Field`'s `error` prop. Before the migration the error
+      // <p> sat next to the input, visually attached and programmatically
+      // unattached: no id on the paragraph, no `aria-describedby` on the control
+      // and no `aria-invalid` anywhere. Sighted users saw the failure, screen
+      // readers announced the label and the value and nothing else.
+      //
+      // Parametrised over every error-bearing field because a single hard-coded
+      // one proves a single one. This test used to name "Monto" and nothing
+      // else, so dropping `error=` from three of the four fields was invisible.
+      const user = userEvent.setup();
+      renderPage();
+      const control = screen.getByLabelText(label);
+      await user.type(control, type);
+      if (thenClear) await user.clear(control);
 
-    await waitFor(() => {
-      expect(control.getAttribute("aria-invalid")).toBe("true");
-    });
+      await waitFor(() => {
+        expect(
+          control.getAttribute("aria-invalid"),
+          `${id} never became invalid`,
+        ).toBe("true");
+      });
 
-    const errorId = control.getAttribute("aria-describedby");
-    expect(errorId).toBe("amount-error");
+      const errorId = control.getAttribute("aria-describedby");
+      expect(errorId).toBe(`${id}-error`);
 
-    // The id the control advertises must BE the live region carrying the text.
-    // Resolved by id rather than by role because `Field` renders one alert per
-    // field, five of them, and only one of them has anything in it.
-    const region = document.getElementById(errorId!);
-    expect(region).not.toBeNull();
-    expect(region!.getAttribute("role")).toBe("alert");
-    expect(region).toHaveTextContent("El monto debe ser mayor a 0");
-  });
+      // The id the control advertises must BE the live region carrying the text.
+      // Resolved by id rather than by role because `Field` renders one alert per
+      // field and several are empty at any moment.
+      const region = document.getElementById(errorId!);
+      expect(region, `${id} advertises a describedby with no node`).not.toBeNull();
+      expect(region!.getAttribute("role")).toBe("alert");
+      expect(region!.textContent?.trim(), `${id} alert is empty`).not.toBe("");
+    },
+  );
 
   it("clicking the submit button actually posts the transaction", async () => {
     // The behavioural half of the dead-submit-button fix. `Button` defaults to
@@ -331,7 +366,7 @@ describe("CreateTransactionPage — primitives migration", () => {
   });
 
   it("keeps its label and disables while the mutation is pending", async () => {
-    // DESIGN.md: a non-changing label while loading, so the button width does
+    // design spec: a non-changing label while loading, so the button width does
     // not shift. The plan this pass was given kept a `Procesando...` swap; the
     // spec wins, because swapping the label on a submit action is a real layout
     // jump. The spinner carries the state instead.

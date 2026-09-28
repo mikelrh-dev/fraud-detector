@@ -42,11 +42,16 @@ export interface FieldProps {
   id: string;
   /**
    * A node, not a string, because a label is often more than its text.
-   * `CreateTransactionPage` marks two fields "(opcional)" in a dimmed span;
+   * `CreateTransactionPage` dims "(opcional)" on its merchant-category label;
    * typing this as `string` forced that page to either drop the annotation or
    * cast around the primitive. Widening costs nothing: a label's accessible
-   * name is the sum of its descendant text, so a node gives the same name plus
-   * whatever the markup adds.
+   * name is the sum of its text-bearing descendants, so a node gives the same
+   * name plus whatever the markup adds.
+   *
+   * That last clause is the limit, not a loophole. A node can carry
+   * `aria-label` or hide text, and then the accessible name diverges from the
+   * visible label. The one call site here was checked to be consistent; nothing
+   * in the type prevents the next one from being careless.
    */
   label: ReactNode;
   hint?: string;

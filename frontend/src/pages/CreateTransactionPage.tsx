@@ -143,10 +143,24 @@ export default function CreateTransactionPage() {
               direction, so it is pinned by a test.
 
               `loading` carries the pending state instead of swapping the label:
-              DESIGN.md asks for a non-changing label so the button width does
+              the design spec asks for a non-changing label so the button width does
               not shift mid-action, and "Procesando..." is a different string
-              from "Crear Transacción" — a real layout jump on the one control
-              the user is about to press. `loading` already implies `disabled`. */}
+              from "Crear Transacci�n" - a real layout jump on the one control
+              the user is about to press. `loading` already implies `disabled`.
+
+              DEVIATION FROM THE PLAN, which said to DELETE `disabled={!isValid}`
+              and to keep the label swap. Both were reversed on purpose. The plan
+              called the `disabled` prop "a dead control with no explanation";
+              keeping it is behaviour-preserving, and `loading` computes
+              `disabled || loading` so the pending state still wins. The label
+              swap is the one place the spec and the plan genuinely disagreed,
+              and the spec is the approved artefact.
+
+              WHAT IS STILL TRUE: an untouched form does show a disabled button
+              with no explanation next to it. That gap predates this migration
+              and is not solved by it — it needs a decision about whether an
+              invalid-but-unsubmitted form should guide or refuse, which is a
+              product call, not a refactor. */}
           <Button
             type="submit"
             loading={mutation.isPending}
