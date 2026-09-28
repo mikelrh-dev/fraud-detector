@@ -259,10 +259,15 @@ describe("TransactionDetail — primitives migration (non-migration, pinned)", (
     // being square. Both `BTN_SIZES` entries set horizontal padding.
     expect(copy.classList.contains("h-8")).toBe(true);
     expect(copy.classList.contains("w-8")).toBe(true);
-    // Its own resting/hover text, which `secondary` would overwrite: it says
-    // `text-slate-300` where this says `text-slate-400`, and the built CSS has
-    // `.text-slate-300` (315) after `.text-slate-400` (316), so the variant
-    // wins and a `className` override would be silently dropped.
+    // Its own resting/hover text. Pinned as a fact about the control, NOT as
+    // a claim that `secondary` could not be overridden: the previous comment
+    // here asserted it could not, on the grounds that `.text-slate-300` sorts
+    // after `.text-slate-400`. That is backwards — Tailwind emits
+    // `.text-slate-300` BEFORE `.text-slate-400`, so the rule this control
+    // already carries is the later one and a `className` override WOULD apply.
+    // What actually blocks the migration is the `h-8 w-8` geometry above:
+    // `BTN_SIZES` has no icon-only entry and both of its entries set
+    // horizontal padding.
     expect(copy.classList.contains("text-slate-400")).toBe(true);
     expect(copy.classList.contains("hover:text-slate-200")).toBe(true);
     // And the hover-on-text half, which no variant provides at all.
@@ -316,9 +321,9 @@ describe("TransactionDetail — primitives migration (non-migration, pinned)", (
 
     // Both rely on whatever the user agent draws, because the treatments they
     // carry were hand-rolled without `FOCUS_RING`. Focus IS still indicated —
-    // just not by this design system, and not consistently with the eight
-    // other sites that were fixed. Pinned so an `icon` size can add the ring in
-    // the same change that introduces it.
+    // just not by this design system, and not consistently with the controls
+    // that were moved onto the shared ring. Pinned so an `icon` size can add
+    // the ring in the same change that introduces it.
     for (const el of [copy, back]) {
       expect(el.classList.contains("focus-visible:ring-2")).toBe(false);
       for (const cls of Array.from(el.classList)) {

@@ -268,11 +268,20 @@ export default function DashboardPage() {
 
                     DELTA, one token, and it is not avoidable: the old string
                     said `text-slate-200` where `secondary` says
-                    `text-slate-300` (#e2e8e0 → #cbd5e1, one step lighter).
+                    `text-slate-300`. On this `text-xs` button label that is
+                    #e2e8f0 → #cbd5e1, which is ONE STEP DARKER, not lighter —
+                    slate-300 sits at oklch lightness 0.869 against slate-200's
+                    0.929. An earlier version of this comment gave the first
+                    hex as #e2e8e0, which is not slate-200 at all (slate-300 is
+                    the one that holds that near-miss, at #e2e8f0), and called
+                    the direction "one step lighter", which is backwards.
+                    Both are corrected here rather than left to describe a
+                    change nobody actually made.
+
                     It cannot be pushed back through `className`, and the
                     reason matters — Tailwind decides between two `text-slate-*`
-                    utilities by stylesheet order, and the built CSS has
-                    `.text-slate-200` (314) BEFORE `.text-slate-300` (315), so
+                    utilities by stylesheet order rather than attribute order,
+                    and it emits `.text-slate-200` BEFORE `.text-slate-300`, so
                     the variant wins whatever the caller writes. Taking the
                     design system's value over the hand-rolled one is the
                     point of the migration; the alternative is to leave the

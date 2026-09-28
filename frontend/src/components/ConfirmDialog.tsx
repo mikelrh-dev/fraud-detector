@@ -53,9 +53,11 @@ export interface ConfirmDialogProps {
  *
  * - THE FOOTER GAP. This component's button row has no margin of its own and
  *   relies on the preceding node's `mb-3` for 12px. `Modal`'s `MODAL_FOOTER` is
- *   `mt-4` — 16px — and is not overridable from the call site, so composing
- *   would make the gap 28px in the common case (a reason field plus the
- *   footer). Visible on every dialog.
+ *   `mt-4` — 16px — and is not overridable from the call site. In the common
+ *   case (a reason field plus the footer) those two nodes are ADJACENT SIBLINGS
+ *   in normal flow, so their vertical margins COLLAPSE to the larger of the two:
+ *   composing would make the gap 16px, not the 28px a naive sum suggests.
+ *   Visible on every dialog, but 4px of change rather than 16px.
  *
  * - THE CANCEL BUTTON. It is FILLED: `bg-slate-800` resting, `bg-slate-700`
  *   hover, `rounded`. `BTN_VARIANTS.secondary` is the opposite relationship —

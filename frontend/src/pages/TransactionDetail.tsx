@@ -152,18 +152,22 @@ function CopyReportButton({ text }: { text: string }) {
   // padding. At 32px wide with `px-3` (12px a side) the content box is 8px, so
   // the 16px glyph would overflow it and the box would stop being square.
   //
-  // `secondary` is also not the match: it says `text-slate-300` where this
-  // says `text-slate-400` and hovers to `text-slate-200` as well as filling,
-  // and that hover-on-text half has no variant at all. It cannot be pushed
-  // back through `className` — the built CSS has `.text-slate-300` (315) after
-  // `.text-slate-400` (316), so the variant wins — which means adopting
-  // `secondary` here would change the resting colour AND silently drop a
-  // hover state.
+  // `secondary` is NOT the match, and the honest reason is only the geometry
+  // above. An earlier version of this comment also claimed the resting text
+  // colour was unoverridable, on the grounds that `.text-slate-300` sorts AFTER
+  // `.text-slate-400` so the variant would win. That is BACKWARDS: Tailwind
+  // emits `.text-slate-300` BEFORE `.text-slate-400`, so the later rule is the
+  // one the page already carries — `className="text-slate-400
+  // hover:text-slate-200"` would win on stylesheet order and apply cleanly.
+  // The stated reason does not hold, and it is withdrawn rather than left to
+  // justify anything.
   //
-  // So: an `icon` size in `BTN_SIZES`, and possibly an `icon` variant, is what
-  // this control needs. Both are DESIGN additions, so this is reported rather
-  // than made. The concrete cost meanwhile is that this control has no focus
-  // ring of its own and relies on whatever the user agent draws.
+  // So what is actually left is the size: `BTN_SIZES` has no icon-only entry,
+  // and both of the ones it has set horizontal padding. An `icon` size in
+  // `BTN_SIZES` is what this control needs, and that is a DESIGN addition, so
+  // it is reported rather than made. The concrete cost meanwhile is that this
+  // control has no focus ring of its own and relies on whatever the user agent
+  // draws.
   return (
     <button
       type="button"
@@ -337,19 +341,17 @@ export default function TransactionDetail() {
       <header className="bg-slate-900 border-b border-slate-800 px-6 py-3">
         <div className="max-w-5xl mx-auto flex items-center gap-3 flex-wrap min-w-0">
           {/* Unmigrated, same reason as the copy control above: no icon-only
-              size, and no variant whose resting/hover text matches
-              `slate-400` → `slate-200`. `ghost` says `text-slate-400` hovering
-              to `text-slate-100` and adds `px-3 py-1.5`, which on a 20px box
-              leaves no content box at all.
+              size. `ghost` adds `px-3 py-1.5`, which on a 20px box leaves no
+              content box at all.
 
-              REPORTED, NOT FIXED, because it is out of scope for a tokenisation
-              pass and needs a product decision on the copy: this control has
-              NO ACCESSIBLE NAME. A screen reader announces "button" and
-              nothing else, and there are two such controls on this page's
-              failure path. The obvious label is already on screen elsewhere on
-              the page ("Volver al Dashboard"), so it is a one-line fix — but
-              it is a change to the accessibility tree, and it belongs in a
-              commit that says it is doing that. */}
+              The accessible name this control was reported as MISSING is no
+              longer missing — see the `aria-label` below. That defect was fixed
+              in its own commit (1bdf0e7), which is exactly what this comment
+              used to ask for, and it left the "REPORTED, NOT FIXED" note in
+              place above the very attribute that answers it. The note is
+              removed rather than left contradicting the line under it. The
+              "two such controls" figure was wrong too: this page has no
+              unnamed icon button now, and had one at most, not two. */}
           <button
             type="button"
             // The icon carries no text, so without this the control is announced

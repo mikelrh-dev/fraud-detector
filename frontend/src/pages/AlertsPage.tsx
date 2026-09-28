@@ -131,10 +131,13 @@ export default function AlertsPage() {
               rather than a divergence from it. A segmented filter needs a
               SELECTED state (`bg-slate-700 text-slate-200` vs `bg-slate-800
               text-slate-400 hover:bg-slate-700`) and `BTN_VARIANTS` defines
-              none. The radius blocks it independently: these are `rounded-full`
-              and a `Button` would lose that — the built CSS orders `.rounded`
-              (216), `.rounded-full` (218) and `.rounded-lg` (219) in that
-              order, so `BTN_SIZES` wins and the tabs stop being tabs.
+              none.               The radius blocks it independently: these are `rounded-full`
+              and a `Button` would lose that. Tailwind emits `rounded`,
+              `rounded-full` and `rounded-lg` in that stylesheet order, and it
+              resolves two utilities of one property by stylesheet order rather
+              than attribute order — so the later `rounded-lg` in `BTN_SIZES`
+              wins whatever the attribute order is, and the tabs stop being
+              tabs.
 
               Minting a selected variant is a DESIGN change, so it is reported.
               What it costs meanwhile, and what a test pins: these four controls
@@ -504,8 +507,10 @@ export default function AlertsPage() {
           - The footer gap. `ConfirmDialog`'s button row has no margin and
             relies on the preceding node's `mb-3` for its 12px. `Modal`'s
             `MODAL_FOOTER` is `mt-4` (16px) and is not overridable from the
-            call site, so composing would make the gap 28px in the common case
-            (textarea/error plus footer) — a visible change on every dialog.
+            call site. The two are ADJACENT SIBLINGS in normal flow, so their
+            vertical margins COLLAPSE to the larger of the two: composing would
+            make the gap 16px, not the 28px a naive sum suggests — a visible
+            change on every dialog, but a 4px one rather than 16px.
 
           - The cancel button. `ConfirmDialog`'s is FILLED
             (`bg-slate-800`, `hover:bg-slate-700`, `rounded`);
@@ -534,14 +539,21 @@ export default function AlertsPage() {
           confirmLabel={actionMutation.isPending ? "Procesando..." : "Confirmar"}
         >
           {actionType !== "review" && (
-            /* THE ONE FOCUS-RING DIVERGENCE IN THE PRODUCT, and it is left in
-               place on purpose. This ring is `focus:ring-accent/40` — the
-               accent token at 40% opacity — where the eight other sites are
-               `FOCUS_RING`: the `--color-focus-ring` token at full strength.
-               Flattening it would shift the hue from #dc2626 to #ef4444 AND
-               take the opacity from 40% to 100%, which is two visible changes,
-               not one. It also carries the bare `focus:` prefix, so it paints
-               on mouse click, which the other eight do not.
+            /* A FOCUS-RING DIVERGENCE, and it is left in place on purpose. Not
+               THE one, though — it was described as the only one in the
+               product, and that is not true. `AUTH_INPUT_CLASS` (the Login and
+               Register fields) is a SECOND divergence: it carries
+               `focus:ring-risk-critical/25`, not this accent ring. Two
+               divergences, and the honest count is two today rather than a
+               per-file census that rots on the next commit.
+
+               This ring is `focus:ring-accent/40` — the accent token at 40%
+               opacity — where `FOCUS_RING` and every control built on it use
+               the `--color-focus-ring` token at full strength. Flattening it
+               would shift the hue from #dc2626 to #ef4444 AND take the opacity
+               from 40% to 100%, which is two visible changes, not one. It also
+               carries the bare `focus:` prefix, so it paints on mouse click,
+               which the `focus-visible:` sites do not.
 
                Neither resolution is a refactor's to make:
 
@@ -556,12 +568,25 @@ export default function AlertsPage() {
                  a second focus ring, to express "risky" is the same wrong
                  instrument; DESIGN.md has already answered that there is one
                  focus colour.
-               - And `className` cannot bridge it either. The built CSS puts
-                 `.focus\:ring-accent\/40:focus` at index 415 and
-                 `.focus\:ring-focus-ring:focus` at 416, so if both were
-                 present the full-opacity `focus-ring` would win on stylesheet
-                 order — the caller's override would apply only when it happens
-                 to sort later.
+               - And `className` cannot bridge it either, but NOT for the reason
+                 an earlier version of this comment gave. That version cited two
+                 `focus:`-prefixed rules and a byte offset, and the second rule
+                 it named DOES NOT EXIST. The house ring is `focus-visible:`-
+                 prefixed, so the stylesheet contains no `focus:`-prefixed
+                 variant of the focus-ring token at all: there is nothing for the
+                 `focus:` rule here to compete with. The two are not rival
+                 declarations of one property, they are different pseudo-classes.
+
+                 What is actually true is stronger, and does not depend on
+                 offsets. `focus:` and `focus-visible:` are DIFFERENT STATES.
+                 Passing the house ring alongside this would leave both rules
+                 applying, each in its own state: a mouse click still paints the
+                 40% accent ring because only `focus:` matches then, and a
+                 keyboard focus would carry BOTH declarations of
+                 `--tw-ring-color`. No stylesheet order can suppress a rule in a
+                 state that the other rule never enters, so there is no override
+                 to reach for — the two are not competing claims on one property
+                 in one state, they are two different rings.
 
                So the ring is preserved, the divergence is written down here
                instead of being quietly normalised, and the decision is owed to

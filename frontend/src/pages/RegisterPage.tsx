@@ -303,8 +303,11 @@ export default function RegisterPage() {
 
               DELTA, the same one as on `LoginPage` and the only visual one
               here: the hand-rolled `disabled:bg-red-800/50` becomes
-              `BTN_BASE`'s `disabled:opacity-50`, so the pending fill is the
-              accent at half opacity rather than red-800 at half opacity. */}
+              `BTN_BASE`'s `disabled:opacity-50`. Not an equivalent swap —
+              `bg`/50 only set `background-color`, so the old pending state
+              kept its label at full strength, while `opacity-50` applies to
+              the whole element and dims the label too. Same signal, and the
+              accent instead of red-800, but the text changes with it. */}
           <Button
             type="submit"
             variant="primary"

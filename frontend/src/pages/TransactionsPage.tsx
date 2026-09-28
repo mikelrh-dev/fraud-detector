@@ -110,9 +110,9 @@ export default function TransactionsPage() {
               controls have no focus ring at all, because the treatment they do
               carry was hand-rolled without `FOCUS_RING`. `AlertsPage` has the
               same pair in `rounded-full`, where a `Button` would additionally
-              lose the radius — the built CSS orders `.rounded` (216),
-              `.rounded-full` (218) and `.rounded-lg` (219) in that order, so
-              `BTN_SIZES` would win. */}
+              lose the radius — Tailwind emits `rounded`, `rounded-full` and
+              `rounded-lg` in that stylesheet order, so the later `rounded-lg`
+              from `BTN_SIZES` wins regardless of attribute order. */}
           <div className="flex gap-1.5">
             {statusPills.map((pill) => (
               <button
@@ -137,12 +137,13 @@ export default function TransactionsPage() {
               actually a defect.
 
               They cannot be `Input`: `INPUT_BASE` carries `w-full`, and these
-              are intrinsic-width controls in a `flex ... ml-auto` row. The
-              built CSS has `.w-auto` (160) before `.w-full` (162), so
+              are intrinsic-width controls in a `flex ... ml-auto` row. Tailwind
+              resolves two utilities of one property by stylesheet order, not
+              attribute order, and it emits `w-auto` BEFORE `w-full` — so
               `className="w-auto"` loses and both fields would stretch to fill
-              the row. The same applies to `px-3` over `px-2` and `py-2` over
-              `py-1.5` — the base sorts later, so the compact padding would be
-              silently dropped and the control would grow.
+              the row. The same holds for `px-3` over `px-2` and `py-2` over
+              `py-1.5`: in both pairs the base sorts LATER, so the compact
+              padding would be silently dropped and the control would grow.
 
               The focus ring IS fixed, and this is the landmine-3 change: a bare
               `focus:` ring paints on mouse click, which is wrong for a mouse

@@ -191,10 +191,12 @@ describe("TransactionsPage — primitives migration", () => {
         expect(cls, `bare focus variant: ${cls}`).not.toMatch(/^focus:(?!-)/);
       }
       // These controls deliberately keep their own chrome, because
-      // `INPUT_BASE` cannot express it: `.w-auto` (160) sorts before
-      // `.w-full` (162) and `.px-2` (261) before `.px-3` (262), so an override
-      // through `className` would lose and the fields would stretch to fill
-      // the row. Pinned so a later "just use Input here" is a visible change.
+      // `INPUT_BASE` cannot express it. Tailwind resolves two utilities of one
+      // property by stylesheet order rather than attribute order, and it emits
+      // `w-auto` before `w-full`, and `px-2` before `px-3` — so in both pairs
+      // the base sorts LATER, an override through `className` would lose, and
+      // the fields would stretch to fill the row. Pinned so a later "just use
+      // Input here" is a visible change.
       expect(input.classList.contains("px-2")).toBe(true);
       expect(input.classList.contains("py-1.5")).toBe(true);
       expect(input.classList.contains("text-xs")).toBe(true);

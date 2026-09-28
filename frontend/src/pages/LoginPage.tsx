@@ -95,13 +95,29 @@ export default function LoginPage() {
 
             `Field` and `Input` expose no way to say "this surface's field
             spec is the other one", and passing the differences through
-            `className` does not work either: Tailwind resolves two utilities
-            of the same property by STYLESHEET ORDER, not attribute order, and
-            the built CSS puts `.bg-slate-800` (245) before `.bg-slate-900`
-            (246) and `.px-3` (262) before `.px-2` (261). The override wins
-            only when it happens to sort later, so half the tokens would
-            apply and half would not — the caller would be writing classes that
-            look right and silently do nothing.
+            `className` does not work either — though NOT for the reason an
+            earlier version of this comment gave. That version cited byte
+            offsets and claimed "half the tokens would apply and half would
+            not". Checked against the built stylesheet, the opposite is true:
+            every colour pair here is decided the caller's way, because
+            Tailwind emits `bg-slate-800` before `bg-slate-900`,
+            `border-slate-700` before `border-slate-800`, `text-slate-100`
+            before `text-slate-200` and `placeholder-slate-500` before
+            `placeholder:text-slate-600`. All four overrides win. (The one
+            padding claim in that version was simply transposed: `px-2` is
+            emitted before `px-3`, not after.) The colours are not the
+            obstacle, so the argument has to stand on something real.
+
+            Two things are. `className` can ADD a rule but never REMOVE one, and
+            `INPUT_BASE` declares `py-2` while this surface's spec declares no
+            vertical padding at all — so a caller could not take the padding
+            back off, and the field would keep it. And the focus ring cannot be
+            bridged by any ordering: `INPUT_BASE` carries
+            `focus-visible:ring-focus-ring`, this surface wants
+            `focus:ring-risk-critical/25`, and those are DIFFERENT STATES.
+            Adding the `focus:` ring would not suppress the `focus-visible:` one,
+            so a mouse click would still paint a ring — the defect `FOCUS_RING`
+            exists to fix.
 
             So these stay as they are, and this pass records the divergence
             instead of hiding it. Two consequences that are NOT resolved here:
@@ -198,10 +214,16 @@ export default function LoginPage() {
 
             DELTA, and it is the only visual one on this control: the old
             class carried `disabled:bg-red-800/50`, a hand-rolled disabled
-            fill. `BTN_BASE` dims with `disabled:opacity-50` instead, so the
-            pending state is now the accent at half opacity rather than
-            red-800 at half opacity. Same signal, different value, and it is
-            what every other button in the product already does.
+            fill. `BTN_BASE` dims with `disabled:opacity-50` instead. The signal
+            is the same and it is what every other button in the product does,
+            but it is NOT the same change to look at, and an earlier version of
+            this comment described it as though it were. The two are not
+            equivalent: `disabled:bg-red-800/50` sets `background-color` and
+            nothing else, so the old pending state was a red-800 fill at half
+            alpha BEHIND AN UNCHANGED LABEL. `disabled:opacity-50` sets
+            `opacity`, which applies to the whole element INCLUDING its text,
+            so the label dims along with the fill. Same hue, same half-strength
+            intent — and the label goes with it.
 
             `h-11 w-full` are layout, and the primitive does not supply them. */}
         <Button
@@ -228,6 +250,17 @@ export default function LoginPage() {
             `rounded-lg` and `font-medium` all match, `disabled:opacity-50` was
             already there, and `bg-transparent` is new but describes what an
             unclassed button already rendered.
+
+            UNRESOLVED CONFLICT WITH DESIGN.md, recorded rather than hidden.
+            DESIGN.md (Auth, RIGHT form panel) still describes this control as
+            the "ghost demo button", and `BTN_VARIANTS.ghost` is
+            `text-slate-400` hovering to `text-slate-100` with no fill. This
+            control was migrated to `secondary` instead. So either the code
+            drifted from the design contract or the contract is out of date —
+            and a doc edit here would be a DESIGN change made silently inside a
+            migration, which is the thing this pass has been refusing to do all
+            along. It is owed to the visual pass to pick one. Until then this
+            comment is the record; the conflict is NOT resolved by it.
 
             Two deltas, both wins rather than changes of appearance:
             `hover:bg-slate-800` became `enabled:hover:bg-slate-800`, so the

@@ -117,12 +117,17 @@ describe("AlertsPage — primitives migration", () => {
   });
 
   it("the reason field's divergent focus ring is preserved, not silently flattened", async () => {
-    // THE decision this page had to make. This is the only focus ring in the
-    // product that is not `FOCUS_RING`: it is `focus:ring-accent/40` — accent
-    // at 40% opacity — where the other eight sites are the `--color-focus-ring`
+    // THE decision this page had to make. This focus ring is not `FOCUS_RING`:
+    // it is `focus:ring-accent/40` — accent at 40% opacity — where
+    // `FOCUS_RING` and everything built on it use the `--color-focus-ring`
     // token at full strength. Flattening it shifts the hue #dc2626 → #ef4444
     // AND the opacity 40% → 100%, and it would also drop the bare `focus:`
     // prefix that makes it paint on mouse click.
+    //
+    // It is not the ONLY divergence in the product, whatever an earlier version
+    // of this comment said: `AUTH_INPUT_CLASS` carries a third ring,
+    // `focus:ring-risk-critical/25`. Two divergences, and this test pins only
+    // this one, on this page.
     //
     // Asserted as the value it has, not as the value the design system wants,
     // because preserving it is the decision. Falsifiable both ways: normalising
@@ -132,11 +137,17 @@ describe("AlertsPage — primitives migration", () => {
 
     expect(textarea.classList.contains("focus:ring-2")).toBe(true);
     expect(textarea.classList.contains("focus:ring-accent/40")).toBe(true);
-    // The full-strength house ring must NOT be on this control. The built CSS
-    // orders `.focus\:ring-accent\/40:focus` (415) BEFORE
-    // `.focus\:ring-focus-ring:focus` (416), so if both were present the
-    // `focus-ring` would win on stylesheet order — which is exactly why this
-    // could not have been "solved" by passing both.
+    // The full-strength house ring must NOT be on this control. Note what this
+    // is NOT: the previous comment here cited a `focus:`-prefixed
+    // focus-ring rule together with a byte offset, and no such rule is emitted
+    // anywhere in the built stylesheet — the house ring is `focus-visible:`-
+    // prefixed, so the stylesheet has no `focus:`-prefixed variant of the
+    // focus-ring token to compete with. The assertion below is about the
+    // `focus-visible:` token, and the real reason it cannot simply be "solved"
+    // by passing both is that `focus:` and `focus-visible:` are DIFFERENT
+    // STATES: both would apply, each in its own state, and a mouse click would
+    // still paint the 40% accent ring. No stylesheet order reaches across
+    // states.
     expect(textarea.classList.contains("focus-visible:ring-focus-ring")).toBe(
       false,
     );
@@ -162,9 +173,10 @@ describe("AlertsPage — primitives migration", () => {
 
     const tab = await screen.findByRole("button", { name: "Todas" });
     // A segmented filter needs a SELECTED state `BTN_VARIANTS` does not
-    // define, and it is `rounded-full`, which a `Button` would lose: the built
-    // CSS orders `.rounded` (216), `.rounded-full` (218), `.rounded-lg` (219),
-    // so `BTN_SIZES` wins and the tabs stop being tabs.
+    // define, and it is `rounded-full`, which a `Button` would lose: Tailwind
+    // emits `rounded`, `rounded-full` and `rounded-lg` in that stylesheet
+    // order, so the later `rounded-lg` in `BTN_SIZES` wins regardless of
+    // attribute order, and the tabs stop being tabs.
     expect(tab.classList.contains("rounded-full")).toBe(true);
     expect(tab.classList.contains("bg-slate-700")).toBe(true);
     // The accessibility cost of the gap, pinned: no focus ring at all.

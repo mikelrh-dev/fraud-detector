@@ -71,6 +71,14 @@ export const FOCUS_RING =
 // Class strings here must stay CONTIGUOUS literals. Tailwind scans raw source
 // text, so `hover:bg-${tone}-500` would emit no CSS at all — no build error,
 // and no test failure, because a string assertion cannot see the output.
+//
+// That scan does not stop at string literals: it reads COMMENTS too, so naming
+// a class in prose is enough to EMIT a rule for it. Verified the hard way —
+// correcting a comment to name a rule that does not exist caused the build to
+// emit that rule, which then contradicted the comment that had just denied it.
+// Dead rules are cheap, but a comment that manufactures the evidence against
+// itself is not, so describe a class you do not want emitted in words rather
+// than by writing the candidate.
 export const BTN_BASE =
   `btn-motion active:scale-[0.98] inline-flex items-center justify-center gap-1.5 ` +
   `font-medium touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed ` +
