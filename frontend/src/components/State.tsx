@@ -69,9 +69,22 @@ const ICON_TONE: Record<StateTone, string> = {
  *                  the truth is "we could not ask".
  *   - `status`  — polite. A success is perceivable but never interrupts
  *                  whatever is being read.
- *   - (none)    — an empty list is the absence of something, not news. Putting
+ *   - (none)    - an empty list is the absence of something, not news. Putting
  *                  it in any live region would make every page load announce
  *                  "nothing to see here".
+ *
+ * THE EXCEPTION, and it is the mirror of the bug the error tone exists to fix.
+ * onRetry is legal on ANY tone, empty included. An empty state that appears
+ * in RESPONSE to a user action -- no coincidences for these filters, with a
+ * retry -- is the outcome of something the user just did, and announcing
+ * nothing leaves them pressing a button with no feedback at all. That is the
+ * same shape as data?.total || 0 rendering "0 alertas" on a failed query,
+ * which is what made the error tone necessary in the first place.
+ *
+ * So the role is not a property of the tone ALONE: an empty state offering a
+ * retry is a status, and one without is silence. The retry is the signal that
+ * the user acted and is waiting to hear about it. A page load with no retry is
+ * still silent, so the common case does not become chatty.
  */
 const TONE_ROLE: Record<StateTone, "alert" | "status" | undefined> = {
   empty: undefined,
@@ -138,9 +151,15 @@ export function State({
   const resolvedHint =
     hint ?? (tone === "error" ? ERROR_DEFAULT_HINT : undefined);
 
+  // See TONE_ROLE: the role is the tone's, EXCEPT that an empty state offering a
+  // retry is the result of something the user just did, so it speaks up. An
+  // empty state with no retry is still silence, which keeps the common
+  // page-load case from announcing "nothing to see here" on every route.
+  const role = tone === "empty" && onRetry ? "status" : TONE_ROLE[tone];
+
   return (
     <div
-      role={TONE_ROLE[tone]}
+      role={role}
       data-testid={`${tone}-state`}
       className={`flex flex-col items-center justify-center px-6 text-center ${
         compact ? "py-6" : "py-12"

@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { http, HttpResponse } from "msw";
+import { server } from "./mocks/server";
 import TransactionsPage from "../pages/TransactionsPage";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
@@ -285,5 +287,31 @@ describe("TransactionsPage — primitives migration", () => {
   it("the source no longer re-types the header CTA treatment", () => {
     expect(TRANSACTIONS_CODE).toContain("BTN_VARIANTS.primary");
     expect(TRANSACTIONS_CODE).not.toContain("hover:bg-action-hover");
+  });
+
+  it("a failed list request announces itself, and is not the empty state", async () => {
+    // The list's own failure UI had no live region, so a screen reader announced
+    // nothing when the query failed. TransactionDetail says in its own comment
+    // why that matters: "could not ask" and "there is nothing there" are
+    // different claims, and an analyst who filtered to one transaction and sees
+    // an empty table would conclude there is nothing to review -- when the
+    // truth is that the request never came back.
+    //
+    // The two failure UIs in this product were inconsistent with each other:
+    // TransactionDetail's had `role="alert"`, this one did not.
+    server.use(
+      http.get("*/api/v1/transactions", () =>
+        HttpResponse.json({ detail: "boom" }, { status: 500 }),
+      ),
+    );
+
+    renderPage();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Error al cargar transacciones");
+    // The distinction the whole component exists to keep: this is NOT the empty
+    // state, and must not be findable as one.
+    expect(screen.queryByText("No hay transacciones")).toBeNull();
+    expect(screen.queryByTestId("empty-state")).toBeNull();
   });
 });

@@ -281,7 +281,19 @@ export default function TransactionsPage() {
             ))}
           </div>
         ) : isError ? (
-          <div className="text-center py-12">
+          // `role="alert"` because this is a FAILED REQUEST, not an empty
+          // result, and the two are different claims. An analyst who filtered
+          // to one transaction and sees nothing must not conclude there is
+          // nothing to review -- the query never came back. TransactionDetail
+          // already says this about its own error block; the two failure UIs
+          // were inconsistent with each other, and this one was the silent half.
+          //
+          // Left hand-rolled rather than migrated to `State`, deliberately: it
+          // uses a raw `text-red-400` instead of the risk token and a bare
+          // `py-12`, and migrating it would change the pixels, which this pass
+          // is scoped not to do. The live-region role is the part that is a
+          // defect, so that is the part fixed here.
+          <div role="alert" className="text-center py-12" data-testid="list-error">
             <p className="text-sm text-red-400">Error al cargar transacciones</p>
           </div>
         ) : data && data.items.length === 0 ? (

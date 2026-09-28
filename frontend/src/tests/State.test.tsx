@@ -150,6 +150,44 @@ describe("State — the retry affordance", () => {
     );
     expect(screen.getByRole("button", { name: "Otra vez" })).toBeInTheDocument();
   });
+
+  it("an empty state that offers a retry announces itself", () => {
+    // The review found the hole in the tone design: `onRetry` is legal on every
+    // tone, so an empty state can be the RESULT OF SOMETHING THE USER JUST DID
+    // -- filters applied, a retry pressed -- and with no live region it
+    // announced nothing at all. The user pressed a button and got silence.
+    //
+    // It is the same shape as the `data?.total || 0` rendering "0 alertas" on a
+    // failed query, which is the bug the error tone was created to fix: absence
+    // of an announcement is not the same as absence of a result, when the
+    // absence is the answer to something the user asked.
+    render(<State title="Sin coincidencias" onRetry={() => {}} />);
+
+    // `status`, not `alert`: nothing failed, so nothing should interrupt.
+    const region = screen.getByRole("status");
+    expect(region.textContent).toContain("Sin coincidencias");
+  });
+
+  it("an empty state with no retry stays silent, so a page load is not chatty", () => {
+    // The other half of the rule, and the reason it is safe. Every list page
+    // mounts an empty state on load; if those announced, navigating would talk
+    // over whatever the user was reading.
+    render(<State title="Sin transacciones" />);
+
+    // No role at all, so no live region, so nothing is announced.
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("the error tone is unaffected by the empty-with-retry rule", () => {
+    // `onRetry` is common on error. If the new rule had leaked into the other
+    // tones it would downgrade an interruption to a courtesy, which is the
+    // wrong way round.
+    render(<State tone="error" onRetry={() => {}} />);
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
 });
 
 describe("State — the error copy is a component guarantee, not a call-site habit", () => {
