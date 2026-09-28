@@ -413,3 +413,134 @@ describe("Modal", () => {
     expect(document.activeElement).toBe(screen.getByLabelText("Motivo"));
   });
 });
+
+/**
+ * The portal, and why it exists.
+ *
+ * `position: fixed` is contained by any TRANSFORMED ancestor, and
+ * `PageTransition` wraps every authenticated page's content in
+ * `animate-fade-slide-up`, whose `animation-fill-mode: both` persists the `to`
+ * keyframe's transform as `matrix(1, 0, 0, 1, 0, 0)` — not `none`. A dialog
+ * rendered inside that wrapper resolved `fixed inset-0` against the wrapper
+ * rather than the viewport: measured in headless Edge, 1241x4000 and CLIPPED,
+ * against 1241x581 (the viewport) outside any transform.
+ *
+ * Every test above passed without a portal ONLY because dialogs happened to be
+ * rendered as siblings of `<PageTransition>`. Nothing enforced that and no type
+ * could, so the invariant was one JSX tidy-up from a silent full-height strip.
+ * These tests replace the invariant with a measurement.
+ */
+describe("Modal — portal mount target", () => {
+  afterEach(() => {
+    document.body.style.overflow = "";
+  });
+
+  it("mounts the backdrop on document.body, not inside the render container", () => {
+    // A modal that renders in place is the defect, and jsdom can see the
+    // structural half of it even though it does no layout: the question is
+    // whether the node is a descendant of the React root at all.
+    const { container } = render(
+      <Modal title="Editar" onClose={vi.fn()}>
+        <textarea aria-label="Razón" />
+      </Modal>,
+    );
+
+    const backdrop = screen.getByTestId("modal-backdrop");
+    expect(backdrop.parentElement).toBe(document.body);
+    // The positive half, so the assertion above cannot be satisfied by the
+    // dialog not rendering at all.
+    expect(container.querySelector('[data-testid="modal-backdrop"]')).toBeNull();
+    expect(document.body.contains(backdrop)).toBe(true);
+  });
+
+  it("is not a descendant of a PageTransition wrapper, even when rendered inside one", () => {
+    // The real-world shape, and the one that used to clip. The harness puts the
+    // dialog inside a `.animate-fade-slide-up` div — exactly what every
+    // authenticated page's content sits in — and asserts the dialog is still
+    // outside it. Without the portal this is the assertion that fails.
+    const { container } = render(
+      <div className="animate-fade-slide-up">
+        <Modal title="Editar" onClose={vi.fn()}>
+          <textarea aria-label="Razón" />
+        </Modal>
+      </div>,
+    );
+
+    const backdrop = screen.getByTestId("modal-backdrop");
+    expect(backdrop.closest(".animate-fade-slide-up")).toBeNull();
+    // It really was rendered inside one, so the assertion above is not
+    // vacuous: the wrapper is in the tree and the dialog is not inside it.
+    expect(container.querySelector(".animate-fade-slide-up")).not.toBeNull();
+    expect(backdrop.parentElement).toBe(document.body);
+  });
+
+  it("keeps the full dialog contract through the portal", () => {
+    // The portal changes the mount point, so the things that could plausibly
+    // break are the ones that depend on DOM ancestry or on the root's event
+    // delegation: focus move, focus return, the Tab trap, Escape, and the
+    // backdrop's own click handling. React attaches its listeners at the root
+    // container rather than the node, so React events still travel the React
+    // tree — but that is an implementation detail, and this is the test that
+    // would notice if it stopped being true.
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Abrir
+          </button>
+          <input aria-label="Fuera del diálogo" />
+          {open && (
+            <Modal title="Editar alerta" onClose={() => setOpen(false)}>
+              <textarea aria-label="Razón" />
+            </Modal>
+          )}
+        </>
+      );
+    }
+
+    render(<Harness />);
+    const trigger = screen.getByRole("button", { name: "Abrir" });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    // Focus moved INTO the dialog, across the portal boundary.
+    expect(document.activeElement).toBe(screen.getByLabelText("Razón"));
+
+    // The trap still wraps, and still does not escape to the outside control.
+    const close = screen.getByRole("button", { name: "Cerrar" });
+    close.focus();
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(screen.getByLabelText("Razón"));
+    expect(document.activeElement).not.toBe(
+      screen.getByLabelText("Fuera del diálogo"),
+    );
+
+    // A click inside the panel must NOT dismiss; only the backdrop may.
+    fireEvent.click(screen.getByLabelText("Razón"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("modal-backdrop"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // And focus came back to the opener, not to the top of the document.
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("leaves no portal node behind after close", () => {
+    // A portal that leaks its node would stack a backdrop per open, and the
+    // body lock would already be the visible symptom. Asserted on `body`
+    // directly rather than on the render container, because that is where the
+    // node is and where a leak would be invisible from the container.
+    const { unmount } = render(
+      <Modal title="Editar" onClose={vi.fn()}>
+        <textarea aria-label="Razón" />
+      </Modal>,
+    );
+    expect(document.body.querySelectorAll('[data-testid="modal-backdrop"]')).toHaveLength(1);
+
+    unmount();
+
+    expect(document.body.querySelectorAll('[data-testid="modal-backdrop"]')).toHaveLength(0);
+    expect(document.body.style.overflow).toBe("");
+  });
+});

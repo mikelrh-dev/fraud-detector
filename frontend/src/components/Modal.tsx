@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { Button } from "./Button";
 import { cn } from "../lib/ui";
@@ -116,27 +117,50 @@ const MODAL_SIZES = {
  * 2.4.3 expectation. The cost is that the corner X is last in the tab
  * sequence; that is the smaller of the two wrongs.
  *
- * KNOWN LIMITS, stated rather than papered over:
- * - No portal, and this is NOT a hypothetical. `position: fixed` is contained
- *   by any transformed ancestor, and `PageTransition` wraps EVERY page's
- *   content in `animate-fade-slide-up`, whose `animation-fill-mode: both`
- *   persists the `to` keyframe's transform as `matrix(1, 0, 0, 1, 0, 0)` --
- *   not `none`. So every page establishes a containing block for fixed
- *   descendants. Measured in headless Edge: a fixed element inside that wrapper
- *   is 1241x4000 and CLIPPED; the same element outside any transform is
- *   1241x581, the viewport.
+ * RENDERS THROUGH A PORTAL, and that is the fix for the containing-block trap
+ * this component used to have.
  *
- *   The reason nothing breaks today is a non-obvious invariant: `Modal` and
- *   `ConfirmDialog` are rendered as SIBLINGS of `<PageTransition>`, not inside
- *   it. `AlertsPage` happens to place its dialog after the closing tag. Nothing
- *   tests that and no type enforces it, so the next person who renders a dialog
- *   next to its trigger gets a silent clip. The fix is `createPortal`, which
- *   changes the mount target and needs its own test; until then, keep dialogs
- *   outside `PageTransition`.
+ * `position: fixed` is contained by any transformed ancestor, and
+ * `PageTransition` wraps EVERY authenticated page's content in
+ * `animate-fade-slide-up`, whose `animation-fill-mode: both` PERSISTS the `to`
+ * keyframe's transform as `matrix(1, 0, 0, 1, 0, 0)` — not `none`. A dialog
+ * rendered inside that wrapper therefore resolved `fixed inset-0` against the
+ * wrapper rather than the viewport. Measured in headless Edge: the same fixed
+ * element was 1241x4000 and CLIPPED inside it, and 1241x581 — the viewport —
+ * outside any transform.
+ *
+ * The only reason nothing broke was an invariant nothing enforced: dialogs had
+ * to be rendered as SIBLINGS of `<PageTransition>`, never inside it.
+ * `AlertsPage` happened to place its `ConfirmDialog` after the closing tag.
+ * One JSX tidy-up, and the dialog renders as a full-height strip down the page.
+ *
+ * `createPortal` removes the class of bug instead of relying on the invariant:
+ * the panel becomes a child of `document.body`, which no page-level transform
+ * reaches. Everything else is deliberately unaffected — `panelRef` still
+ * resolves (a ref is a ref wherever the node mounts), the `keydown` listener is
+ * on `document` and a portaled subtree still bubbles to it, and the body lock
+ * was already writing to `document.body` directly.
+ *
+ * THE EVENT PATH IS WORTH NAMING because it is the one thing a portal can
+ * quietly break. React attaches its listeners at the ROOT CONTAINER, not at the
+ * node, so a portal's React events still travel the React tree normally — only
+ * the DOM parent changes. That is why the backdrop closes on an explicit
+ * `target === currentTarget` check rather than on propagation stopping
+ * somewhere, and why the panel's own `stopPropagation` is not load-bearing.
+ * What a portal DOES change is `stopPropagation` and `nativeEvent` for handlers
+ * on DOM ancestors, which is the one caller-side thing to remember.
+ *
+ * KNOWN LIMITS, stated rather than papered over:
  * - The body lock is a plain save/restore, not a counter. Two modals open at
  *   once would restore each other out of order and leave the body locked. Not
  *   reachable from the current call sites (one dialog at a time), and a shared
  *   lock module is the right fix if that ever changes.
+ * - Portaling does not protect against a TRANSFORMED ANCESTOR OF `document.body`
+ *   itself, or a `filter`/`will-change`/`backdrop-filter` on any element between
+ *   the root and the portal target. `createPortal(…, document.body)` moves the
+ *   dialog out of the React tree's DOM position, not out of the page; if the
+ *   app shell ever grows a transform on `<body>` or an ancestor of it, the
+ *   clipping comes back and the fix has to be a different mount target.
  */
 export function Modal({
   title,
@@ -242,7 +266,17 @@ export function Modal({
     };
   }, []);
 
-  return (
+  // Portaled to `document.body`. This is the whole point of the change and the
+  // only thing about it that is load-bearing: the panel must not be a DOM
+  // descendant of anything a page transform can reach, or `fixed inset-0`
+  // resolves against that ancestor instead of the viewport.
+  //
+  // `document.body` rather than a div this component owns, because the target
+  // has to be somewhere that exists before React mounts — reading
+  // `document.body` at render time is safe (it is present for the entire
+  // lifetime of any page that can show a dialog), whereas a ref'd host node
+  // would need a second render pass and would flash nothing on the way.
+  return createPortal(
     <div
       className={MODAL_BACKDROP}
       // The target check is on the BACKDROP, not the panel. A click that
@@ -251,6 +285,10 @@ export function Modal({
       // dialog stays open — which is what a click on a text selection inside
       // the dialog must do. Only a click on the backdrop itself, where target
       // and currentTarget are the same node, closes it.
+      //
+      // This is also what makes the portal safe. React's listeners live on the
+      // root container, so React events still travel the React tree; a DOM
+      // check like this one is the part that does not depend on that.
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -288,6 +326,7 @@ export function Modal({
           </Button>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
