@@ -6,19 +6,33 @@ import { MAIN_LANDMARK_ID } from "../lib/focusable";
 type StaggerStyle = CSSProperties & { "--i"?: number };
 
 /**
- * A RECORDED FOCUS-RING DIVERGENCE, held in its own constant so the lint
- * suppression below covers one line and not the whole class list.
+ * A RECORDED FOCUS-RING DIVERGENCE, held in its own constant so the reason
+ * sits next to the one string it is about.
  *
  * It is the bare `focus:` prefix at 25% of the risk tone where `FOCUS_RING` is
  * the accent token at full strength on `focus-visible:` — and it is inherited,
  * not invented here: the Login and Register fields carried it before the split
  * screen existed, and the note at their call sites explains why flattening it
  * is a visual change owed to the visual pass rather than something a refactor
- * should decide. `ui/no-raw-class-tokens` is suppressed on this literal and
- * nowhere else in the file.
+ * should decide.
+ *
+ * NO LINT SUPPRESSION, and the reason is a scope decision rather than an
+ * oversight. `ui/no-raw-class-tokens` reads class POSITIONS — a `className`
+ * value, or an argument of `cn(...)` — and this string reaches the DOM only by
+ * being referenced (`AUTH_INPUT_CLASS` below, spliced into the auth fields'
+ * classNames). The rule does not follow references: doing that is a type
+ * checker, and the heuristics that approximate one produce false positives on
+ * prose, which is a worse failure than a stated limit. See the "WHERE IT LOOKS"
+ * section of `eslint-rules/ui-class-tokens.js`.
+ *
+ * What pins this string instead is a TEST, in both directions, which is this
+ * codebase's mechanism for a divergence that is deliberately kept:
+ * `LoginPage.test.tsx` and `RegisterPage.test.tsx` each assert the ring is
+ * present, so silently flattening it to `FOCUS_RING` fails, and assert the
+ * house ring is absent, so silently deleting it fails. Two files, because the
+ * fields are two different pages that could diverge from each other next.
  */
 const AUTH_INPUT_RING =
-  // eslint-disable-next-line ui/no-raw-class-tokens -- recorded divergence, documented above
   "focus:border-risk-critical focus:outline-none focus:ring-2 focus:ring-risk-critical/25";
 
 /** Shared input treatment for the auth forms (DESIGN.md — Forms). */

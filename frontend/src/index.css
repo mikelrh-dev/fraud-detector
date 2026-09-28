@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* The lint rule's own test suite is EXCLUDED from class scanning, and this is
+   the one line in the project that a test file made necessary.
+
+   `eslint-rules/ui-class-tokens.test.js` is the only file whose purpose is to
+   CONTAIN class strings the build must not emit: every case in it is either a
+   banned class or the legal spelling of a near-miss (`focus:z-10`,
+   `focus:touch-none`, `bg-[url(…#bars)]`). Tailwind scans raw text anywhere
+   under the stylesheet's project root, so without this line the suite
+   manufactures ~30 rules that nothing can match — measured, 3.6 kB of dead CSS
+   added by the tests alone, every one of them a class the rule exists to
+   forbid.
+
+   The convention everywhere else in `src/` is the opposite and it is a good
+   one: a test may only name classes the component really uses, so pinning a
+   class costs no bytes. That convention cannot be honoured here, because the
+   assertion IS the banned class — importing the constant instead would be the
+   tautology the exemption above exists to avoid. Hence an exclusion rather
+   than a discipline.
+
+   Paths are relative to this file. If the rule ever moves out of
+   `eslint-rules/`, move this line with it. */
+@source not "../eslint-rules";
+
 @theme {
   /* Semantic risk tones — SINGLE SOURCE for risk/status coloring.
      Chart theme (src/lib/chart-theme.ts) mirrors these values; keep in sync

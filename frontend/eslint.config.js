@@ -65,9 +65,18 @@ export default tseslint.config(
     files: ["**/*.{ts,tsx}"],
     linterOptions: {
       // A suppression that no longer suppresses anything is rot of the same
-      // kind this rule exists to stop. Default in ESLint 9, set explicitly so
-      // the intent survives a version bump.
-      reportUnusedDisableDirectives: "warn",
+      // kind this rule exists to stop: the divergence got fixed and the
+      // excuse stayed, and the excuse is what a later reader trusts.
+      //
+      // "error", NOT the ESLint 9 default of "warn". The default is a lie
+      // everywhere this promise is made: `npm run lint` is plain `eslint .`
+      // with no `--max-warnings 0`, so a warning exits 0 and CI goes green on
+      // a file whose justification has expired. Measured, not assumed —
+      // a deliberately-orphaned suppression exits 0 at "warn" and non-zero
+      // here. The cost is real and worth naming: every expired suppression
+      // across the repo now fails the build rather than printing a note, which
+      // is the point, but it means a suppression cannot be left "just in case".
+      reportUnusedDisableDirectives: "error",
     },
   },
 );
