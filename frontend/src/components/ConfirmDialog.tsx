@@ -37,6 +37,43 @@ export interface ConfirmDialogProps {
  *
  * Handles the full contract: role + labelling, focus moved in on open, Tab
  * contained, Escape to dismiss, and focus restored to whatever opened it.
+ *
+ * WHY THIS IS NOT COMPOSED OVER `Modal` — the shapes LOOK alike (same overlay,
+ * same panel, same heading) and the shared parts are already shared, via
+ * `lib/focusable.ts`. But three of the differences are the parts that matter,
+ * and every one of them would have to be resolved by CHANGING `Modal` rather
+ * than by changing this file:
+ *
+ * - THE ERROR SLOT. This component takes an `error` and does two things with
+ *   it: renders it as a `role="alert"` paragraph, and points the panel's
+ *   `aria-describedby` at it. `Modal` has no `error` prop, so the error would
+ *   have to travel as `children` — which loses the `aria-describedby` and
+ *   leaves the dialog with an empty description. That is an a11y REGRESSION
+ *   traded for deduplication, and the only fix is a new prop on `Modal`.
+ *
+ * - THE FOOTER GAP. This component's button row has no margin of its own and
+ *   relies on the preceding node's `mb-3` for 12px. `Modal`'s `MODAL_FOOTER` is
+ *   `mt-4` — 16px — and is not overridable from the call site, so composing
+ *   would make the gap 28px in the common case (a reason field plus the
+ *   footer). Visible on every dialog.
+ *
+ * - THE CANCEL BUTTON. It is FILLED: `bg-slate-800` resting, `bg-slate-700`
+ *   hover, `rounded`. `BTN_VARIANTS.secondary` is the opposite relationship —
+ *   transparent with a slate-700 border at rest, filling to `bg-slate-800` on
+ *   hover — and `BTN_SIZES.sm` would take the radius from `rounded` (4px) to
+ *   `rounded-lg` (8px). Adopting it would invert both states of a control the
+ *   user reaches for in order to back out.
+ *
+ * There is also a mechanical cost: `Modal` renames the backdrop's test id to
+ * `modal-backdrop`, which `confirm-dialog.a11y.test.tsx` asserts on.
+ *
+ * All four are smaller than the deduplication is worth, and all four are
+ * `Modal` changes. So the composition is recorded as a design-system decision
+ * — a shared overlay with an error slot, a caller-settable footer gap, and a
+ * choice of cancel treatment — rather than made unilaterally inside a page
+ * migration. `Modal` is now portaled; this component is not, so its callers
+ * must keep rendering it OUTSIDE any `PageTransition` subtree. See
+ * `AlertsPage.tsx` for what that costs.
  */
 export function ConfirmDialog({
   title,
