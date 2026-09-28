@@ -23,6 +23,37 @@
    `eslint-rules/`, move this line with it. */
 @source not "../eslint-rules";
 
+/* The test tree is EXCLUDED from class scanning, and this is the second line
+   in the project that a test file made necessary.
+
+   WHY, MEASURED: Tailwind scans every file in the project as PLAIN TEXT. It
+   does not parse code, and it does not stop at comments or at string
+   boundaries, so a class-shaped token written in a test — or in a comment in a
+   test — becomes a real rule in the bundle. Measured on this tree, before
+   these two lines: 10 rules, 577 bytes, that no element in the product can
+   match. `.top-5` came from the word "top-5" in a prose comment. `.grow` came
+   from the English word "grow". `.cursor-not-allowed`, `.border-risk-critical`
+   and `.ring-focus-ring` came from assertions and comments that mention a
+   class in order to say a class is ABSENT.
+
+   Both lines are load-bearing, and the second one is not obvious. The glob
+   catches the co-located `*.test.*` / `*.spec.*` files that sit beside the
+   code they test; the directory line catches everything else under `src/tests`,
+   including `setup.ts` and `mocks/handlers.ts`, which are NOT `*.test.*` and
+   so slip past the glob. Proved by planting a real, previously-unused utility
+   (`w-72`) in `mocks/handlers.ts`:
+     no exclusion at all  -> 68822 bytes, the utility LEAKED into the bundle
+     glob only            -> 68245 bytes, the utility LEAKED
+     directory + glob     -> 68207 bytes, no leak
+   With both lines the build is byte-identical to one where every test file has
+   been physically moved out of the project: 68207 bytes,
+   sha256 ACC4DA1D58C2C9278150F145E55A0739494AA34C50084CFD3CA15FE7C4FBF961.
+
+   Paths are relative to this file. If a test directory is added, it needs its
+   own line here or its class-shaped strings start shipping. */
+@source not "./tests";
+@source not "./**/*.{test,spec}.{ts,tsx}";
+
 @theme {
   /* Semantic risk tones — SINGLE SOURCE for risk/status coloring.
      Chart theme (src/lib/chart-theme.ts) mirrors these values; keep in sync

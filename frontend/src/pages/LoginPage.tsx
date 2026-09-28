@@ -213,17 +213,23 @@ export default function LoginPage() {
             carries the pending state exactly as it did before.
 
             DELTA, and it is the only visual one on this control: the old
-            class carried `disabled:bg-red-800/50`, a hand-rolled disabled
-            fill. `BTN_BASE` dims with `disabled:opacity-50` instead. The signal
+            class carried a hand-rolled `disabled:` BACKGROUND fill, a
+            dark-red one at half alpha. `BTN_BASE` dims with
+            `disabled:opacity-50` instead. The signal
             is the same and it is what every other button in the product does,
             but it is NOT the same change to look at, and an earlier version of
             this comment described it as though it were. The two are not
-            equivalent: `disabled:bg-red-800/50` sets `background-color` and
-            nothing else, so the old pending state was a red-800 fill at half
-            alpha BEHIND AN UNCHANGED LABEL. `disabled:opacity-50` sets
+            equivalent: a `disabled:bg-…` utility sets `background-color` and
+            nothing else, so the old pending state was that fill
+            BEHIND AN UNCHANGED LABEL. `disabled:opacity-50` sets
             `opacity`, which applies to the whole element INCLUDING its text,
             so the label dims along with the fill. Same hue, same half-strength
             intent — and the label goes with it.
+
+            The two old utilities are named in words because Tailwind's scanner
+            reads this comment as plain text and would EMIT rules for them —
+            which is how a class that no element in the product has carried
+            since this migration shipped was still in the bundle.
 
             `h-11 w-full` are layout, and the primitive does not supply them. */}
         <Button

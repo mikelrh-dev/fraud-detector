@@ -138,9 +138,26 @@ describe("LoginPage — primitives migration", () => {
     // Layout the primitive does not supply, and therefore has to keep.
     expect(submit.classList.contains("h-11")).toBe(true);
     expect(submit.classList.contains("w-full")).toBe(true);
-    // The one visual delta on this control, pinned: the hand-rolled
-    // `disabled:bg-red-800/50` is gone in favour of `BTN_BASE`'s opacity dim.
-    expect(submit.className).not.toContain("disabled:bg-red-800/50");
+    // The one visual delta on this control, pinned: the hand-rolled disabled
+    // FILL is gone in favour of `BTN_BASE`'s opacity dim.
+    //
+    // Reworded, because the old form named the class it was forbidding. This
+    // file is no longer scanned by Tailwind (`@source not "./tests"`), so that
+    // alone would have been enough — but the SAME class is still named in
+    // prose comments in `src/pages/LoginPage.tsx` and `RegisterPage.tsx`, which
+    // ARE scanned, so the rule survived the exclusion and the test was part of
+    // the reason. Spelling the class here also made the assertion read as class
+    // usage when it asserts the opposite.
+    //
+    // It is now STRONGER, not weaker, and in the direction that matters: it
+    // forbids ANY hand-rolled `disabled:` background, not one specific red, and
+    // it positively pins the sanctioned replacement. `disabled:bg-` is not a
+    // utility, so nothing is emitted; `disabled:opacity-50` is a real class the
+    // product already uses, so pinning it costs nothing.
+    expect([...submit.classList].filter((c) => c.startsWith("disabled:bg-"))).toEqual(
+      [],
+    );
+    expect(submit.classList.contains("disabled:opacity-50")).toBe(true);
   });
 
   it("the submit control still submits the form", async () => {

@@ -270,8 +270,15 @@ describe("TransactionDetail — primitives migration (non-migration, pinned)", (
     // horizontal padding.
     expect(copy.classList.contains("text-slate-400")).toBe(true);
     expect(copy.classList.contains("hover:text-slate-200")).toBe(true);
-    // And the hover-on-text half, which no variant provides at all.
-    expect(copy.classList.contains("enabled:hover:text-slate-200")).toBe(false);
+    // And the hover-on-text half, which no variant provides at all. Reworded
+    // from `contains("enabled:hover:text-slate-200") === false`: that literal
+    // was scanned by Tailwind and emitted a rule nothing could match. The
+    // prefix form is a superset of what it forbade — any `enabled:`-guarded
+    // hover, not just that one colour — and `enabled:hover:` on its own is not
+    // a utility, so it emits nothing.
+    expect(
+      [...copy.classList].filter((c) => c.startsWith("enabled:hover:")),
+    ).toEqual([]);
     // The touch-target floor from the mobile retrofit, which must survive
     // whatever the eventual icon size is.
     expect(copy.classList.contains("max-md:min-h-[40px]")).toBe(true);

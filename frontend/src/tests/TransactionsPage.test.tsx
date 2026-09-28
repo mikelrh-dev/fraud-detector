@@ -282,7 +282,17 @@ describe("TransactionsPage — primitives migration", () => {
     // A BARE hover, which is the defect `enabled:` exists to fix — asserted
     // here so the day a filled-neutral variant lands, the gate is added with it.
     expect(prev.classList.contains("hover:bg-slate-700")).toBe(true);
-    expect(prev.classList.contains("enabled:hover:bg-slate-700")).toBe(false);
+    // …and no `enabled:`-guarded hover alongside it. Reworded from
+    // `contains("enabled:hover:bg-slate-700") === false`, which named the very
+    // utility it was forbidding: that literal was picked up by Tailwind's
+    // scanner and emitted a rule no element could match.
+    //
+    // STRONGER, not weaker: the old form forbade one specific spelling, this
+    // forbids the whole guarded family, so a future `enabled:hover:bg-slate-600`
+    // is caught too. `enabled:hover:` alone is not a utility and emits nothing.
+    expect([...prev.classList].filter((c) => c.startsWith("enabled:hover:"))).toEqual(
+      [],
+    );
   });
 
   it("the page carries no bare focus: variant anywhere in its code", () => {

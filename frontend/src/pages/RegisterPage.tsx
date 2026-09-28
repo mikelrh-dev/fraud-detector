@@ -302,12 +302,18 @@ export default function RegisterPage() {
               about to press. `disabled` carries the pending state as before.
 
               DELTA, the same one as on `LoginPage` and the only visual one
-              here: the hand-rolled `disabled:bg-red-800/50` becomes
+              here: the hand-rolled `disabled:` background fill (a dark red at
+              half alpha) becomes
               `BTN_BASE`'s `disabled:opacity-50`. Not an equivalent swap —
-              `bg`/50 only set `background-color`, so the old pending state
+              a `bg-`/50 utility only sets `background-color`, so the old
+              pending state
               kept its label at full strength, while `opacity-50` applies to
               the whole element and dims the label too. Same signal, and the
-              accent instead of red-800, but the text changes with it. */}
+              accent instead of red, but the text changes with it.
+
+              Described in words rather than written out: Tailwind's scanner
+              reads this comment and would emit a rule for the old class, which
+              is how it stayed in the bundle after nothing used it. */}
           <Button
             type="submit"
             variant="primary"

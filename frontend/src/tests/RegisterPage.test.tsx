@@ -160,8 +160,16 @@ describe("RegisterPage — primitives migration", () => {
     expect(submit.classList.contains("focus-visible:ring-focus-ring")).toBe(true);
     expect(submit.classList.contains("h-11")).toBe(true);
     expect(submit.classList.contains("w-full")).toBe(true);
-    // The one visual delta on this control, pinned.
-    expect(submit.className).not.toContain("disabled:bg-red-800/50");
+    // The one visual delta on this control, pinned: the hand-rolled disabled
+    // fill is gone in favour of `BTN_BASE`'s opacity dim. Same rewrite, and
+    // the same reason, as the identical assertion in `LoginPage.test.tsx` —
+    // named in words, and STRONGER: it forbids any hand-rolled `disabled:`
+    // background rather than one specific red, and it positively pins the
+    // sanctioned replacement.
+    expect([...submit.classList].filter((c) => c.startsWith("disabled:bg-"))).toEqual(
+      [],
+    );
+    expect(submit.classList.contains("disabled:opacity-50")).toBe(true);
   });
 
   it("the submit control still registers, and still sends analyst", async () => {
