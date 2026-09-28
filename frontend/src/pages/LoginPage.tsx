@@ -4,6 +4,7 @@ import { Eye, EyeSlash } from "@phosphor-icons/react";
 import { login } from "../api/auth";
 import { useAuthStore } from "../store/authStore";
 import { AUTH_INPUT_CLASS, AuthSplitLayout } from "../components/AuthSplitLayout";
+import { Button } from "../components/Button";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -79,6 +80,38 @@ export default function LoginPage() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-4" noValidate>
+        {/* The two inputs below are NOT on `Input` + `Field`, deliberately.
+
+            DESIGN.md gives the auth split-screen its own field spec — "RIGHT
+            form panel: labels above inputs (`text-xs` slate-400); inputs per
+            Forms spec (h-11, focus ring risk-critical/25)" — which is five
+            deliberate departures from what the primitives carry: `bg-slate-900`
+            against `INPUT_BASE`'s slate-800, `border-slate-800` against
+            slate-700, `text-slate-200` against slate-100, `placeholder:text-
+            slate-600` against slate-500, and a focus ring in the risk tone at
+            25% against the full-strength `focus-ring` token. The label is the
+            same story: `text-xs font-medium slate-400` against
+            `FIELD_LABEL`'s `text-sm slate-300`.
+
+            `Field` and `Input` expose no way to say "this surface's field
+            spec is the other one", and passing the differences through
+            `className` does not work either: Tailwind resolves two utilities
+            of the same property by STYLESHEET ORDER, not attribute order, and
+            the built CSS puts `.bg-slate-800` (245) before `.bg-slate-900`
+            (246) and `.px-3` (262) before `.px-2` (261). The override wins
+            only when it happens to sort later, so half the tokens would
+            apply and half would not — the caller would be writing classes that
+            look right and silently do nothing.
+
+            So these stay as they are, and this pass records the divergence
+            instead of hiding it. Two consequences that are NOT resolved here:
+            the hand-rolled `AUTH_INPUT_CLASS` keeps its `focus:` ring, which
+            paints on mouse click (the defect `FOCUS_RING` exists to fix), and
+            these two fields keep their own label/error wiring rather than the
+            programmatic `aria-describedby` link `Field` provides. Both are
+            owed to the visual/design pass, which is the only place that can
+            decide whether the auth panel keeps its own field spec.
+        */}
         <div>
           <label
             htmlFor="email"
@@ -116,6 +149,17 @@ export default function LoginPage() {
               required
               className={`${AUTH_INPUT_CLASS} pr-11`}
             />
+            {/* The visibility toggle is NOT on `Button` either, and this one is
+                a gap in the design system rather than a divergence from it:
+                there is no icon-only size, and no variant whose resting and
+                hover text match. `ghost` is `text-slate-400` → slate-100 and
+                this is slate-500 → slate-300, so adopting it would change
+                both states; `secondary` would add a border and a background.
+
+                A size that carries no padding is what this control actually
+                wants (`w-11`, `inset-y-0`, icon only), and `BTN_SIZES` is
+                `sm`/`md` — both of which set horizontal padding. Minting an
+                `icon` size is a DESIGN change, so it is reported, not made. */}
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
@@ -141,13 +185,33 @@ export default function LoginPage() {
           </p>
         )}
 
-        <button
+        {/* Submit. `type="submit"` is EXPLICIT and load-bearing: `Button`
+            defaults to `type="button"`, so without it this control is inert
+            inside the form — focusable, clickable, and doing nothing.
+
+            `loading` is deliberately NOT used, even though the primitive has
+            it. `loading` implies a fixed label plus a spinner, and the
+            "Ingresando..." copy is the existing, reviewed one; swapping it
+            for a spinner would be a visible change on the control the user
+            is about to press, which this pass must not make. `disabled`
+            carries the pending state exactly as it did before.
+
+            DELTA, and it is the only visual one on this control: the old
+            class carried `disabled:bg-red-800/50`, a hand-rolled disabled
+            fill. `BTN_BASE` dims with `disabled:opacity-50` instead, so the
+            pending state is now the accent at half opacity rather than
+            red-800 at half opacity. Same signal, different value, and it is
+            what every other button in the product already does.
+
+            `h-11 w-full` are layout, and the primitive does not supply them. */}
+        <Button
           type="submit"
+          variant="primary"
           disabled={loading}
-          className="btn-motion active:scale-[0.98] h-11 w-full rounded-lg bg-accent hover:bg-action-hover disabled:bg-red-800/50 disabled:cursor-not-allowed font-medium text-white text-sm"
+          className="h-11 w-full"
         >
           {loading ? "Ingresando..." : "Ingresar"}
-        </button>
+        </Button>
       </form>
 
       {/* Demo login */}
@@ -158,14 +222,26 @@ export default function LoginPage() {
           <span className="h-px flex-1 bg-slate-800" aria-hidden="true" />
         </div>
 
-        <button
-          type="button"
+        {/* The demo CTA is a clean fit for `secondary` and this one is
+            exception-free. Every token it used to re-type is either carried by
+            the variant or is a no-op: `border-slate-700`, `text-slate-300`,
+            `rounded-lg` and `font-medium` all match, `disabled:opacity-50` was
+            already there, and `bg-transparent` is new but describes what an
+            unclassed button already rendered.
+
+            Two deltas, both wins rather than changes of appearance:
+            `hover:bg-slate-800` became `enabled:hover:bg-slate-800`, so the
+            fill no longer fires under the cursor while the control is
+            disabled; and the control gains the shared `focus-visible` ring,
+            replacing whatever the user agent drew for it. */}
+        <Button
+          variant="secondary"
           onClick={handleDemoLogin}
           disabled={loading}
-          className="btn-motion active:scale-[0.98] mt-4 h-11 w-full rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
+          className="mt-4 h-11 w-full"
         >
           Demo: Probar con Cuenta de Prueba
-        </button>
+        </Button>
       </div>
 
       {/* Register link */}
