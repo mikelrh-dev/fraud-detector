@@ -16,10 +16,10 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
+    "types": ["vitest/globals"],
     "paths": {
       "@/*": ["src/*"]
     }
   },
-  "include": ["src"],
-  "exclude": ["src/tests"]
+  "include": ["src"]
 }
