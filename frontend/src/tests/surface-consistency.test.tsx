@@ -28,8 +28,8 @@ import type { ScoreResponse } from "../api/transactions";
  *
  * EVERY EXPECTATION IS A LITERAL
  * -----------------------------
- * No expectation here imports `TONE_CLASSES`, `classificationPillClass` or any
- * other constant. Importing the thing under test makes the assertion a
+ * No expectation here imports `TONE_CLASSES` or any other constant, helper or
+ * token table. Importing the thing under test makes the assertion a
  * tautology: change the constant and both sides of the comparison move, so the
  * test stays green while the design changes under it. The tokens below are
  * spelled out, which is what makes them able to go red.

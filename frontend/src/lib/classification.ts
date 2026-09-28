@@ -85,12 +85,6 @@ const PILL_BY_TONE: Record<ClassificationTone, string> = {
   neutral: "text-slate-400 bg-slate-800 border-slate-600/30",
 };
 
-export function classificationPillClass(
-  classification: string | null | undefined,
-): string {
-  return PILL_BY_TONE[classificationTone(classification)];
-}
-
 /** Text-only variant for compact cells. */
 export function classificationTextClass(
   classification: string | null | undefined,

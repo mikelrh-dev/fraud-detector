@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   classificationTone,
   classificationText,
-  classificationPillClass,
   classificationTextClass,
   isKnownClassification,
 } from "../lib/classification";
@@ -70,32 +69,6 @@ describe("classificationText", () => {
     expect(classificationText(undefined)).toBe("Pendiente");
     expect(classificationText("")).toBe("Pendiente");
     expect(classificationText("mystery")).toBe("Pendiente");
-  });
-});
-
-describe("classificationPillClass", () => {
-  it("uses the fraud tokens for fraud", () => {
-    expect(classificationPillClass("fraud")).toContain("fraud-fraud");
-  });
-
-  it("uses the review tokens for review", () => {
-    expect(classificationPillClass("review")).toContain("fraud-review");
-  });
-
-  it("uses the legitimate tokens for legitimate", () => {
-    expect(classificationPillClass("legitimate")).toContain("fraud-legitimate");
-  });
-
-  it("uses slate for pending, not a risk colour", () => {
-    const cls = classificationPillClass("pending");
-    expect(cls).toContain("slate");
-    expect(cls).not.toContain("fraud-legitimate");
-  });
-
-  it("returns a class string for every input including null", () => {
-    for (const input of ["legitimate", "review", "fraud", "pending", null, ""]) {
-      expect(classificationPillClass(input).length).toBeGreaterThan(0);
-    }
   });
 });
 
