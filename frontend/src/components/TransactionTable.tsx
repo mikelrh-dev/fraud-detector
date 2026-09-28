@@ -86,7 +86,7 @@ export default function TransactionTable({
           <button
             key={cls}
             onClick={() => onFilterChange(cls === "all" ? undefined : cls)}
-            className={`btn-motion active:scale-[0.98] text-xs px-3 py-1 rounded-full ${
+            className={`btn-motion active:scale-[0.98] text-xs px-3 py-1 rounded-full ${FOCUS_RING} ${
               (cls === "all" && !classificationFilter) ||
               classificationFilter === cls
                 ? "bg-slate-700 text-slate-200"
@@ -244,14 +244,22 @@ export default function TransactionTable({
             <button
               onClick={() => onPageChange(page - 1)}
               disabled={page <= 1}
-              className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={cn(
+                "px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed",
+                FOCUS_RING,
+                "max-md:min-h-[40px]",
+              )}
             >
               Anterior
             </button>
             <button
               onClick={() => onPageChange(page + 1)}
               disabled={page >= totalPages}
-              className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={cn(
+                "px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed",
+                FOCUS_RING,
+                "max-md:min-h-[40px]",
+              )}
             >
               Siguiente
             </button>

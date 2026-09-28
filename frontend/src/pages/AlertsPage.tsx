@@ -18,7 +18,7 @@ import { MotionList } from "../components/MotionList";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageTransition } from "../components/PageTransition";
 import { RiskMeter } from "../components/RiskMeter";
-import { NUMERIC_CELL } from "../lib/ui";
+import { NUMERIC_CELL, FOCUS_RING, cn } from "../lib/ui";
 import { formatTimestamp } from "../lib/datetime";
 import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import {
@@ -193,8 +193,19 @@ export default function AlertsPage() {
 
               Minting a selected variant is a DESIGN change, so it is reported.
               What it costs meanwhile, and what a test pins: these four controls
-              have no focus ring at all, because the treatment they carry was
-              hand-rolled without `FOCUS_RING`. */}
+              used to have no focus ring at all, because the treatment they carry
+              was hand-rolled without `FOCUS_RING`. It now carries the shared
+              treatment like every other control in the product.
+
+              THE RING IS NOT A VARIANT QUESTION, which is why it was closed
+              while the selected state stayed open. The gap recorded above is a
+              missing `BTN_VARIANTS` entry for the SELECTED/UNSELECTED pair; the
+              focus ring is a separate, orthogonal token, and composing it
+              changes no colour, no radius and no size. Leaving the tab silent to
+              a keyboard because the surrounding variant has not been minted is
+              the wrong half of the answer: a keyboard user tabbing the filter
+              row got nothing at all, and a ring is the one thing a chip can have
+              without a variant. */}
           <div className="flex gap-2">
             {(
               [
@@ -212,7 +223,7 @@ export default function AlertsPage() {
                   // spelling of it.
                   applyFilters({ [LIST_PARAMS.status]: f.value });
                 }}
-                className={`btn-motion active:scale-[0.98] text-xs px-3 py-1.5 rounded-full ${
+                className={`btn-motion active:scale-[0.98] text-xs px-3 py-1.5 rounded-full ${FOCUS_RING} ${
                   statusFilter === f.value
                     ? "bg-slate-700 text-slate-200"
                     : "bg-slate-800 text-slate-400 hover:bg-slate-700"
@@ -232,10 +243,14 @@ export default function AlertsPage() {
                 ))}
               </div>
             ) : isError ? (
-              <div
-                role="alert"
-                className="rounded-xl border border-risk-critical/30 bg-slate-900"
-              >
+              // The wrapper carries NO live-region role, and that is a fix rather
+              // than an omission. It used to be `role="alert"` here AND on the
+              // `<State>` inside it, which nests two assertive live regions: the
+              // subtree is announced twice, and the outer one re-announces
+              // whenever the retry control inside it changes. `State`'s error
+              // tone owns the role — that is its contract — and the wrapper is
+              // a panel, not a message.
+              <div className="rounded-xl border border-risk-critical/30 bg-slate-900">
                 <State
                   tone="error"
                   icon={<AlertLineArt />}
@@ -372,10 +387,11 @@ export default function AlertsPage() {
                     ) : isError ? (
                       <tr>
                         <td colSpan={6}>
-                          <div
-                            role="alert"
-                            className="rounded-xl border border-risk-critical/30 bg-slate-900"
-                          >
+                          {/* No `role` here, for the same reason as the mobile
+                              card above: the `<State>` inside owns the assertive
+                              live region, and a second one on this wrapper
+                              announced the table's failure block twice. */}
+                          <div className="rounded-xl border border-risk-critical/30 bg-slate-900">
                             <State
                               tone="error"
                               icon={<AlertLineArt />}
@@ -488,7 +504,15 @@ export default function AlertsPage() {
                   states. These are also `px-3 py-1` with no `btn-motion`, so
                   they are not even internally consistent with the other
                   hand-rolled controls. A filled-neutral variant is a DESIGN
-                  addition; reported, not made. */}
+                  addition; reported, not made.
+
+                  As on `TransactionsPage`, "NOT migrated" is about the variant.
+                  The two treatments that are not a variant question are applied
+                  over the hand-rolled string: `FOCUS_RING`, because these two
+                  carried `hover:` and no focus treatment at all, and the house
+                  `max-md:min-h-[40px]`, because `px-3 py-1` on a `text-xs` line
+                  box is 24px — the smallest target in the product before this.
+                  Neither changes a resting or hovered colour. */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between p-3 border-t border-slate-800">
                   <span className="text-xs text-slate-500">
@@ -498,14 +522,22 @@ export default function AlertsPage() {
                     <button
                       onClick={() => goToPage(Math.max(DEFAULT_PAGE, shownPage - 1))}
                       disabled={shownPage <= DEFAULT_PAGE}
-                      className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className={cn(
+                        "px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed",
+                        FOCUS_RING,
+                        "max-md:min-h-[40px]",
+                      )}
                     >
                       Anterior
                     </button>
                     <button
                       onClick={() => goToPage(Math.min(totalPages, shownPage + 1))}
                       disabled={shownPage >= totalPages}
-                      className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className={cn(
+                        "px-3 py-1 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed",
+                        FOCUS_RING,
+                        "max-md:min-h-[40px]",
+                      )}
                     >
                       Siguiente
                     </button>
@@ -701,8 +733,15 @@ function ActionButton({
   // Left hand-rolled, deliberately. See the note at the call site: a tonal
   // `*/10`-fill variant at `text-[11px] px-2 py-1 rounded` matches nothing in
   // `BTN_VARIANTS` or `BTN_SIZES`, and the radius loses to `rounded-lg` on
-  // stylesheet order. This is the smallest unit in the product that carries no
-  // focus ring at all, which is the concrete cost of the missing variant.
+  // stylesheet order.
+  //
+  // It USED to be the smallest unit in the product with no focus ring at all,
+  // which was recorded here as the concrete cost of the missing variant. That
+  // conflated two independent things, and the ring half is now closed. The
+  // variant gap is real and still open; the ring was never a function of it,
+  // because a ring is one orthogonal token and composing it changes no fill, no
+  // border and no radius. The cost was that a keyboard user reaching an alert
+  // row's action got nothing.
   const tones: Record<ActionTone, string> = {
     info: "bg-status-info/10 text-status-info hover:bg-status-info/20 border-status-info/30",
     clean:
@@ -716,7 +755,7 @@ function ActionButton({
         e.stopPropagation();
         onClick();
       }}
-      className={`btn-motion active:scale-[0.98] max-md:min-h-[40px] max-md:px-3 max-md:text-xs text-[11px] px-2 py-1 rounded border ${tones[tone]}`}
+      className={`btn-motion active:scale-[0.98] ${FOCUS_RING} max-md:min-h-[40px] max-md:px-3 max-md:text-xs text-[11px] px-2 py-1 rounded border ${tones[tone]}`}
     >
       {label}
     </button>

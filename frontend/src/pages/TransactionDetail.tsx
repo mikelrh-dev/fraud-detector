@@ -362,7 +362,20 @@ export default function TransactionDetail() {
               place above the very attribute that answers it. The note is
               removed rather than left contradicting the line under it. The
               "two such controls" figure was wrong too: this page has no
-              unnamed icon button now, and had one at most, not two. */}
+              unnamed icon button now, and had one at most, not two.
+
+              THE HIT AREA IS NOW THE FLOOR, and this is the half of the gap that
+              was not a design question. The box was 20px — the `w-5 h-5` glyph
+              and nothing else — while every other icon-only control in the
+              product carries `max-md:min-h-[40px]`. Applying the same
+              `max-md:` treatment to BOTH axes reaches 40x40 on a touch
+              viewport: `min-h` alone would have left a 40x20 target, which is
+              under the floor on the axis that matters less and so does not clear
+              it. The glyph stays at `w-5 h-5` — the hit area grew, the icon did
+              not — and the desktop box is untouched, because the 40px floor is
+              a touch-viewport concern and the copy control above it takes the
+              same view. An icon-only `BTN_SIZES` entry is still the real fix and
+              is still reported, not made. */}
           <button
             type="button"
             // The icon carries no text, so without this the control is announced
@@ -371,7 +384,7 @@ export default function TransactionDetail() {
             // read as content; the name comes from here.
             aria-label="Volver al dashboard"
             onClick={() => navigate("/dashboard")}
-            className="text-slate-400 hover:text-slate-200 transition-colors"
+            className="text-slate-400 hover:text-slate-200 transition-colors max-md:min-h-[40px] max-md:min-w-[40px] max-md:inline-flex max-md:items-center max-md:justify-center"
           >
             <svg
               aria-hidden="true"

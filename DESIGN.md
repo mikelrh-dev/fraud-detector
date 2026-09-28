@@ -532,16 +532,16 @@ design system.
 **The button-base discriminator, and its measured weakness.** Ten call sites
 carry the motion pair, and they are **not ten of the same thing**:
 
-- **Four are chips and pills** — `AlertsPage.tsx:215` and `:717`,
-  `TransactionTable.tsx:89`, `TransactionsPage.tsx:217`. They are not buttons
-  and must not be made into them. The harm of forcing the base on a chip is
-  smaller than it was first claimed to be: for a single short label
-  `inline-flex items-center justify-center gap-1.5` changes nothing a reader can
-  see, and only `font-medium` is a real visual delta — which
-  `TransactionsPage.tsx:217` already carries.
+- **Four are chips and pills** — `AlertsPage.tsx:226`, the `ActionButton` in
+  `AlertsPage.tsx`, `TransactionTable.tsx:89`, `TransactionsPage.tsx:224`. They
+  are not buttons and must not be made into them. The harm of forcing the base
+  on a chip is smaller than it was first claimed to be: for a single short
+  label `inline-flex items-center justify-center gap-1.5` changes nothing a
+  reader can see, and only `font-medium` is a real visual delta — which
+  `TransactionsPage.tsx:224` already carries.
 - **Six are real buttons** re-typing most of `BTN_BASE` — `ConfirmDialog.tsx`
   `:201` and `:212`, `ErrorBoundary.tsx:119`, `TransactionDetail.tsx:178`,
-  `TransactionsPage.tsx:472` and `:479`. They are the drift this check exists to
+  `TransactionsPage.tsx:490` and `:501`. They are the drift this check exists to
   catch, and they escape it, because each omits `touch-manipulation` — one token
   out of fourteen.
 
@@ -566,7 +566,7 @@ their call sites; the fix for the six is the missing primitives, not a wider net
 - **Two** inline, rule-specific `eslint-disable` comments, and the reasons are
   not the same shape. `SkipLink.tsx:61` covers one recorded divergence: a skip
   link must reveal on any focus, not `focus-visible:`. The `<textarea>` in
-  `AlertsPage.tsx:653` covers **two** on one line — a focus ring *and* an
+  `AlertsPage.tsx:687` covers **two** on one line — a focus ring *and* an
   `INPUT_BASE` re-type (it carries `bg-slate-800 rounded-lg
   placeholder-slate-500`, with `text-slate-200` where the constant has
   `text-slate-100`), and the reason says so. `eslint-disable-next-line` takes
@@ -616,6 +616,44 @@ a decision are invisible to it. Tailwind's scanner, by contrast, reads comments
 denied, and the `@source not` line above for what that costs when a test file
 cannot avoid naming a class.
 
+### The other half: `filter-rows.a11y.test.tsx`
+
+**The rule above catches a class string that is PRESENT and wrong. It cannot
+catch one that is ABSENT**, and absence is how three of the four filter rows in
+this product ended up with no focus treatment: nine call sites carried
+`FOCUS_RING` and three did not, and nothing recorded the difference. A keyboard
+user tabbing those rows got no indicator of any kind.
+
+So the missing-class half is a **test**, not a lint check, and the choice is
+deliberate. A rule for absence has to read JSX, decide which elements are
+interactive, and then either exempt every recorded divergence with a
+suppression — the "ten suppressions and a rule nobody reads" outcome the
+sections above warn against twice — or carry a new exemption vocabulary that is
+its own rot. A test enumerates the controls that actually rendered and asks the
+one question that matters, which also means a **fifth pill added to a filter
+row goes red on its own** rather than waiting to be noticed.
+
+Four properties make it falsifiable rather than decorative, and each was checked
+by breaking the code it observes:
+
+- It reads the **rendered DOM** and asserts the two house tokens as **literals**.
+  Asserting "carries `FOCUS_RING`" would be a tautology, since mutating the
+  constant moves both sides.
+- It asserts an explicit **control count** per surface, so a row that stops
+  rendering — or a selector that stops matching — cannot turn the loop vacuous.
+- It rejects any bare `focus:`-prefixed token on the same control, so a ring that
+  fires on mouse click cannot satisfy a check that only looked for "a ring".
+- Measured both ways: removing `FOCUS_RING` from one row produces one named
+  failure (`AlertsPage status filter row: "Todas" is missing
+  focus-visible:ring-2`); removing it from all three produces three.
+
+**Two assertions had to be flipped, not deleted.** `AlertsPage.primitives` and
+`TransactionsPage` each pinned the ring's *absence* as "the accessibility cost of
+the gap" — the conflation being undone is that the missing `BTN_VARIANTS` entry
+*caused* the missing ring. It did not: a ring is one orthogonal token and
+composing it changes no fill, radius or size. The variant is still owed and still
+not made; the ring half is closed.
+
 ---
 
 ## Stitch design references
@@ -655,6 +693,20 @@ Responsive retrofit. Desktop (md+ ≥ 768px) remains pixel-identical to the orig
 ### Touch Targets (≥ 40px)
 - Applied via `max-md:min-h-[40px] max-md:px-3 max-md:text-xs` on interactive elements
 - Ensures WCAG 2.5.8 compliance on viewports below 768px
+- **BOTH axes, for a square icon-only control.** `min-h` alone turns a 20px box
+  into a 40×20 target, which is still under the floor on the axis the floor is
+  about. An icon-only control also takes `min-w`. The back arrow in
+  `TransactionDetail` and the burger in `Sidebar` were the two that did not; the
+  glyph on each stays at its current size, because the target grew and the icon
+  did not.
+- **The prefix is `max-md:` only when the control also exists at `md+`.** The
+  burger is `md:hidden`, so it exists only below the breakpoint where the floor
+  applies and takes an unconditional `min-h`/`min-w`; a `max-md:` prefix there
+  would be true for every pixel it is ever visible.
+- Six pagination controls (three paginations, prev/next each) carry the floor
+  plus `FOCUS_RING`. They had `hover:` and no focus treatment at all, and at
+  24–28px they were the smallest targets in the product.
+- Pinned by `src/tests/filter-rows.a11y.test.tsx` in both directions.
 
 ### Overflow Guard
 - Every page root div includes `overflow-x-hidden` to prevent horizontal scroll at 375px

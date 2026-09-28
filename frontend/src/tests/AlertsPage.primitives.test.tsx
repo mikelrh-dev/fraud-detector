@@ -182,8 +182,20 @@ describe("AlertsPage — primitives migration", () => {
     // attribute order, and the tabs stop being tabs.
     expect(tab.classList.contains("rounded-full")).toBe(true);
     expect(tab.classList.contains("bg-slate-700")).toBe(true);
-    // The accessibility cost of the gap, pinned: no focus ring at all.
-    expect(tab.classList.contains("focus-visible:ring-2")).toBe(false);
+    // These two assertions USED to pin the absence of a focus ring, as "the
+    // accessibility cost of the gap". That was true and it was a defect: a
+    // keyboard user tabbing the filter row got no indicator at all. They are
+    // flipped, not deleted, and the flip is the record of the fix.
+    //
+    // The conflation being undone is the one the page's own comment made --
+    // that the missing `BTN_VARIANTS` entry CAUSED the missing ring. It did
+    // not. A ring is one orthogonal token, composing it changes no fill, no
+    // radius and no size, and the selected-state variant is still owed and
+    // still not made. `filter-rows.a11y.test.tsx` now enumerates every control
+    // in every filter row, so a fifth pill without a ring goes red on its own
+    // rather than waiting to be noticed.
+    expect(tab.classList.contains("focus-visible:ring-2")).toBe(true);
+    expect(tab.classList.contains("focus-visible:ring-focus-ring")).toBe(true);
 
     const action = (await screen.findAllByRole("button", { name: "Revertir" }))[0];
     // A tonal `*/10` fill at `text-[11px] px-2 py-1 rounded`. `rounded` also
@@ -192,7 +204,7 @@ describe("AlertsPage — primitives migration", () => {
     expect(action.classList.contains("text-[11px]")).toBe(true);
     expect(action.classList.contains("bg-risk-warn/10")).toBe(true);
     expect(action.classList.contains("max-md:min-h-[40px]")).toBe(true);
-    expect(action.classList.contains("focus-visible:ring-2")).toBe(false);
+    expect(action.classList.contains("focus-visible:ring-2")).toBe(true);
   });
 
   it("the dialog is still a sibling of PageTransition, not inside it", async () => {

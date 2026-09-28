@@ -151,10 +151,21 @@ export function Sidebar({ activeItem }: SidebarProps) {
         {sidebarContent}
       </aside>
 
-      {/* Mobile burger button */}
+      {/* Mobile burger button.
+
+          The touch floor is UNCONDITIONAL here, and the difference from the
+          other icon-only controls is structural rather than a second opinion:
+          this one is `md:hidden`, so it exists only below the breakpoint where
+          the house `max-md:` floor applies. Writing `max-md:min-h-[40px]` would
+          be true for every pixel it is ever visible, and true-but-constant is
+          what a `max-md:` prefix is for nothing.
+
+          `p-2` around a 20px glyph is 36x36, so BOTH axes are under the floor
+          and both are raised. The glyph stays at 20 — the button box grew, the
+          icon did not. */}
       <button
         onClick={() => setOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+        className="md:hidden fixed top-4 left-4 z-50 p-2 min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
         aria-expanded={open}
         aria-label="Abrir menú de navegación"
       >

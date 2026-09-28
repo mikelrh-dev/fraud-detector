@@ -196,13 +196,20 @@ export default function TransactionsPage() {
               selected/unselected pair is the only thing missing.
 
               Minting one is a DESIGN change, so it is reported rather than made.
-              What it costs meanwhile, and what the test pins: these four
-              controls have no focus ring at all, because the treatment they do
-              carry was hand-rolled without `FOCUS_RING`. `AlertsPage` has the
-              same pair in `rounded-full`, where a `Button` would additionally
-              lose the radius — Tailwind emits `rounded`, `rounded-full` and
-              `rounded-lg` in that stylesheet order, so the later `rounded-lg`
-              from `BTN_SIZES` wins regardless of attribute order. */}
+              What it cost meanwhile was a total absence of focus ring on these
+              four controls, because the treatment they do carry was hand-rolled
+              without `FOCUS_RING`; they now compose the shared ring, which is
+              orthogonal to the variant question and changes no colour, radius or
+              size. `AlertsPage` has the same pair in `rounded-full`, where a
+              `Button` would additionally lose the radius — Tailwind emits
+              `rounded`, `rounded-full` and `rounded-lg` in that stylesheet
+              order, so the later `rounded-lg` from `BTN_SIZES` wins regardless
+              of attribute order.
+
+              The ring, the touch floor and the shared focus treatment are now
+              pinned by `filter-rows.a11y.test.tsx`, which enumerates every
+              interactive control in every filter row rather than naming two, so
+              a fifth pill added without a ring goes red on its own. */}
           <div className="flex gap-1.5">
             {statusPills.map((pill) => (
               <button
@@ -214,7 +221,7 @@ export default function TransactionsPage() {
                   // returns to the bare path, which is the one worth sharing.
                   applyFilters({ [LIST_PARAMS.status]: pill.key });
                 }}
-                className={`btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium ${
+                className={`btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium ${FOCUS_RING} ${
                   statusFilter === pill.key
                     ? "bg-slate-700 text-slate-200"
                     : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-300"
@@ -459,7 +466,17 @@ export default function TransactionsPage() {
                 A filled-neutral variant is a DESIGN addition, so it is reported
                 rather than made. Note that `TransactionTable` and `AlertsPage`
                 carry the same two treatments, so the gap is product-wide, not
-                local to this page. */}
+                local to this page.
+
+                "NOT migrated" is about the VARIANT, and the two treatments that
+                are not a variant question are applied on top of the hand-rolled
+                string: `FOCUS_RING`, because these two had `hover:` and NO
+                focus treatment at all — the exact asymmetry the rest of the
+                product closed — and the house `max-md:min-h-[40px]`, because
+                `px-3 py-1.5` on a `text-xs` line box is 28px, well under the
+                40px touch floor the other icon-sized controls were raised to.
+                Both are orthogonal to the fill, and neither changes a resting
+                or hovered colour. */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-4">
                 <p className="text-xs text-slate-400">
@@ -469,14 +486,22 @@ export default function TransactionsPage() {
                   <button
                     onClick={() => goToPage(Math.max(DEFAULT_PAGE, shownPage - 1))}
                     disabled={shownPage <= DEFAULT_PAGE}
-                    className="btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className={cn(
+                      "btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed",
+                      FOCUS_RING,
+                      "max-md:min-h-[40px]",
+                    )}
                   >
                     Anterior
                   </button>
                   <button
                     onClick={() => goToPage(Math.min(totalPages, shownPage + 1))}
                     disabled={shownPage >= totalPages}
-                    className="btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className={cn(
+                      "btn-motion active:scale-[0.98] px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed",
+                      FOCUS_RING,
+                      "max-md:min-h-[40px]",
+                    )}
                   >
                     Siguiente
                   </button>

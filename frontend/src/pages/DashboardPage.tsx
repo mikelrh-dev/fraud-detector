@@ -223,8 +223,12 @@ export default function DashboardPage() {
               // Previously this fell through to the charts with an empty
               // dataset, which drew a flat line at zero: a failed request was
               // rendered as "fraud risk is currently zero".
+              // No `role` on this wrapper: the `<State>` inside it already
+              // renders `role="alert"`, and nesting two assertive live regions
+              // announces the same failure twice and re-announces it whenever the
+              // retry control inside changes. `State` owns the role; the wrapper
+              // is a panel.
               <div
-                role="alert"
                 data-testid="chart-error"
                 className="lg:col-span-2 rounded-xl border border-risk-critical/30 bg-slate-900"
               >

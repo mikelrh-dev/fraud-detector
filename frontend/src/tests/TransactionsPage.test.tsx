@@ -256,8 +256,16 @@ describe("TransactionsPage — primitives migration", () => {
     expect(todas.classList.contains("text-slate-200")).toBe(true);
     expect(fraude.classList.contains("bg-slate-800/50")).toBe(true);
     expect(fraude.classList.contains("text-slate-400")).toBe(true);
-    // And still no focus ring, which is the accessibility cost of the gap.
-    expect(todas.classList.contains("focus-visible:ring-2")).toBe(false);
+    // This used to read "and still no focus ring, which is the accessibility
+    // cost of the gap", and assert the absence. That conflated the missing
+    // VARIANT with the missing RING: they are independent, the ring is one
+    // orthogonal token, and composing it changes no fill, radius or size. So
+    // the variant is still owed and still not made -- which is what the rest of
+    // this test pins -- while the ring half is closed. Flipped, not deleted, so
+    // the flip is the record. `filter-rows.a11y.test.tsx` now enumerates every
+    // control in this row, so a fifth pill without a ring goes red on its own.
+    expect(todas.classList.contains("focus-visible:ring-2")).toBe(true);
+    expect(todas.classList.contains("focus-visible:ring-focus-ring")).toBe(true);
   });
 
   it("the pagination controls keep the filled-neutral treatment, which has no variant", async () => {
