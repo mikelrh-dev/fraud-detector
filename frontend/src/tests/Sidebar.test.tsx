@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 
 // Mock the auth store
 vi.mock("../store/authStore", () => ({
@@ -23,15 +24,9 @@ describe("Sidebar", () => {
   beforeEach(() => {
     mockUseAuthStore.mockImplementation(
       (selector?: (state: AuthState) => unknown) => {
-        const state = {
-          user: { id: "test-user-123", role: "analista" },
-          logout: vi.fn(),
-          isAuthenticated: true,
-          token: "mock-token",
-          refreshToken: null,
-          login: vi.fn(),
-          setTokens: vi.fn(),
-        };
+        // `user.id` is overridden, not defaulted: the avatar test below asserts
+        // initials derived from this exact value, and its own comment names it.
+        const state = { ...makeAuthState(), user: { id: "test-user-123", role: "analista" } };
         return selector ? selector(state) : state;
       },
     );

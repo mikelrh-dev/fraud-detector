@@ -8,6 +8,7 @@ import { ShapAttributionCard } from "../components/ShapAttributionCard";
 import { ScoreResultCard } from "../pages/ScoreResultCard";
 import TransactionsPage from "../pages/TransactionsPage";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 import type { ShapContribution } from "../api/transactions";
 import type { ReactNode } from "react";
 
@@ -35,15 +36,7 @@ describe("Desktop regression — md+ classes survive mobile retrofit", () => {
     vi.clearAllMocks();
     mockUseAuthStore.mockImplementation(
       (selector?: (state: AuthState) => unknown) => {
-        const state = {
-          user: { id: "test-user", role: "analista" },
-          logout: vi.fn(),
-          isAuthenticated: true,
-          token: "mock-token",
-          refreshToken: null,
-          login: vi.fn(),
-          setTokens: vi.fn(),
-        };
+        const state = makeAuthState();
         return selector ? selector(state) : state;
       },
     );

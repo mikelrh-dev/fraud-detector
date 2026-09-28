@@ -10,6 +10,7 @@ import AlertsPage from "../pages/AlertsPage";
 import { server } from "./mocks/server";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 import type { ReactNode } from "react";
 
 vi.mock("../store/authStore", () => ({
@@ -46,15 +47,7 @@ function mockAuth() {
   vi.clearAllMocks();
   mockUseAuthStore.mockImplementation(
     (selector?: (state: AuthState) => unknown) => {
-      const state = {
-        user: { id: "test-user", role: "analista" },
-        logout: vi.fn(),
-        isAuthenticated: true,
-        token: "mock-token",
-        refreshToken: null,
-        login: vi.fn(),
-        setTokens: vi.fn(),
-      };
+      const state = makeAuthState();
       return selector ? selector(state) : state;
     },
   );

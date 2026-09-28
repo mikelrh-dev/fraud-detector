@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 
 vi.mock("../store/authStore", () => ({
   useAuthStore: vi.fn(),
@@ -24,15 +25,10 @@ describe("Sidebar — mobile drawer", () => {
     vi.clearAllMocks();
     mockUseAuthStore.mockImplementation(
       (selector?: (state: AuthState) => unknown) => {
-        const state = {
-          user: { id: "test-user-123", role: "analista" },
-          logout: vi.fn(),
-          isAuthenticated: true,
-          token: "mock-token",
-          refreshToken: null,
-          login: vi.fn(),
-          setTokens: vi.fn(),
-        };
+        // Overridden for parity with Sidebar.test.tsx, which asserts initials
+        // from this id. Nothing in the drawer asserts them, so this keeps the
+        // two Sidebar fixtures reading as the same session.
+        const state = { ...makeAuthState(), user: { id: "test-user-123", role: "analista" } };
         return selector ? selector(state) : state;
       },
     );

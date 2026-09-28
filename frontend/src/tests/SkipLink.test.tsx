@@ -9,6 +9,7 @@ import App from "../App";
 import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 
 /**
  * The skip link. Three claims, and each one has a failure mode that a weaker
@@ -64,18 +65,6 @@ vi.mock("../store/authStore", () => ({
 
 const mockUseAuthStore = useAuthStore as unknown as ReturnType<typeof vi.fn>;
 
-function authState() {
-  return {
-    user: { id: "test-user-id", role: "analista" },
-    logout: vi.fn(),
-    isAuthenticated: true,
-    token: "mock-token",
-    refreshToken: null,
-    login: vi.fn(),
-    setTokens: vi.fn(),
-  };
-}
-
 function renderAppAt(path: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -101,7 +90,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUseAuthStore.mockImplementation(
     (selector?: (state: AuthState) => unknown) => {
-      const state = authState();
+      const state = makeAuthState();
       return selector ? selector(state) : state;
     },
   );

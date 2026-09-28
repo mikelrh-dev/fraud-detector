@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import TransactionDetail from "../pages/TransactionDetail";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 import type { Transaction } from "../api/transactions";
 
 /**
@@ -69,15 +70,7 @@ describe("A31 — a failed report request is not an absent report", () => {
     vi.clearAllMocks();
     mockUseAuthStore.mockImplementation(
       (selector?: (state: AuthState) => unknown) => {
-        const state = {
-          user: { id: "u1", role: "analista" },
-          logout: vi.fn(),
-          isAuthenticated: true,
-          token: "mock-token",
-          refreshToken: null,
-          login: vi.fn(),
-          setTokens: vi.fn(),
-        };
+        const state = makeAuthState();
         return selector ? selector(state) : state;
       },
     );

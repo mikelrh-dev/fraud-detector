@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import App from "../App";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 
 /**
  * Task 6: `App` lazily imports every page, and lazy loading is the kind of
@@ -29,18 +30,6 @@ vi.mock("../store/authStore", () => ({
 }));
 
 const mockUseAuthStore = useAuthStore as unknown as ReturnType<typeof vi.fn>;
-
-function authState() {
-  return {
-    user: { id: "test-user-id", role: "analista" },
-    logout: vi.fn(),
-    isAuthenticated: true,
-    token: "mock-token",
-    refreshToken: null,
-    login: vi.fn(),
-    setTokens: vi.fn(),
-  };
-}
 
 function renderAppAt(path: string) {
   const queryClient = new QueryClient({
@@ -93,7 +82,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUseAuthStore.mockImplementation(
     (selector?: (state: AuthState) => unknown) => {
-      const state = authState();
+      const state = makeAuthState();
       return selector ? selector(state) : state;
     },
   );
@@ -223,7 +212,7 @@ describe("App — the guard is unchanged", () => {
   it("redirects an unauthenticated visitor away from /dashboard to /login", async () => {
     mockUseAuthStore.mockImplementation(
       (selector?: (state: AuthState) => unknown) => {
-        const state = { ...authState(), isAuthenticated: false };
+        const state = { ...makeAuthState(), isAuthenticated: false };
         return selector ? selector(state) : state;
       },
     );

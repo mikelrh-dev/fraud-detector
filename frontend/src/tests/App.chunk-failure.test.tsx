@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import App from "../App";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 
 /**
  * What happens when a chunk never arrives.
@@ -62,15 +63,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUseAuthStore.mockImplementation(
     (selector?: (state: AuthState) => unknown) => {
-      const state = {
-        user: { id: "test-user-id", role: "analista" },
-        logout: vi.fn(),
-        isAuthenticated: true,
-        token: "mock-token",
-        refreshToken: null,
-        login: vi.fn(),
-        setTokens: vi.fn(),
-      };
+      const state = makeAuthState();
       return selector ? selector(state) : state;
     },
   );

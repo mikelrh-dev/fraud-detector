@@ -9,6 +9,7 @@ import TransactionsPage from "../pages/TransactionsPage";
 import AlertsPage from "../pages/AlertsPage";
 import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 import { server } from "./mocks/server";
 import type { ReactNode } from "react";
 
@@ -110,15 +111,7 @@ beforeEach(() => {
   alertRequests = [];
   mockUseAuthStore.mockImplementation(
     (selector?: (state: AuthState) => unknown) => {
-      const state = {
-        user: { id: "test-user-id", role: "analista" },
-        logout: vi.fn(),
-        isAuthenticated: true,
-        token: "mock-token",
-        refreshToken: null,
-        login: vi.fn(),
-        setTokens: vi.fn(),
-      };
+      const state = makeAuthState();
       return selector ? selector(state) : state;
     },
   );

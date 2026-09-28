@@ -12,6 +12,7 @@ import { INPUT_BASE } from "../lib/ui";
 import { expectCarries } from "../test-utils/className";
 import { server } from "./mocks/server";
 import type { AuthState } from "../store/authStore";
+import { makeAuthState } from "../test-utils/authState";
 import type { ReactNode } from "react";
 import type { UserEvent } from "@testing-library/user-event";
 import type { ScoreResponse } from "../api/transactions";
@@ -117,15 +118,7 @@ describe("CreateTransactionPage", () => {
     vi.clearAllMocks();
     mockUseAuthStore.mockImplementation(
       (selector?: (state: AuthState) => unknown) => {
-        const state = {
-          user: { id: "00000000-0000-0000-0000-000000000001", role: "analista" },
-          logout: vi.fn(),
-          isAuthenticated: true,
-          token: "mock-token",
-          refreshToken: null,
-          login: vi.fn(),
-          setTokens: vi.fn(),
-        };
+        const state = makeAuthState();
         return selector ? selector(state) : state;
       },
     );
@@ -236,15 +229,7 @@ describe("CreateTransactionPage — primitives migration", () => {
     vi.clearAllMocks();
     mockUseAuthStore.mockImplementation(
       (selector?: (state: AuthState) => unknown) => {
-        const state = {
-          user: { id: "00000000-0000-0000-0000-000000000001", role: "analista" },
-          logout: vi.fn(),
-          isAuthenticated: true,
-          token: "mock-token",
-          refreshToken: null,
-          login: vi.fn(),
-          setTokens: vi.fn(),
-        };
+        const state = makeAuthState();
         return selector ? selector(state) : state;
       },
     );
