@@ -687,18 +687,25 @@ desktop table cells (use `compact` inside `<td>`). It replaces the former
   failure state has default copy and the global error boundary depends on it;
   there is no default empty or success copy in this product, and minting some
   would be inventing voice. A union encodes it, so `<State />` does not compile
-  and `<State tone="error" />` does.
+  and `<State tone="error" />` does. **The default copy is
+  "No se pudieron cargar los datos" / "Revisá tu conexión o intentá de nuevo en
+  unos segundos."** — named here because the `ErrorBoundary` class fallback is
+  the only call site that reaches them, so they are invisible everywhere else
+  and were emptied rather than replaced when the two components merged.
 - **`onRetry` is not error-only.** The retry control renders iff `onRetry` is
   given, on any tone — a filter that lands on an empty result is still a
   failure the user has to be able to clear. It is the shared `Button`
   (`secondary` / `sm`), so it matches a page's hand-written retry beside it.
-- **`action` and `onRetry` are separate slots** in the same action row. The
-  error sites want a canonical control; the empty sites pass their own
-  `<a>`/`<button>`. No call site uses both.
+- **`action` and `onRetry` are separate slots, in SEPARATE rows.** The error
+  sites want a canonical control; the empty sites pass their own
+  `<a>`/`<button>`. Each slot renders its own `div.mt-4`, and the API does not
+  arbitrate between them: no call site uses both, and a future one that does
+  gets two rows — visible in review rather than silently resolved.
 - **No `className` prop.** Tailwind resolves two utilities of one property by
   stylesheet order, not attribute order, so a caller could not change a colour
-  or a size through it anyway; the two call sites that need a border and a
-  background wrap `<State>` in a sibling `div`.
+  or a size through it anyway; the **four** call sites that need a border and a
+  background (both AlertsPage failure blocks, both DashboardPage failure
+  blocks) wrap `<State>` in a sibling `div`.
 - **Built-in line-art glyphs:** `ReceiptLineArt` (transactions),
   `BellLineArt` (alerts) and `AlertLineArt` (failures) — stroke-only SVGs
   inheriting `currentColor`.
@@ -711,9 +718,9 @@ remain, because adopting `<State>` would change their pixels and this pass is
 scoped to no visual change:
 `TransactionsPage`'s mobile list error (`text-center py-12` with a single
 `text-red-400` line) and `TransactionDetail`'s report error
-(`flex flex-col items-center px-6 py-8`, no icon, no retry). Both should become
-`<State tone="error">` when the vertical rhythm is decided deliberately rather
-than inherited from a one-off.
+(`flex flex-col items-center px-6 py-8 text-center`, no icon, no retry). Both
+should become `<State tone="error">` when the vertical rhythm is decided
+deliberately rather than inherited from a one-off.
 
 ### Loading States
 

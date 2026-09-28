@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import AlertsPage from "../pages/AlertsPage";
+import DashboardPage from "../pages/DashboardPage";
+import TransactionsPage from "../pages/TransactionsPage";
 import { ErrorBoundary, RouteErrorFallback } from "../components/ErrorBoundary";
 import TransactionTable from "../components/TransactionTable";
 import { server } from "./mocks/server";
@@ -12,18 +14,33 @@ import { useAuthStore } from "../store/authStore";
 import type { AuthState } from "../store/authStore";
 
 /**
- * PROOF THAT MERGING THE TWO STATE COMPONENTS CHANGED NO PIXELS.
+ * PROOF THAT MERGING THE TWO STATE COMPONENTS CHANGED NO PIXELS AND NO WORDS.
  *
- * The point of this file is that it was written to run against BOTH revisions.
- * Every selector here is STRUCTURAL — a text node's parent, or the test id the
- * failure state already published — and never a test id introduced by the
- * merge. So the same assertions were run green before the merge and green
- * after it, which is a real before/after and not a restatement of the
- * component's own unit test.
+ * The point of this file is that it runs against BOTH revisions. Every selector
+ * here is STRUCTURAL — a text node's parent, or the `data-testid="error-state"`
+ * the failure state already published — and never a test id the merge
+ * introduced, so the same file compiles and passes on either side.
+ *
+ * VERIFIED, not asserted. `git worktree add --detach <tmp> b4c7f34~1` gives a
+ * tree with `EmptyState.tsx` and `ErrorState.tsx` and no `State.tsx`; this
+ * file was copied in unchanged and run there. 8/8 on both sides.
+ *
+ * Coverage is all ten call sites, audited: ErrorBoundary x2, AlertsPage x4
+ * (mobile card + desktop cell, error and empty), DashboardPage x2, TransactionTable
+ * x1, TransactionsPage x1. The three added last (DashboardPage's two failure
+ * blocks and TransactionsPage's empty list) are the ones the file originally
+ * missed — its describe labels read `3+4+7+8` for four AlertsPage sites and
+ * `10` for a TransactionTable that is the ninth, so the indices were not a
+ * reliable count of what was covered.
  *
  * The class literals are the exact `class` attributes captured from the
  * pre-merge DOM. They are compared with `toBe`, not `toContain`, so a class
  * ADDED during the merge turns this red as well as one removed.
+ *
+ * WHAT THIS DOES NOT COVER: jsdom has no layout engine, so "no pixels" here
+ * means the emitted class list and the rendered text, not computed geometry. It
+ * also cannot see a token that Tailwind never emitted for both revisions; the
+ * stylesheet size gate covers that half.
  */
 
 vi.mock("../store/authStore", () => ({ useAuthStore: vi.fn() }));
@@ -105,7 +122,7 @@ describe("call site 1+2 — ErrorBoundary", () => {
   });
 });
 
-describe("call site 3+4+7+8 — AlertsPage", () => {
+describe("call site 3+4+5+6 — AlertsPage", () => {
   it("the failure branch keeps the compact failure frame, in both the card and the table", async () => {
     server.use(
       http.get("*/api/v1/alerts", () =>
@@ -165,7 +182,75 @@ describe("call site 3+4+7+8 — AlertsPage", () => {
   });
 });
 
-describe("call site 10 — TransactionTable", () => {
+describe("call site 7+8 — DashboardPage", () => {
+  /** The metrics banner. `monitoring/dashboard` is its own endpoint, so this
+   *  leaves both chart queries green. */
+  function failMetrics() {
+    server.use(
+      http.get("*/api/v1/monitoring/dashboard", () =>
+        HttpResponse.json({ detail: "boom" }, { status: 500 }),
+      ),
+    );
+  }
+
+  /**
+   * Only the CHART query (`page_size=100`). The recent-transactions table asks
+   * for `page_size=10` and has its own error banner, so failing both would put
+   * two failure blocks on the page and the selector below would stop being
+   * able to say which is which.
+   */
+  function failCharts() {
+    server.use(
+      http.get("*/api/v1/transactions", ({ request }) => {
+        const size = new URL(request.url).searchParams.get("page_size");
+        if (size === "100") {
+          return HttpResponse.json({ detail: "boom" }, { status: 500 });
+        }
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 10 });
+      }),
+    );
+  }
+
+  it("the metrics failure keeps the compact frame beside the KPI row", async () => {
+    failMetrics();
+    render(<DashboardPage />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(rootOf("No se pudieron cargar las métricas")).toBeInTheDocument();
+    });
+
+    const root = rootOf("No se pudieron cargar las métricas");
+    expect(root.className).toBe(COMPACT_FRAME);
+    expect(root.getAttribute("role")).toBe("alert");
+    expect(
+      root.querySelector("[aria-hidden='true']")!.className,
+    ).toBe("mb-4 text-risk-critical");
+    // Both error states in this file are compact, so `py-6` here is the
+    // assertion that `compact` reached this call site and not just the first.
+    expect(root.className).not.toBe(FULL_FRAME);
+  });
+
+  it("the chart failure keeps the compact frame and its own copy", async () => {
+    failCharts();
+    render(<DashboardPage />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(rootOf("No se pudieron cargar los gráficos")).toBeInTheDocument();
+    });
+
+    const root = rootOf("No se pudieron cargar los gráficos");
+    expect(root.className).toBe(COMPACT_FRAME);
+    expect(root.getAttribute("role")).toBe("alert");
+    // Caller copy, so this site never touches the default strings — asserted
+    // so a merge that wrongly routed it through the fallback would go red.
+    expect(root).toHaveTextContent(
+      "Sin estos datos no se puede evaluar la tendencia de riesgo.",
+    );
+    expect(root).not.toHaveTextContent("Revisá tu conexión");
+  });
+});
+
+describe("call site 9 — TransactionTable", () => {
   it("the empty table cell keeps the compact empty frame and no action row", () => {
     render(
       <MemoryRouter>
@@ -189,5 +274,39 @@ describe("call site 10 — TransactionTable", () => {
     expect(
       root.querySelector("[aria-hidden='true']")!.className,
     ).toBe("mb-4 text-slate-600");
+  });
+});
+
+describe("call site 10 — TransactionsPage", () => {
+  it("the empty list keeps the full-height frame and its own CTA", async () => {
+    server.use(
+      http.get("*/api/v1/transactions", () =>
+        HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 }),
+      ),
+    );
+    render(<TransactionsPage />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(rootOf("No hay transacciones")).toBeInTheDocument();
+    });
+
+    // The only FULL-height empty state that is NOT inside a table cell, and the
+    // only one whose action is a router link rather than a button — so it is
+    // the only place `action` passing a node through untouched is observable.
+    const root = rootOf("No hay transacciones");
+    expect(root.className).toBe(FULL_FRAME);
+    expect(root.getAttribute("role")).toBeNull();
+    expect(root.querySelector("[aria-hidden='true']")!.className).toBe(
+      "mb-4 text-slate-600",
+    );
+
+    const cta = root.querySelector("div.mt-4")!;
+    expect(cta.className).toBe("mt-4");
+    expect(cta.firstElementChild!.tagName).toBe("A");
+    expect(cta.firstElementChild!.textContent).toBe("Crear primera transacción");
+    // The caller's own link classes, not ones the state could have imposed.
+    expect(cta.firstElementChild!.className).toBe(
+      "max-md:inline-flex max-md:min-h-[40px] max-md:items-center max-md:px-3 text-sm text-status-info hover:underline",
+    );
   });
 });

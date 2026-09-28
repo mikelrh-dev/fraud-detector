@@ -79,7 +79,17 @@ const TONE_ROLE: Record<StateTone, "alert" | "status" | undefined> = {
   success: "status",
 };
 
-const ERROR_DEFAULT_TITLE = "";
+/**
+ * Recovered from `ErrorState` at b4c7f34~1, not invented here.
+ *
+ * Both defaults are load-bearing at exactly ONE call site: the `ErrorBoundary`
+ * class fallback, which passes neither a title nor a hint. Audited all ten call
+ * sites — the other five error sites each pass both explicitly, so these two
+ * strings are reached by one renderer and cannot disagree per call site. Do
+ * not "tidy" the title out of here: the global boundary would then render the
+ * hint as the first line of the page, with no statement of what failed.
+ */
+const ERROR_DEFAULT_TITLE = "No se pudieron cargar los datos";
 const ERROR_DEFAULT_HINT =
   "Revisá tu conexión o intentá de nuevo en unos segundos.";
 
@@ -102,8 +112,9 @@ const ERROR_DEFAULT_HINT =
  *
  * DELIBERATELY NO `className` PROP. Tailwind resolves two utilities of one
  * property by stylesheet order, not attribute order, so a caller could not use
- * it to change a colour or a size — the primitive would silently win. The two
- * call sites that need a border and a background already wrap this in a
+ * it to change a colour or a size — the primitive would silently win. The FOUR
+ * call sites that need a border and a background — both AlertsPage failure
+ * blocks and both DashboardPage failure blocks — already wrap this in a
  * sibling `div`, which is the honest way to say "this is a panel" without
  * pretending the caller can restyle the state inside it.
  *
