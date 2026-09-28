@@ -410,6 +410,65 @@ The following custom tokens are defined in `frontend/src/index.css` via the `@th
 
 ---
 
+## Anti-rot lint — `ui/no-raw-class-tokens`
+
+`src/lib/ui.ts` is the single source for the focus treatment, the button base and
+the input chrome. Every class string that used to be re-typed button by button
+was fixed by hand, across seven commits, and **nothing in the toolchain stopped
+the eighth one**: copying was cheaper than importing, and — because a class
+naming a nonexistent Tailwind v4 token emits no CSS and raises no error — a
+mistyped `ring-focus-rng` would have shipped silently. The rule is that error.
+
+Local plugin, `frontend/eslint-rules/ui-class-tokens.js`. It is a custom rule
+rather than `no-restricted-syntax` (which matches nodes, not string contents)
+or `no-restricted-imports` (which matches specifiers, and the forbidden thing
+here is a *copy*, not a missing import).
+
+| Check | Fires on | Use instead |
+|---|---|---|
+| `bareFocus` | any `focus:`-prefixed class | `FOCUS_RING` (which is `focus-visible:`-prefixed on purpose) |
+| `rawFocusRing` | `focus-visible:outline-none` / `:ring-2` / `:ring-focus-ring` typed by hand | `FOCUS_RING` |
+| `rawInputChrome` | `placeholder-slate-500` + `bg-slate-800` + `rounded-lg` in one class list | `<Input>` or `cn(INPUT_BASE, …)` |
+| `rawBtnBase` | `btn-motion` + `active:scale-[0.98]` + `touch-manipulation` in one class list | `<Button>` or `cn(BTN_BASE, …)` |
+| `rawHex` | a raw hex literal in a `className` | an `@theme` token in `index.css` |
+
+**Why the last two are combinations and not single tokens.** `bg-slate-800`,
+`rounded-lg` and `px-3` are used by cards, panels and buttons; `btn-motion` and
+`active:scale-[0.98]` are a PAIR that ten filter-chip, pill and icon-toggle call
+sites legitimately want *without* the rest of `BTN_BASE`, because a filter chip
+is not a button. Banning either token alone would ban the design system;
+banning the pair would force `inline-flex` + `font-medium` onto a chip, which is
+a visual change dressed up as lint compliance. What identifies a hand-rolled
+base is the token that belongs to the base alone — `touch-manipulation`.
+
+**Two scopes.** The two focus checks apply to *every* string literal in a file,
+including module-level constants, because a focus ring is a correctness
+contract and it has to hold wherever the class string is written. The three
+composition checks apply to `className` values only, since a class list away
+from a call site is not a composition.
+
+**Exemptions, all deliberate.**
+- `src/lib/ui.ts` — the module that owns the patterns.
+- `**/*.test.*` and `src/test-utils/**` — a test that pins a class name has to
+  write it as a **literal**; asserting against the imported constant would be a
+  tautology, since mutating the constant moves both sides of the assertion. The
+  tests are the layer that holds the tokens honest, so they are the one place
+  the rule must not reach.
+- Two inline, rule-specific `eslint-disable` comments, one per **recorded**
+  focus-ring divergence that predates the rule: `AUTH_INPUT_CLASS` in
+  `AuthSplitLayout.tsx` and the `<textarea>` in `AlertsPage.tsx`. Both are
+  documented at length at their call sites and both are owed to the visual pass.
+  `reportUnusedDisableDirectives` is on, so resolving either divergence without
+  deleting its suppression fails the lint run.
+
+**Prose does not trip the rule.** The rule reads the AST, not raw text, so the
+many comments in this codebase that quote `focus:` or `focus-visible:` to explain
+a decision are invisible to it. Tailwind's scanner, by contrast, reads comments
+— see the note in `src/lib/ui.ts` about a comment that emitted the rule it
+denied.
+
+---
+
 ## Stitch design references
 
 - Stitch project ID: `11464160867924444499`

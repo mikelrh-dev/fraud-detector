@@ -5,9 +5,11 @@ import { classificationPillClass, classificationText } from "../lib/classificati
 import { formatMoney } from "../lib/money";
 import { RiskMeter } from "./RiskMeter";
 import {
+  FOCUS_RING,
   NUMERIC_CELL,
   TABLE_HEADER_CELL,
   TABLE_HEADER_NUMERIC,
+  cn,
 } from "../lib/ui";
 
 interface TransactionTableProps {
@@ -193,7 +195,10 @@ export default function TransactionTable({
                           convenience for the rest of the cells. */}
                       <Link
                         to={`/transactions/${tx.id}`}
-                        className="rounded hover:text-slate-100 hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        className={cn(
+                          "rounded hover:text-slate-100 hover:underline underline-offset-2",
+                          FOCUS_RING,
+                        )}
                       >
                         {tx.merchant_name}
                       </Link>

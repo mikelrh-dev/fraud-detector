@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
 import { FOCUSABLE, isFocusable } from "../lib/focusable";
+import { FOCUS_RING, cn } from "../lib/ui";
 
 export interface ConfirmDialogProps {
   /** Dialog heading; also the accessible name via aria-labelledby. */
@@ -196,7 +197,10 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className={cn(
+              "btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-slate-800 text-slate-300 hover:bg-slate-700",
+              FOCUS_RING,
+            )}
           >
             {cancelLabel}
           </button>
@@ -204,7 +208,10 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={disabled}
-            className="btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className={cn(
+              "btn-motion active:scale-[0.98] px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed",
+              FOCUS_RING,
+            )}
           >
             {confirmLabel}
           </button>

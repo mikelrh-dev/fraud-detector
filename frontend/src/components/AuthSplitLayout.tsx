@@ -4,9 +4,27 @@ import { BrandShield } from "./BrandShield";
 
 type StaggerStyle = CSSProperties & { "--i"?: number };
 
+/**
+ * A RECORDED FOCUS-RING DIVERGENCE, held in its own constant so the lint
+ * suppression below covers one line and not the whole class list.
+ *
+ * It is the bare `focus:` prefix at 25% of the risk tone where `FOCUS_RING` is
+ * the accent token at full strength on `focus-visible:` — and it is inherited,
+ * not invented here: the Login and Register fields carried it before the split
+ * screen existed, and the note at their call sites explains why flattening it
+ * is a visual change owed to the visual pass rather than something a refactor
+ * should decide. `ui/no-raw-class-tokens` is suppressed on this literal and
+ * nowhere else in the file.
+ */
+const AUTH_INPUT_RING =
+  // eslint-disable-next-line ui/no-raw-class-tokens -- recorded divergence, documented above
+  "focus:border-risk-critical focus:outline-none focus:ring-2 focus:ring-risk-critical/25";
+
 /** Shared input treatment for the auth forms (DESIGN.md — Forms). */
 export const AUTH_INPUT_CLASS =
-  "h-11 w-full rounded-lg bg-slate-900 border border-slate-800 px-3 text-sm text-slate-200 placeholder:text-slate-600 focus:border-risk-critical focus:outline-none focus:ring-2 focus:ring-risk-critical/25 transition-colors";
+  `h-11 w-full rounded-lg bg-slate-900 border border-slate-800 px-3 text-sm ` +
+  `text-slate-200 placeholder:text-slate-600 transition-colors ` +
+  AUTH_INPUT_RING;
 
 const FEATURES = [
   {

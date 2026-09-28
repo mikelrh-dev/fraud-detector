@@ -2,6 +2,7 @@ import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ErrorState, AlertLineArt } from "./ErrorState";
+import { FOCUS_RING, cn } from "../lib/ui";
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
@@ -113,7 +114,10 @@ export function RouteErrorFallback({ reset }: { reset: () => void }) {
             reset();
             navigate("/dashboard", { replace: true });
           }}
-          className="btn-motion active:scale-[0.98] rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          className={cn(
+            "btn-motion active:scale-[0.98] rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800",
+            FOCUS_RING,
+          )}
         >
           Volver al dashboard
         </button>

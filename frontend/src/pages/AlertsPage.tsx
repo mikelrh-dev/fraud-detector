@@ -607,6 +607,7 @@ export default function AlertsPage() {
                 value={actionReason}
                 onChange={(e) => setActionReason(e.target.value)}
                 placeholder="Razón (requerida)"
+                // eslint-disable-next-line ui/no-raw-class-tokens -- the two focus-ring divergences, documented in the block above
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 mb-3"
                 rows={2}
               />
