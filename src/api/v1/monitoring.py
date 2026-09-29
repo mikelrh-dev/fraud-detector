@@ -6,6 +6,7 @@ Includes data drift detection, model performance metrics, and system status.
 import asyncio
 import logging
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -39,6 +40,30 @@ router = APIRouter(
 # Initialize drift service (will be seeded with reference data on first use)
 _drift_service = DataDriftService()
 
+#: Smallest reference the drift monitor will accept (DRIFT-002).
+#:
+#: ``DataDriftService._compute_psi`` bins on 10 quantiles. Ten bins over a
+#: handful of points is not a distribution comparison, it is a coin flip, and
+#: the reference is then immortal: the module-level singleton above keeps it
+#: for the process lifetime and ``save_reference_to_db`` writes it to a table
+#: that every later call re-reads. A reference seeded from a demo dataset
+#: therefore becomes a permanent source of false negatives and false
+#: positives, with nothing to invalidate it.
+#:
+#: Measured on this repository's own database (11 fraud scores, from
+#: ``seed_demo_data.py``), the old path took all 11 rows as the reference and
+#: left an EMPTY current window, so the first call could never compare
+#: anything. Later calls, given real traffic, produced PSI 0.09-0.11 against
+#: a 0.25 threshold on those 11 points — the same number a genuinely stable
+#: system produces, for no reason.
+#:
+#: 200 rows is 20 per bin. It is a floor, not a comfort: 10-bin PSI on 200
+#: points is still noisy, and the honest fix for a production deployment is
+#: to seed the reference from a known-good labelled window rather than from
+#: live traffic. What this constant buys is that the monitor refuses to
+#: pretend it has a baseline, instead of reporting confident nonsense.
+MIN_DRIFT_REFERENCE_ROWS = 200
+
 
 class DriftResponse(dict):
     """Response model for drift detection endpoint."""
@@ -47,6 +72,51 @@ class DriftResponse(dict):
     features_drifted: list[str]
     drift_share: float
     message: str | None = None
+
+
+def _model_fingerprint() -> str:
+    """Short identity of the loaded model artifact, or "unknown".
+
+    The drift reference is a distribution of scores *produced by a model*, so
+    a reference is only meaningful for the model that produced it. Nothing in
+    the table records that, which is why the question "is the stored reference
+    still valid?" could only be answered by remembering.
+
+    Measured cost of getting it wrong: c1a4f6a recalibrated the model, and
+    the PSI between the old and new artifact's ``ml_score`` on the *same*
+    6,000 rows is 11.46, against a drift threshold of 0.25 — 45x. Two halves
+    of one model's own scores give 0.0031, so that 11.46 is the model change
+    and not sampling noise. A reference seeded before c1a4f6a would report
+    catastrophic drift on completely unchanged traffic.
+
+    Stamped into the free-text ``description`` rather than a new column: a
+    migration is not justified for a diagnostic string, and this at least
+    makes the invalidity visible to whoever reads the row. The real fix is a
+    ``model_sha256`` column the loader can compare against, which is a schema
+    change and is left as an open recommendation rather than smuggled in here.
+    """
+    try:
+        import hashlib
+
+        from src.api.v1.transactions import _ml_service
+
+        path = Path(_ml_service._model_path)  # noqa: SLF001 - same package
+        if not path.exists():
+            return "unknown"
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must never raise
+        logger.warning("Could not fingerprint the model artifact: %s", exc)
+        return "unknown"
+
+
+def _reference_description(reference_size: int) -> str:
+    return (
+        f"Auto-initialized from {reference_size} recent scores; "
+        f"model_sha256_prefix={_model_fingerprint()}. "
+        f"Columns are scores (rule/ml/ensemble/threshold), not model "
+        f"features. A reference is valid only for the artifact that produced "
+        f"it."
+    )
 
 
 @router.get(
@@ -196,11 +266,42 @@ async def get_drift_status(
             if not loaded:
                 # Fall back to using first half as reference
                 reference_size = max(len(recent_scores) // 2, 50)
+                # DRIFT-002: refuse to persist a baseline too small to compare
+                # against. See MIN_DRIFT_REFERENCE_ROWS for the measurement.
+                # Note `max(..., 50)` above is already larger than the rows
+                # this database has, so the old path took *every* score as
+                # the reference and left nothing to compare it to.
+                if reference_size < MIN_DRIFT_REFERENCE_ROWS:
+                    logger.error(
+                        "Refusing to seed a drift reference from %d rows "
+                        "(minimum %d). %d scores are available; a 10-quantile "
+                        "PSI over that many points is not a distribution "
+                        "comparison, and persisting it would make it "
+                        "permanent.",
+                        reference_size, MIN_DRIFT_REFERENCE_ROWS,
+                        len(recent_scores),
+                    )
+                    return {
+                        "drift_detected": False,
+                        "features_drifted": [],
+                        "drift_share": 0.0,
+                        "report": {},
+                        "recent_transactions_count": len(current_data),
+                        "reference_transactions_count": 0,
+                        "message": (
+                            f"No drift reference: only {len(recent_scores)} "
+                            f"recent scores, and a reference needs at least "
+                            f"{MIN_DRIFT_REFERENCE_ROWS} to support a "
+                            f"10-quantile PSI. Re-run with a larger "
+                            f"window_size, or seed a reference from a known "
+                            f"good period."
+                        ),
+                    }
                 reference_data = current_data.iloc[:reference_size]
                 _drift_service.set_reference_data(reference_data)
                 await _drift_service.save_reference_to_db(
                     reference_data,
-                    description="Auto-initialized from recent transactions",
+                    description=_reference_description(reference_size),
                 )
                 current_data = current_data.iloc[reference_size:]
                 logger.info(

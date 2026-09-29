@@ -1,6 +1,6 @@
 """Monitoring API integration tests — drift, metrics, dashboard, reference data."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -8,6 +8,26 @@ from httpx import AsyncClient
 
 class TestDriftEndpoint:
     """GET /api/v1/monitoring/drift — drift report."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_drift_singleton(self):
+        """Save and restore the module-level drift service.
+
+        ``monitoring._drift_service`` is a process-wide singleton that tests
+        in this module both seed and inspect. Without this, the two tests
+        below leave it un-seeded for whatever runs next — or, worse, seeded
+        for whatever ran before, which makes the result depend on test order.
+        An order-dependent test is the exact defect b6cb2c6 just removed from
+        the rule engine, and it does not get reintroduced here.
+        """
+        from src.api.v1 import monitoring as monitoring_module
+
+        service = monitoring_module._drift_service
+        saved = (service.is_initialized, service.reference_data)
+        try:
+            yield
+        finally:
+            service.is_initialized, service.reference_data = saved
 
     @pytest.mark.asyncio
     async def test_get_drift_report_returns_200(self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock):
@@ -32,6 +52,98 @@ class TestDriftEndpoint:
         """GET /monitoring/drift without auth should return 401."""
         response = await test_client.get("/api/v1/monitoring/drift")
         assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_refuses_to_seed_a_reference_that_is_too_small(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
+        """DRIFT-002: a baseline too small for a 10-quantile PSI must not persist.
+
+        On a database seeded by ``seed_demo_data.py`` there are 11 fraud
+        scores. The old path computed ``reference_size = max(11 // 2, 50) =
+        50``, took all 11 rows as the reference, and left an EMPTY current
+        window — so the very first call could not compare anything, and what
+        it saved became permanent: the module-level ``_drift_service`` keeps
+        it for the process lifetime and ``load_reference_from_db`` re-reads it
+        into every later process.
+
+        11 rows would then be compared against real traffic forever, at
+        whatever PSI a 10-quantile split of 11 points happens to produce. The
+        test asserts the refusal instead, and that the operator is told why
+        and what to do.
+        """
+        from src.api.v1 import monitoring as monitoring_module
+
+        scores = [
+            _score(i)
+            for i in range(11)
+        ]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = scores
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # The singleton must start un-seeded for this to be the code path under
+        # test; other tests in this module may have seeded it.
+        monitoring_module._drift_service.is_initialized = False
+
+        response = await test_client.get(
+            "/api/v1/monitoring/drift",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["reference_transactions_count"] == 0, (
+            "a reference was persisted from 11 rows"
+        )
+        assert "No drift reference" in data["message"]
+        assert str(monitoring_module.MIN_DRIFT_REFERENCE_ROWS) in data["message"], (
+            "the operator must be told the minimum, not just that it failed"
+        )
+        assert monitoring_module._drift_service.reference_data is None, (
+            "the service must not hold a baseline it refused to persist"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_too_small_reference_is_never_written_to_the_database(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
+        """The refusal must happen BEFORE the write, not after.
+
+        A guard that logs an error and then persists the row anyway has moved
+        the failure rather than fixed it. Asserted against the service method
+        itself, not against ``db.add``: the module singleton carries no
+        database session, so ``save_reference_to_db`` returns early and a
+        check on ``db.add`` passes even with the guard removed — which is
+        exactly what the first version of this test did.
+        """
+        from src.api.v1 import monitoring as monitoring_module
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [_score(i) for i in range(11)]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        monitoring_module._drift_service.is_initialized = False
+
+        with patch.object(
+            monitoring_module._drift_service,
+            "save_reference_to_db",
+            new=AsyncMock(),
+        ) as saver:
+            await test_client.get("/api/v1/monitoring/drift", headers=auth_headers)
+
+        saver.assert_not_called()
+
+
+def _score(i: int):
+    """A minimal stand-in for a FraudScore row."""
+    from src.models.fraud_score import FraudClassification
+
+    row = MagicMock()
+    row.rule_score = float(i % 100)
+    row.ml_score = float(i % 47)
+    row.ensemble_score = float(i % 90)
+    row.threshold = 70.0
+    row.classification = FraudClassification.LEGITIMATE
+    return row
 
 
 class TestMetricsEndpoint:
