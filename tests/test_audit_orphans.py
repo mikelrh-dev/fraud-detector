@@ -53,10 +53,55 @@ DELIBERATE_MAINTENANCE_API = {
 #: parameter (`pytest.xfail(reason: str = "")` is the entire signature) and so
 #: never turned a resolved exemption into an XPASS failure. The enforcement
 #: that actually happened ran the other way -- taking a name OUT of this dict
-#: turns a live dead symbol red, which is how TST-01 was caught. With the dict
-#: empty there is no path through this test that exempts anything, so the
-#: property is enforced for every public symbol in `src/`.
-KNOWN_VIOLATIONS: dict[str, str] = {}
+#: turns a live dead symbol red, which is how TST-01 was caught.
+#:
+#: On coverage, because the previous revision of this comment ALSO claimed it
+#: and was wrong twice over. With this dict empty it is true that no
+#: `KNOWN_VIOLATIONS` entry can exempt anything. It is NOT true that nothing is
+#: exempt, and this file must not imply that: two skip paths remain live and
+#: deliberate -- `is_route` (FastAPI invokes handlers through the router, never
+#: by name) and `DELIBERATE_MAINTENANCE_API` (one entry, `reset`, with its
+#: reason on the page). Both are stated rather than hidden because a guard whose
+#: own comment overstates it is the defect class this repository keeps auditing.
+#:
+#: Two further limits, so the property is not read as stronger than it is:
+#:   - It covers `src/` only. A caller in `scripts/`, `alembic/` or `notebooks/`
+#:     is invisible, and no CI gate reads those either.
+#:   - It fires only for a symbol that is BOTH uncalled and test-referenced.
+#:     Dead code no test touches cannot be seen by it at all.
+#: Violations found by this test, recorded rather than deleted, so the gate stays
+#: green and each one is visible on the page. All eight surfaced at once when
+#: `production_call_count` was corrected to parse instead of text-match: a comment
+#: had been counting as a caller, which hid every symbol whose only mention was
+#: prose. See `tests/test_audit_orphans.py` module docstring.
+KNOWN_VIOLATIONS = {
+    "MonitoringService": (
+        "AUDIT-2026-09-29: NOT dead code — a capability that is wired nowhere. "
+        "scoring_service.compute_scores takes `monitoring_service` and calls "
+        "_track_model_run only when it is not None; nothing constructs one, so "
+        "no model run is ever recorded in ml_model_runs. Decide: wire it, or "
+        "delete it and say the ML4 model-run tracking is not in use."
+    ),
+    "FrozenClock": (
+        "AUDIT-2026-09-29: a test utility living in src/. It belongs in tests/ "
+        "and should move there, not be deleted."
+    ),
+    "enqueue": (
+        "AUDIT-2026-09-29: the LLM worker requeues via redis_client.xadd "
+        "directly (llm_worker.py:275); this was the unused wrapper for it."
+    ),
+    "dequeue": (
+        "AUDIT-2026-09-29: same module as enqueue; no caller. Its only mention "
+        "anywhere was a comment, which is what hid it until the count was fixed."
+    ),
+    "migrate_legacy_list": (
+        "AUDIT-2026-09-29: a stream migration path that was built and never "
+        "wired to a caller."
+    ),
+    "alerts_per_day": "AUDIT-2026-09-29: dead in cost_model.py; see the module's other three.",
+    "optimal_threshold": "AUDIT-2026-09-29: dead in cost_model.py.",
+    "breakeven_cost_ratio": "AUDIT-2026-09-29: dead in cost_model.py.",
+}
 
 
 def _read(path: Path) -> str:
@@ -95,15 +140,46 @@ def _corpus(paths: list[Path]) -> str:
 
 
 def production_call_count(name: str, symbols: list[tuple[str, Path, bool]]) -> int:
-    """References in src/ beyond the definition itself."""
+    """Real references to `name` in src/, parsed — not text-matched.
+
+    The previous version counted `\\bname\\b` occurrences over raw file text and
+    skipped only `def`/`class` lines, so a COMMENT counted as a caller:
+    `src/core/redis.py:16` says "dequeue() is unaffected" and that single
+    comment kept the dead `dequeue` at line 35 looking called. The guard
+    silently under-reports, which is the failure mode a team cannot see and
+    therefore never disables.
+
+    Now the module is parsed and only real name usages count: `ast.Name`,
+    `ast.Attribute`, imports and decorator references. Comments and docstrings
+    are not AST, so they cannot reach the count.
+
+    The definition itself is deliberately NOT counted. Counting it would give
+    every symbol a floor of 1 and the guard could never fire — which is exactly
+    the regression an earlier draft of this function introduced, caught by
+    measuring `dequeue` at 1 while it is dead.
+    """
     hits = 0
     for path in SRC.rglob("*.py"):
-        for match in re.finditer(rf"\b{re.escape(name)}\b", _read(path)):
-            # A definition line or a decorator does not count as a caller.
-            line = _read(path).splitlines()[_read(path)[: match.start()].count("\n")]
-            if re.match(rf"\s*(async\s+def|def|class)\s+{re.escape(name)}\b", line):
-                continue
-            hits += 1
+        try:
+            tree = ast.parse(_read(path))
+        except SyntaxError:  # pragma: no cover - a parse failure fails the gates
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id == name:
+                hits += 1
+            elif isinstance(node, ast.Attribute) and node.attr == name:
+                hits += 1
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                # Decorators reference other symbols; the body of this one is a
+                # usage; its own `def` line is not.
+                for dec in getattr(node, "decorator_list", []):
+                    target = dec.func if isinstance(dec, ast.Call) else dec
+                    if getattr(target, "id", None) == name or getattr(target, "attr", None) == name:
+                        hits += 1
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    if (alias.asname or alias.name).split(".")[0] == name:
+                        hits += 1
     return hits
 
 

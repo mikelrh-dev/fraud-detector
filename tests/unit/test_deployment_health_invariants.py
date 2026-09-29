@@ -17,6 +17,7 @@ A23 — the Redis healthcheck could not authenticate, and `redis-cli ping` exits
 A24 — Postgres had no pool bounds and no timeouts, while Redis did.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -261,33 +262,90 @@ class TestMetricsNotExposed:
     def test_nginx_does_not_proxy_metrics(self) -> None:
         """`/metrics` matches neither `location /api/` nor `location /health`,
         so it falls into `location /`, which serves the SPA. That is the only
-        reason the endpoint is not reachable from outside."""
+        reason the endpoint is not reachable from outside.
+
+        Parsed by BLOCK, not by line. The previous version collected lines
+        containing `proxy_pass` and asserted `/metrics` was absent from that
+        line — but nginx's own idiom here puts `location /metrics {` and
+        `proxy_pass http://api:8000;` on two different lines, so the idiomatic
+        way to expose the endpoint sailed straight through the check that
+        claimed to prevent it. nginx is block-structured; so is this.
+        """
         source = NGINX_CONF.read_text(encoding="utf-8")
-        proxied = [
-            line.strip()
-            for line in source.splitlines()
-            if "proxy_pass" in line and not line.strip().startswith("#")
-        ]
-        assert proxied, "no proxy_pass at all — the config no longer matches this test"
-        for line in proxied:
-            assert "/metrics" not in line, (
-                "OPS-02 / ADR-006: nginx now proxies /metrics. Restrict it to "
-                "the scraper's IP, a separate listener, or mTLS BEFORE "
-                "exposing it, and update ADR-006."
-            )
+
+        # Strip comments so a `# location /metrics {` in a comment is not read
+        # as a block, then walk brace depth to pair each `location` with a body.
+        stripped = "\n".join(
+            line for line in source.splitlines() if not line.strip().startswith("#")
+        )
+        proxied_locations: list[str] = []
+        stack: list[tuple[str, list[str]]] = []
+        for raw in stripped.splitlines():
+            line = raw.strip()
+            match = re.match(r"location\s+(\S+)\s*\{", line)
+            if match:
+                stack.append((match.group(1), []))
+                continue
+            if stack:
+                stack[-1][1].append(line)
+                if line == "}":
+                    path, body = stack.pop()
+                    if any(b.startswith("proxy_pass") for b in body):
+                        proxied_locations.append(path)
+
+        assert proxied_locations, (
+            "no proxied location at all — the config no longer matches this test, "
+            "so the guarantee it is meant to pin is no longer being checked"
+        )
+        assert not any("metrics" in path for path in proxied_locations), (
+            f"OPS-02 / ADR-006: nginx now proxies a /metrics location "
+            f"({proxied_locations}). Restrict it to the scraper's IP, a separate "
+            f"listener, or mTLS BEFORE exposing it, and update ADR-006."
+        )
 
     def test_no_prometheus_scrape_config_in_the_repo(self) -> None:
-        """No scraper today, which is why the accepted decision is coherent:
-        there is nothing to protect and nothing to break."""
-        matches = [
-            path.relative_to(REPO_ROOT).as_posix()
-            for path in REPO_ROOT.rglob("*.yml")
-            if "node_modules" not in path.parts
-            and "scrape_configs" in path.read_text(encoding="utf-8", errors="replace")
-        ]
-        assert not matches, (
-            "a Prometheus scrape config appeared. OPS-02 / ADR-006: revisit "
-            f"the decision before the first scrape. Found in {matches}"
+        """No scraper is *deployed*, which is what makes the accepted decision
+        coherent: there is nothing running to break.
+
+        Scope correction. The previous version globbed `*.yml` and asserted no
+        `scrape_configs` anywhere in the repo. That passed — while
+        `docs/deployment.md:118` contains a `scrape_configs:` block in a fenced
+        code block, i.e. a scrape config is *documented*. Two consequences: the
+        assertion was blind to `.yaml`, `.json` and to documentation, and ADR-006
+        rested on the flat claim that none exists in the repository, which is
+        false.
+
+        What actually matters is whether a scraper is *wired up*, so this scans
+        every plausible config format — documentation included, and reported
+        separately rather than excluded, so a claim like ADR-006's cannot be
+        made again.
+        """
+        active, documented = [], []
+        for path in REPO_ROOT.rglob("*"):
+            if not path.is_file() or "node_modules" in path.parts:
+                continue
+            if path.suffix not in {".yml", ".yaml", ".json", ".toml", ".md"}:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:  # pragma: no cover
+                continue
+            if "scrape_configs" not in text:
+                continue
+            (documented if path.suffix == ".md" else active).append(
+                path.relative_to(REPO_ROOT).as_posix()
+            )
+
+        assert not active, (
+            "an active Prometheus scrape config appeared. OPS-02 / ADR-006: "
+            f"revisit the decision before the first scrape. Found in {active}"
+        )
+        # Documentation is not a deployment, and ADR-006 is corrected to say so
+        # rather than claim no such configuration exists. Fail loudly if that
+        # sentence and this list ever disagree again.
+        assert documented == ["docs/deployment.md"], (
+            "the set of documented scrape configs changed "
+            f"({documented}); ADR-006's premise must be updated alongside it"
         )
 
     def test_the_endpoint_still_exists(self) -> None:
