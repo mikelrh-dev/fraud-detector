@@ -185,7 +185,8 @@ Confirmed and now guarded by `tests/test_audit_orphans.py`.
 
 Frontend: 90 exports referenced by production, **0 orphans**.
 
-The guard is `xfail(strict)` on both, with reasons naming the findings, so the gate stays green and fixing either turns the exemption into a failure.
+The guard exempts both with `pytest.xfail(reason)`, reasons naming the findings, so the gate stays green. D1-4 corrected this entry, which claimed `xfail(strict)` and that fixing a symbol turns the exemption into a failure. Both halves were wrong. `pytest.xfail` has no `strict` parameter — `pytest.xfail(reason: str = "")` is the whole signature — so the exemption never converted a resolved entry into an XPASS failure. The enforcement that actually exists runs the other way: deleting a name from `KNOWN_VIOLATIONS` while it is still dead turns the guard red, which is how TST-01 was caught. `tests/test_audit_orphans.py` documents the same correction at the call site.
+
 
 ### API-01 — The TypeScript response contract has drifted from Pydantic (Task 5)
 
