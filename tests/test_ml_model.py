@@ -4,6 +4,7 @@ score range 0-100, probability normalization.
 
 import os
 import tempfile
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -313,3 +314,50 @@ class TestMLModelFeatureContract:
             assert isinstance(score, float)
         finally:
             os.unlink(path)
+
+
+PRODUCTION_ARTIFACT = Path(__file__).resolve().parents[1] / "models" / "xgboost_paysim_v1.joblib"
+
+
+class TestProductionArtifactFeatureContract:
+    """The shipped artifact's feature stamp must equal the engine's.
+
+    `predict()` validates only the feature COUNT (`n_features_in_`), so a
+    renamed or reordered `FEATURE_NAMES` keeps the vector at length 10, loads
+    cleanly, and silently feeds the model the wrong column on every call. The
+    tests above cannot catch that: they build their own artifact with synthetic
+    names `f0..f9`, and asserting the service echoes back the names it was
+    handed only proves the loader copies the field.
+
+    This asserts the two lists that production actually pairs, in order.
+    """
+
+    def test_artifact_exists(self):
+        """The artifact is tracked in git; a fresh clone has it. A missing
+        file is a serving regression, not a reason to skip the contract."""
+        assert PRODUCTION_ARTIFACT.is_file(), (
+            f"production model artifact missing at {PRODUCTION_ARTIFACT}"
+        )
+
+    def test_artifact_stamp_equals_engine_feature_names(self):
+        from src.services.feature_engine import FEATURE_NAMES
+
+        artifact = joblib.load(PRODUCTION_ARTIFACT)
+        assert isinstance(artifact, dict) and "feature_names" in artifact, (
+            "the production artifact carries no feature_names stamp, so the "
+            "column order it was trained on cannot be verified"
+        )
+        assert artifact["feature_names"] == FEATURE_NAMES, (
+            "the artifact was trained on a different feature order than the "
+            "engine produces; every prediction is reading the wrong column"
+        )
+
+    def test_service_loads_with_the_engine_order(self):
+        """End to end: the loaded service reports the engine's names."""
+        from src.services.feature_engine import FEATURE_NAMES
+
+        service = MLModelService(model_path=str(PRODUCTION_ARTIFACT))
+        assert service.load_model() is True
+        assert service.feature_names == FEATURE_NAMES
+        # And the count guard that predict() actually enforces still holds.
+        assert service.n_features == len(FEATURE_NAMES)
