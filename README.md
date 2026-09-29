@@ -118,6 +118,33 @@ It is a real classifier with real discriminative power, and it is bounded. Four 
 3. **Two features carry most of it.** Leave-one-out ROC-AUC drop: `tx_count_last_1h` +0.059, `tx_count_last_5min` +0.029, `merchant_risk_level` +0.021, `amount` +0.020 — while `is_weekend` (+0.0004) and `is_crypto` (−0.0005) contribute nothing.
 4. **Recall is 0.698 at the shipped threshold.** Roughly 3 in 10 frauds are not flagged at that operating point; the threshold is a cost trade-off, not a free parameter.
 
+### What It Costs — and Who Decides
+
+A precision figure is not a decision. It is a number with the cost stripped off both sides, and a threshold trades a false alarm against a missed fraud — so the trade cannot be read off either figure alone. `scripts/evaluate_cost.py` prices it.
+
+```
+python scripts/evaluate_cost.py
+```
+
+**Neither cost figure is measured, and the script will not pretend otherwise.** What a false alarm costs is the analyst time to clear it; what a missed fraud costs is your realised loss. Both are business facts about *your* operation. So the script prices a false alarm at an arbitrary 1.0 and sweeps the ratio `C_fn/C_fp`, because only the ratio moves a decision.
+
+At the production operating point, on the held-out split, in units where a false alarm costs 1.0:
+
+| Policy | Expected cost per transaction @ `C_fn/C_fp = 10` |
+|---|---|
+| Flag nothing (no model) | 0.0960 |
+| Flag everything (no model) | 0.9904 |
+| **This model** | **0.0305** |
+| The pre-audit model, same split | 0.1730 |
+
+Two things fall out of that table. First, **the cost-optimal threshold is not a constant of the model** — across ratios from 1 to 500 it moves from 76.00 down to 0.40, two orders of magnitude, so every belief about cost gets a different operating point. That is why the script prints a sweep instead of a recommendation.
+
+Second, and more useful: the pre-audit model is **not worse at catching fraud**. It catches exactly the same share (TP=67, FN=29, recall 0.6979 — identical) and differs only in what it costs to do so: **1,440 false positives against 15**, precision 0.0445 against 0.8171. It loses to flagging nothing. No AUC told us that; the cost arithmetic did.
+
+`breakeven_cost_ratio` is **103.2** — above that, flagging every transaction becomes as cheap as flagging none, because at 1% prevalence a miss has to be that much more expensive than wasted analyst time. The model still clears the flag-everything bar at 500×, and the report says so rather than implying the opposite.
+
+**Known simplification, printed in the report:** the swept optimum is a flat threshold while production uses an amount-tiered one, so the comparison is approximate. The volume of 50,000 transactions/day is an assumption that scales every per-day number. And the counts come from a synthetic corpus — so this is arithmetic, not evidence. The model's real-world cost per transaction is **unknown**, and this is the arithmetic to have ready the day a labelled corpus exists.
+
 ## Explainability, Monitoring & Audit
 
 - **SHAP** (`TreeExplainer` over XGBoost): top-5 feature attributions computed async per scored transaction, rendered in the dashboard.

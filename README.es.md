@@ -118,6 +118,33 @@ Es un clasificador real con poder discriminativo real, y está acotado. Cuatro l
 3. **Dos features soportan casi todo.** Caída de ROC-AUC leave-one-out: `tx_count_last_1h` +0,059, `tx_count_last_5min` +0,029, `merchant_risk_level` +0,021, `amount` +0,020 — mientras que `is_weekend` (+0,0004) e `is_crypto` (−0,0005) no aportan nada.
 4. **El recall es 0,698 en el umbral actual.** Aproximadamente 3 de cada 10 fraudes no se marcan en ese punto de operación; el umbral es una compensación de costes, no un parámetro libre.
 
+### Cuánto cuesta — y quién decide
+
+Una cifra de precisión no es una decisión. Es un número al que se le ha quitado el coste de los dos lados, y un umbral compensa una falsa alarma contra un fraude no detectado — así que la compensación no se puede leer en ninguna de las dos cifras por separado. `scripts/evaluate_cost.py` le pone precio.
+
+```
+python scripts/evaluate_cost.py
+```
+
+**Ninguna de las dos cifras de coste está medida, y el script no finge lo contrario.** Lo que cuesta una falsa alarma es el tiempo de analista para descartarla; lo que cuesta un fraude no detectado es tu pérdida real. Ambas son hechos de negocio sobre *tu* operación. Por eso el script precio una falsa alarma en 1.0 arbitrario y barreja la razón `C_fn/C_fp`, porque solo la razón mueve una decisión.
+
+En el punto de operación de producción, sobre el split retenido, en unidades donde una falsa alarma cuesta 1.0:
+
+| Política | Coste esperado por transacción @ `C_fn/C_fp = 10` |
+|---|---|
+| No marcar nada (sin modelo) | 0,0960 |
+| Marcar todo (sin modelo) | 0,9904 |
+| **Este modelo** | **0,0305** |
+| El modelo previo a la auditoría, mismo split | 0,1730 |
+
+De esa tabla salen dos cosas. Primera: **el umbral óptimo en coste no es una constante del modelo** — entre razones de 1 a 500 se mueve de 76,00 a 0,40, dos órdenes de magnitud, así que cada creencia sobre el coste recibe un punto de operación distinto. Por eso el script imprime un barrido en lugar de una recomendación.
+
+Segunda, y más útil: el modelo previo a la auditoría **no es peor detectando fraude**. Atrapa exactamente la misma proporción (TP=67, FN=29, recall 0,6979 — idéntico) y solo se diferencia en lo que le cuesta hacerlo: **1.440 falsos positivos frente a 15**, precisión 0,0445 frente a 0,8171. Pierde contra no marcar nada. Ningún AUC nos habría dicho eso; lo dijo la aritmética de costes.
+
+`breakeven_cost_ratio` es **103,2** — por encima de eso, marcar cada transacción sale tan barato como no marcar ninguna, porque con un 1% de prevalencia un fallo tiene que ser mucho más caro que el tiempo de analista desperdiciado. El modelo todavía supera la barra de "marcar todo" a 500×, y el informe lo dice en lugar de insinuar lo contrario.
+
+**Simplificación conocida, impresa en el informe:** el óptimo barrido es un umbral plano mientras que producción usa uno por tramos de importe, así que la comparación es aproximada. El volumen de 50.000 transacciones/día es una suposición que escala todas las cifras por día. Y los recuentos provienen de un corpus sintético — así que esto es aritmética, no evidencia. El coste real por transacción del modelo es **desconocido**, y esta es la aritmética que tenemos preparada para el día en que exista un corpus etiquetado.
+
 ## Explicabilidad, Monitoreo y Auditoría
 
 - **SHAP** (`TreeExplainer` sobre XGBoost): top-5 atribuciones calculadas async por transacción puntuada, visualizadas en el dashboard.
