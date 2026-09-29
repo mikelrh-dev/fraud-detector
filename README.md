@@ -109,7 +109,18 @@ Measured, not asserted. Reproduce with `python scripts/evaluate_model.py`.
 | At the production threshold | precision 0.817 · recall 0.698 |
 | False positives | 15 in 9,904 legitimate |
 | Calibration error (ECE) | 0.0045 |
-| Gain over a random-forest baseline | +0.025 ROC-AUC |
+| vs. a random-forest baseline | 0.9312 vs 0.9250 — **not distinguishable** |
+
+**Every rate here carries an interval, because the test split holds 96 frauds.** A point estimate without one is a claim, not a measurement:
+
+| | Point | 95% CI (Wilson) | Width |
+|---|---|---|---|
+| Precision | 0.817 | 0.720 – 0.886 | 16.6 pts |
+| Recall | 0.698 | 0.600 – 0.781 | 18.1 pts |
+
+The XGBoost lead over a random forest on the same features is **+0.0062 ROC-AUC, 95% bootstrap CI [−0.0149, +0.0305]** — it crosses zero, and XGBoost wins only 70% of resamples. The honest reading is *comparable to a random forest*, not *better than one*. Choosing XGBoost over the forest is a decision about calibration and inference cost, not about accuracy.
+
+Tightening the recall interval is a data problem, not a modelling one: at 0.96% prevalence, a ±3-point interval needs ~3,600 frauds in the test split, 38× what this corpus contains. Any project claiming a precise recall at this prevalence is either measuring something else or showing you a number it cannot support.
 
 It is a real classifier with real discriminative power, and it is bounded. Four limits we measured rather than hid:
 

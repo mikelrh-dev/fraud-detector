@@ -109,7 +109,18 @@ Medido, no afirmado. Reproducible con `python scripts/evaluate_model.py`.
 | En el umbral de producción | precisión 0,817 · recall 0,698 |
 | Falsos positivos | 15 de 9.904 legítimos |
 | Error de calibración (ECE) | 0,0045 |
-| Ganancia frente a una línea base de random forest | +0,025 ROC-AUC |
+| Frente a una línea base de random forest | 0,9312 vs 0,9250 — **no distinguible** |
+
+**Toda tasa aquí lleva intervalo, porque el split retenido contiene 96 fraudes.** Una estimación puntual sin intervalo es una afirmación, no una medición:
+
+| | Puntual | IC 95% (Wilson) | Amplitud |
+|---|---|---|---|
+| Precisión | 0,817 | 0,720 – 0,886 | 16,6 pts |
+| Recall | 0,698 | 0,600 – 0,781 | 18,1 pts |
+
+La ventaja de XGBoost sobre un random forest con las mismas features es de **+0,0062 ROC-AUC, IC 95% bootstrap [−0,0149, +0,0305]** — cruza el cero, y XGBoost gana solo el 70% de las remuestreos. La lectura honesta es *comparable a un random forest*, no *mejor que uno*. Elegir XGBoost sobre el bosque es una decisión sobre calibración y coste de inferencia, no sobre precisión.
+
+Estrechar el intervalo del recall es un problema de datos, no de modelado: con una prevalencia del 0,96%, un intervalo de ±3 puntos necesita ~3.600 fraudes en el split de test, 38× lo que contiene este corpus. Cualquier proyecto que afirme un recall preciso a esta prevalencia o está midiendo otra cosa o te está enseñando un número que no puede sostener.
 
 Es un clasificador real con poder discriminativo real, y está acotado. Cuatro límites que medimos en lugar de ocultar:
 
