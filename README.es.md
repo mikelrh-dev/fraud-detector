@@ -5,8 +5,12 @@
 [English](README.md) | **Español**
 
 > 📖 **Lee el [caso de estudio técnico](case-study/es/index.html)** — un recorrido en 11 capítulos de cómo funciona este sistema, cada número trazado a un artefacto real.
+>
+> 🧭 **Wiki técnica:** consulta la [wiki para desarrolladores](docs/wiki/index.md), con el modelo del sistema, arquitectura, scoring, workers, ML y operación.
 
-Sistema híbrido de detección de fraude en transacciones financieras. Un **motor de reglas determinista** (9 reglas), un **modelo ML supervisado** (XGBoost, entrenado con PaySim) y un **LLM local** (Ollama) que redacta informes explicativos para analistas — el LLM nunca decide, solo explica.
+Sistema híbrido de detección de fraude en transacciones financieras. Un **motor de reglas determinista** (9 reglas), un **modelo ML supervisado** (XGBoost) y un **LLM local** (Ollama) que redacta informes explicativos para analistas — el LLM nunca decide, solo explica.
+
+> **Sobre el modelo ML, sin rodeos:** está entrenado sobre un **corpus sintético** de arquetipos de fraude generado en este repositorio — no con PaySim, ni con datos bancarios. Las reglas deciden; la capa ML aporta un 25% calibrado. Las cifras medidas y los límites conocidos están en [Qué hace el modelo y qué no](#qué-hace-el-modelo-y-qué-no).
 
 Cada transacción recibe un score de riesgo 0–100, una clasificación (`legitimate | review | fraud`), atribuciones SHAP de sus features y, cuando se marca como sospechosa, un informe técnico generado asíncronamente por el LLM.
 
@@ -14,16 +18,16 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 
 - **Scoring ensemble de 3 capas**: reglas 60% + ML 25% + contexto 15%, con umbrales de fraude dinámicos por tier de monto
 - **9 reglas deterministas**: importe, velocidad, riesgo de merchant, card mismatch, patrones nocturnos, country mismatch y proximidad a redes de fraude
-- **XGBoost** con 10 features engineered, degradación elegante (el sistema funciona con `ml_score = 0` si no hay modelo)
+- **XGBoost** con 10 features engineered (5 de las cuales aportan señal medible — ver la ablación), degradación elegante (el sistema funciona con `ml_score = 0` si no hay modelo)
 - **Explicabilidad SHAP**: top-5 contribuciones de features persistidas por transacción
 - **Detección de redes de fraude**: grafo dirigido (NetworkX), marca usuarios a ≤ 2 saltos de un defraudador conocido
 - **Detección de suplantación de merchant**: embeddings sentence-transformers + similitud coseno (detecta `AMAZ0N_STORE` → `Amazon`)
 - **Redis Streams** con consumer groups, recuperación de mensajes pendientes (`XAUTOCLAIM`) y dead-letter queue
-- **Monitoreo del modelo**: drift con Evidently + PSI propio, triggers automáticos de reentrenamiento (F1 < 0.7 o drift > 30)
+- **Monitoreo del modelo**: drift con Evidently + PSI propio, triggers automáticos de reentrenamiento (F1 < 0.7 o drift > 30) — implementados, aún no ejercitados contra una referencia poblada
 - **Audit trail inmutable** con checksums SHA-256 en cada decisión de scoring y acción de analista
 - **Auth JWT** (access + refresh + blacklist), acceso por roles (user/admin), rate limiting por ruta
 - **Dashboard React 19** con tendencias de score, tarjetas SHAP y flujo de trabajo de alertas
-- **422 tests de backend** (unitarios + integración), CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker)
+- **846 tests de backend** (unitarios + integración) y 746 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker)
 
 ## Arquitectura
 
@@ -89,17 +93,36 @@ Categorías de riesgo: `btc`, `crypto`, `gambling`, `casino`, `money_transfer`.
 
 10 features: `amount`, `amount_vs_user_avg`, `amount_vs_user_std`, `tx_count_last_5min`, `tx_count_last_1h`, `hour_of_day`, `is_weekend`, `merchant_risk_level`, `is_crypto`, `amount_round_number`.
 
-La salida de `predict_proba` se suaviza con una curva cúbica y se escala a 0–100, de modo que solo predicciones confiadas puntúan alto. Si no hay archivo de modelo, la API sigue funcionando con `ml_score = 0`.
+La salida de `predict_proba` se escala directamente a 0–100 (`probability * 100.0`) y se calibra con `CalibratedClassifierCV(method="sigmoid", cv=5)` contra la prevalencia real del 0,96% del corpus — de modo que la puntuación es una probabilidad contra esa tasa base, no un margen bruto. Si no hay archivo de modelo, la API sigue funcionando con `ml_score = 0`.
 
 ### Capa 3 — Contexto
 
-Señales a nivel usuario (promedios históricos, geografía, patrones temporales) aportan el 15% restante.
+Señales a nivel de usuario (velocidad de transacciones recientes) aportan el 15% restante, calculadas en `scoring_service.py` como `min(recent_txns / 10 × 100, 100)` y pasadas explícitamente al ensemble.
+
+### Qué hace el modelo y qué no
+
+Medido, no afirmado. Reproducible con `python scripts/evaluate_model.py`.
+
+| | |
+|---|---|
+| ROC-AUC / PR-AUC en test retenido | 0,9312 / 0,7576 |
+| En el umbral de producción | precisión 0,817 · recall 0,698 |
+| Falsos positivos | 15 de 9.904 legítimos |
+| Error de calibración (ECE) | 0,0045 |
+| Ganancia frente a una línea base de random forest | +0,025 ROC-AUC |
+
+Es un clasificador real con poder discriminativo real, y está acotado. Cuatro límites que medimos en lugar de ocultar:
+
+1. **Los datos de entrenamiento son sintéticos.** Nunca hubo datos bancarios disponibles, así que el corpus se genera a partir de arquetipos de fraude (`everyday`, `burst`, `high_value_wire`, `card_testing`, …) diseñados para ser difíciles a propósito.
+2. **No transfiere a PaySim.** Evaluado contra ese benchmark publicado e independiente a través del mismo `FeatureEngine`, alcanza un ROC-AUC de 0,7561 — *por debajo* del 0,7894 de una línea base de importe bruto. PaySim tiene un usuario por transacción, lo que degenera 4 de las 10 features, y un rango de importes 92× más amplio que el del corpus de entrenamiento.
+3. **Dos features soportan casi todo.** Caída de ROC-AUC leave-one-out: `tx_count_last_1h` +0,059, `tx_count_last_5min` +0,029, `merchant_risk_level` +0,021, `amount` +0,020 — mientras que `is_weekend` (+0,0004) e `is_crypto` (−0,0005) no aportan nada.
+4. **El recall es 0,698 en el umbral actual.** Aproximadamente 3 de cada 10 fraudes no se marcan en ese punto de operación; el umbral es una compensación de costes, no un parámetro libre.
 
 ## Explicabilidad, Monitoreo y Auditoría
 
 - **SHAP** (`TreeExplainer` sobre XGBoost): top-5 atribuciones calculadas async por transacción puntuada, visualizadas en el dashboard.
 - **Detección de drift**: Evidently `DataDriftPreset` (distribuciones referencia vs actual) más una implementación PSI propia. `GET /api/v1/monitoring/drift`.
-- **Triggers de reentrenamiento**: se activan con `F1 < 0.7` o `drift_score > 30` (verificado en `MonitoringService`).
+- **Triggers de reentrenamiento**: se activan con `F1 < 0.7` o `drift_score > 30` (verificado en `MonitoringService`). La lógica está viva; la referencia de drift contra la que se compara nunca se ha poblado con una ventana completa, y ahora se niega a sembrarse con menos de 200 filas.
 - **Audit trail**: cada score, revisión de analista e informe LLM se registra con checksums SHA-256. La exportación de actividad de analistas es solo admin.
 
 ## Workers Asíncronos (Redis Streams)
@@ -225,7 +248,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (consumidores Redis Streams)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 páginas, 7 componentes, vitest + MSW)
-├── tests/                  # unitarios + integración (422 tests de backend)
+├── tests/                  # unitarios + integración (846 tests de backend)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # notebooks de exploración/entrenamiento con PaySim
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -236,7 +259,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (422 tests)
+# Backend (846 tests)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # solo unitarios
 pytest tests/integration -v     # solo integración (requiere postgres + redis)
@@ -319,4 +342,4 @@ Proyecto de portfolio de [mikelrh-dev](https://github.com/mikelrh-dev) que demue
 - ML en producción: feature engineering alineado entre entrenamiento y serving, explicabilidad SHAP, monitoreo de drift, triggers de reentrenamiento
 - Pipelines async confiables: Redis Streams, consumer groups, reintentos, DLQ
 - Seguridad: JWT con refresh + blacklist, RBAC, rate limiting, audit trail inmutable con SHA-256
-- Disciplina de testing: 422 tests de backend + suite vitest de frontend (164 tests), CI de 5 jobs
+- Disciplina de testing: 846 tests de backend + suite vitest de frontend (746 tests), CI de 5 jobs
