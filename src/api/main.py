@@ -77,8 +77,18 @@ async def health_check() -> dict[str, str]:
 
 @app.get("/api/v1/status", tags=["status"])
 async def api_status() -> dict[str, str]:
-    """API status endpoint."""
-    return {
-        "version": "0.1.0",
-        "environment": settings.environment,
-    }
+    """API status endpoint.
+
+    OPS-01: this used to return `version` and `environment` unauthenticated.
+    A health probe needs to know the service is up, not which build it is
+    running or which stage it is deployed to — the pair is a fingerprint that
+    tells a scanner whether it has found the 0.1.0-era stack and whether dev
+    defaults are in play. The same information is already gated: R1-006 turns
+    off /openapi.json in production, where the FastAPI `version` would
+    otherwise leak it, which made this the last route still saying so.
+
+    The payload is now the same liveness signal /health gives, and nothing
+    more. Deliberately identical rather than a different shape: a distinct
+    value here would be a new thing to disclose, not a less risky one.
+    """
+    return {"status": "ok", "service": "fraud-detector"}
