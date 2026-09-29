@@ -34,17 +34,11 @@ DELIBERATE_MAINTENANCE_API = {
     "reset": "counters.py maintenance primitive; never automatic, by design",
 }
 
-#: Violations found by this test, recorded rather than deleted. `strict=True` means
-#: fixing either one turns an XPASS into a failure, so the exemption cannot outlive
-#: the fix. Each names the audit finding that produced it.
+#: Violations found by this test, recorded rather than deleted. Each names the
+#: audit finding that produced it.
 KNOWN_VIOLATIONS = {
     "enqueue_for_retry": (
-        "TST-01 (audit 2026-09-29): dead with five green tests. Nothing calls it."
-    ),
-    "list_transactions": (
-        "TST-02 (audit 2026-09-29): the endpoint reimplements the query (91 lines vs "
-        "this 13), so two implementations of 'list transactions' can drift and the "
-        "tests pin the one production never runs."
+        "TST-01 (audit 2026-09-29): dead with green tests. Nothing calls it."
     ),
 }
 

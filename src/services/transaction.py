@@ -63,21 +63,6 @@ async def get_transaction(db: AsyncSession, transaction_id: UUID) -> Transaction
     return result.scalar_one_or_none()
 
 
-async def list_transactions(
-    db: AsyncSession,
-    skip: int = 0,
-    limit: int = 100,
-) -> list[Transaction]:
-    """List transactions excluding soft-deleted ones."""
-    result = await db.execute(
-        select(Transaction)
-        .where(Transaction.deleted_at.is_(None))
-        .offset(skip)
-        .limit(limit)
-    )
-    return list(result.scalars().all())
-
-
 async def delete_transaction(db: AsyncSession, transaction_id: UUID) -> Transaction | None:
     """Soft-delete a transaction by setting its deleted_at timestamp."""
     result = await db.execute(

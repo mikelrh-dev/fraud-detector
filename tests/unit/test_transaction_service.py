@@ -14,7 +14,6 @@ from src.services.transaction import (
     delete_transaction,
     get_scores_for_transactions,
     get_transaction,
-    list_transactions,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -73,19 +72,6 @@ class TestTransactionService:
 
         result = await get_transaction(mock_db, uuid4())
         assert result is None
-
-    async def test_list_transactions_excludes_deleted(self, mock_db):
-        """Listing transactions should exclude soft-deleted records."""
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        results = await list_transactions(mock_db)
-        assert isinstance(results, list)
-
-        # Verify the query includes deleted_at filter
-        call_args = mock_db.execute.call_args[0][0]
-        assert "deleted_at" in str(call_args)
 
     async def test_soft_delete_transaction(self, mock_db):
         """Soft deleting should set deleted_at timestamp."""
