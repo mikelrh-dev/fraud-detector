@@ -12,7 +12,7 @@ never removed from the set on delete (deferred by design).
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -20,6 +20,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.clock import Clock, SystemClock
 from src.core.config import settings
 from src.core.redis import get_redis
 from src.models.transaction import Transaction
@@ -48,10 +49,16 @@ class VelocityStore:
     ``redis=None`` (default) resolves a client from the shared connection pool
     on every call — mirroring the ``enqueue`` precedent, so the store can be
     constructed once and reused across requests.
+
+    ``clock`` is the other wall-clock reader. Velocity counts are derived from
+    elapsed time, so a test that crosses a 5-minute or 1-hour window boundary
+    is at the mercy of when it runs unless it supplies its own. Pass a
+    :class:`~src.core.clock.FrozenClock` to pin it.
     """
 
-    def __init__(self, redis: Redis | None = None) -> None:
+    def __init__(self, redis: Redis | None = None, clock: Clock | None = None) -> None:
         self._redis = redis
+        self._clock: Clock = clock or SystemClock()
 
     @staticmethod
     def _key(user_id: UUID) -> str:
@@ -74,10 +81,10 @@ class VelocityStore:
         """
         if not settings.velocity_store_enabled:
             return
-        created_at = created_at or datetime.now(tz=timezone.utc)
+        created_at = created_at or self._clock.now_utc()
         key = self._key(user_id)
         score = self._score(created_at)
-        now_ms = self._score(datetime.now(tz=timezone.utc))
+        now_ms = self._score(self._clock.now_utc())
         try:
             redis = self._redis if self._redis is not None else get_redis()
             pipe = redis.pipeline()
@@ -106,7 +113,7 @@ class VelocityStore:
         failure, falls back to Postgres (VEL-STORE-005) or, when the toggle is
         disabled, skips Redis entirely (VEL-STORE-007).
         """
-        now = now or datetime.now(tz=timezone.utc)
+        now = now or self._clock.now_utc()
         if not settings.velocity_store_enabled:
             return await self._pg_counts(user_id, db, now=now)
         key = self._key(user_id)
