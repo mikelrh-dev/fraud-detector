@@ -136,9 +136,21 @@ never wrote those columns. Yet the deployed artifact weighted that constant feat
 **19%**. A constant column cannot earn gain in a tree.
 
 So the shipped model was trained from a different state of the code than the code in
-the repository. It is now reproducible: three consecutive retrains inside the container
-produce a byte-identical artifact (sha256 `573b7d09…`), and the corpus regenerates
-byte-identically too.
+the repository. The dead columns are now populated, and the corpus no longer
+separates the classes by itself.
+
+> **Reproducibility: CLAIMED BUT NOT YET VERIFIED.** A previous draft of this
+> document asserted that three consecutive retrains inside the container produce a
+> byte-identical artifact with sha256 `573b7d09…`. That could not be corroborated: the
+> artifact currently committed to this repository hashes to
+> **`243083b19e3447d8…`**, and the container is not running, so no retrain can be
+> performed to settle which is correct. **Treat determinism as unconfirmed.** What
+> *is* confirmed, and independently: the committed artifact carries the calibrated
+> `feature_names` stamp in exactly the engine's order (`52a568d`), and its
+> `calibration_prior` is `0.009625` — the real ~1% prior, not SMOTE's 33%.
+>
+> To close this: run the trainer inside the container twice and compare hashes. Until
+> then, do not present determinism as a property of this revision.
 
 ---
 
@@ -233,7 +245,7 @@ Run both revisions through this. Fill the right-hand column from the older proje
 | Mean predicted vs actual fraud rate | 0.0118 vs 0.0096 | | *close is better* |
 | False alarms at production threshold | 33 | | |
 | Can the training script run? | yes | | *any answer other than "yes" fails* |
-| Artifact reproducible from a clean checkout? | yes, byte-identical | | |
+| Artifact reproducible from a clean checkout? | **UNVERIFIED** (see §2.D) | | |
 | Model/artifact version skew | none (train in container) | | |
 | Features with zero variance | 0 | | |
 | Contract test exists per feature? | yes | | |
@@ -316,10 +328,27 @@ Three layers, with a deliberate division of labour:
   correct and should be stated explicitly in any portfolio presentation: the generative
   component is downstream of the decision, not part of it.
 
-The `layers_used` field on a score records which layers actually contributed, so a score
-computed with a missing layer is distinguishable from a full one. **The API exposes it
-and the frontend reads it zero times** — the honesty the backend records is not yet
-surfaced. A reviewer looking for where the UI could mislead a user should start there.
+`layers_used` is where a record of honesty was written and then thrown away. It exists
+**only** inside `src/services/scoring_service.py`: computed at line 159, returned on the
+`ScoringResult` at line 192, and then it dies. It is not a column on the `FraudScore`
+model, no migration adds it, no API schema exposes it, and the frontend contains zero
+references to it.
+
+The code's own comment says the opposite — *"the gap between the two is recorded in
+`layers_used` instead of being invisible"*. It **is** invisible. The A15 work
+distinguishes "the model was not loaded" from "the model ran and scored zero", which is
+the single most important distinction in this pipeline, and then discards the evidence
+in a local variable that never leaves the process.
+
+An earlier draft of this document claimed "the API exposes it and the frontend reads it
+zero times". That was wrong in the first half and understates the problem. A reviewer
+looking for where the product could mislead an analyst should start here: the system
+computes the honest answer about its own degradation and never tells anyone.
+
+> **The fix is partly blocked.** Surfacing it in the API response needs no migration and
+> could be done safely. Persisting it needs a schema migration, which cannot be tested
+> without a running database. Displaying it changes a rendered surface and would ship
+> unverified by a browser. The API half is low-risk; the other two are not, today.
 
 ---
 
@@ -349,8 +378,14 @@ Retraining reproducibility:
 
 ```powershell
 docker compose exec -T api python scripts/train_xgboost_aligned.py
-# three consecutive runs must produce sha256 573b7d09…
+# Run it TWICE and compare. This document previously claimed three runs are
+# byte-identical at sha256 573b7d09...; the artifact actually committed here
+# hashes to 243083b19e3447d8... . Nobody has reconciled the two. Settle it before
+# claiming determinism anywhere.
 ```
+
+> **Requires the container, which was not running when this section was written.** This
+> is the one outstanding item in the whole audit that no amount of reading can close.
 
 > `/app/scripts` is **baked into the image**, not bind-mounted. Host edits to
 > `scripts/` are invisible inside the container; use `docker cp`. This cost a run.
