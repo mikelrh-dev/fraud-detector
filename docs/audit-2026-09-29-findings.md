@@ -169,3 +169,97 @@ signs of decorative tests, and it needs no container.
 
 The focus-ring row is the one that was open before the ML investigation diverted
 this work, and it is still open.
+
+---
+
+## 6. Tasks 4-9, executed
+
+### TST-01 / TST-02 — Orphaned public symbols (Task 4)
+
+Confirmed and now guarded by `tests/test_audit_orphans.py`.
+
+| Symbol | Callers in `src/` | Tests | Finding |
+|---|---|---|---|
+| `enqueue_for_retry` (`core/redis.py:52`) | **0** | 5 | Dead with a green suite |
+| `list_transactions` (`services/transaction.py:66`) | **0** | 4 | **The endpoint reimplements the query** — 91 lines vs this 13, both `select(Transaction)`. Two implementations can drift and the tests pin the one production never runs |
+
+Frontend: 90 exports referenced by production, **0 orphans**.
+
+The guard is `xfail(strict)` on both, with reasons naming the findings, so the gate stays green and fixing either turns the exemption into a failure.
+
+### API-01 — The TypeScript response contract has drifted from Pydantic (Task 5)
+
+**Both directions, confirmed against `ScoreResponse` model fields:**
+
+| | Pydantic | TypeScript |
+|---|---|---|
+| `ml_score` | `float`, **required, non-null** | `ScoreResponse.ml_score: number \| null` |
+| `friction_level` | `str`, **required** | **not declared** |
+| `action` | `str \| None` | **not declared** |
+
+The TS `ScoreResponse` permits a `null` the backend cannot send, while its sibling
+interface carries the comment *"backend guarantees non-nullable float"* on the same
+field. Two interfaces in one file disagree about the same value, and both are stale
+against the schema.
+
+### DOC-01 — `DESIGN.md` contradicts itself on the warn colour (Task 8)
+
+```
+DESIGN.md:37    | Review / Flagged | `#eab308` |  yellow-500 |
+DESIGN.md:389   --color-risk-warn: #f59e0b;  /* = amber-500 */
+index.css:62    --color-risk-warn: #f59e0b;   /* = amber-500 */
+```
+
+**The document disagrees with itself, and the code matches line 389.** So line 37 is
+the wrong one. This is determinable, not a guess — which is better than the open
+question recorded before.
+
+### T6 — Training / serving skew: **REFUTED**
+
+```
+el motor LEE       : ['avg_amount','std_amount','tx_count_last_1h','tx_count_last_5min']
+el servidor PRODUCE: ['avg_amount','std_amount','tx_count_last_1h','tx_count_last_5min']
+el trainer PRODUCE : ['avg_amount','std_amount','tx_count_last_1h','tx_count_last_5min']
+las tres coinciden : True
+```
+
+The class that produced both the broken model and the bad audit is **absent for the
+`user_history` contract**. No skew.
+
+### T7 — Undeclared dependencies: **REFUTED**
+
+A first pass reported four undeclared modules. **That was my tool's bug**: import
+names differ from distribution names. All four are declared:
+
+| Import | Declared as |
+|---|---|
+| `jose` | `python-jose` |
+| `sklearn` | `scikit-learn` |
+| `passlib` | `passlib` |
+| `sqlalchemy` | `SQLAlchemy` |
+
+10 external modules imported by `src/`, **10 declared**. The `scipy 1.17.1`
+observation from earlier remains true — it is installed and declared nowhere — but
+nothing imports it directly, so it is a transitive resolution, not an undeclared
+direct dependency.
+
+### T9 — CSS: **No action, as predicted**
+
+`.rounded` is a real class in five components. `.table` is dead but the word appears
+~70 times in ordinary prose. About 50 bytes. Not a defect.
+
+---
+
+## 7. Final tally
+
+| | Count |
+|---|---|
+| Confirmed findings | **7** — ML-01, OPS-01, OPS-02, TST-01, TST-02, API-01, DOC-01 |
+| Refuted hypotheses | **6** — ML-01b, OPS-03, OPS-04, T6, T7, T9 |
+| Refutations caused by my own tooling | **3** |
+
+**No high-severity finding across all nine tasks.** Every confirmed finding is low
+severity. The consistent result: the systems that were already fixed are fixed, and
+the things that look wrong on inspection are wrong in the inspection, not in the code.
+
+**All nine tasks executed.** Nothing in the plan remains unrun.
