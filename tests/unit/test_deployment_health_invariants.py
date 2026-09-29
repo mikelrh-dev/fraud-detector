@@ -25,6 +25,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
 DOCKERFILE_API = REPO_ROOT / "docker" / "Dockerfile.api"
+NGINX_CONF = REPO_ROOT / "docker" / "nginx.conf"
 
 
 @pytest.fixture(scope="module")
@@ -231,3 +232,69 @@ class TestShapFailureIsObservable:
         counters.shap_skipped_unavailable.inc()
         assert counters.snapshot()["shap_skipped_unavailable"] == 2
         counters.reset()
+
+
+class TestMetricsNotExposed:
+    """OPS-02: `/metrics` publishes worker topology with no auth. Accepted.
+
+    ADR-006 accepts that risk and changes no application code, because every
+    available fix is worse than the finding: auth breaks scraping the day a
+    scraper is added, deleting the endpoint discards the only signal that a
+    worker is stuck (A18), and an nginx allow-list cannot be verified without
+    a container.
+
+    What makes the acceptance safe is the deployment, not the code — and the
+    deployment is configuration that nothing else would catch if it changed.
+    So these tests pin the *state that makes the risk acceptable*. They fail
+    when someone wires up Prometheus, which is precisely the moment ADR-006
+    says the decision has to be revisited rather than inherited.
+    """
+
+    def test_api_publishes_no_port(self, compose: dict) -> None:
+        """With no published port, the API is only reachable inside the
+        compose network — including `/metrics`."""
+        assert "ports" not in compose["services"]["api"], (
+            "OPS-02 / ADR-006: publishing the api port puts /metrics, which "
+            "serves worker topology unauthenticated, on the network"
+        )
+
+    def test_nginx_does_not_proxy_metrics(self) -> None:
+        """`/metrics` matches neither `location /api/` nor `location /health`,
+        so it falls into `location /`, which serves the SPA. That is the only
+        reason the endpoint is not reachable from outside."""
+        source = NGINX_CONF.read_text(encoding="utf-8")
+        proxied = [
+            line.strip()
+            for line in source.splitlines()
+            if "proxy_pass" in line and not line.strip().startswith("#")
+        ]
+        assert proxied, "no proxy_pass at all — the config no longer matches this test"
+        for line in proxied:
+            assert "/metrics" not in line, (
+                "OPS-02 / ADR-006: nginx now proxies /metrics. Restrict it to "
+                "the scraper's IP, a separate listener, or mTLS BEFORE "
+                "exposing it, and update ADR-006."
+            )
+
+    def test_no_prometheus_scrape_config_in_the_repo(self) -> None:
+        """No scraper today, which is why the accepted decision is coherent:
+        there is nothing to protect and nothing to break."""
+        matches = [
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in REPO_ROOT.rglob("*.yml")
+            if "node_modules" not in path.parts
+            and "scrape_configs" in path.read_text(encoding="utf-8", errors="replace")
+        ]
+        assert not matches, (
+            "a Prometheus scrape config appeared. OPS-02 / ADR-006: revisit "
+            f"the decision before the first scrape. Found in {matches}"
+        )
+
+    def test_the_endpoint_still_exists(self) -> None:
+        """The capability is kept on purpose. A19's failure counter is the
+        only thing that says a worker is stuck, so this asserts the endpoint
+        is not deleted as a side effect of 'fixing' the finding."""
+        source = (REPO_ROOT / "src" / "api" / "v1" / "health.py").read_text(
+            encoding="utf-8"
+        )
+        assert '@router.get("/metrics")' in source
