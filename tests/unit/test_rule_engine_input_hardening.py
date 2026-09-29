@@ -43,12 +43,51 @@ class TestMalformedAmount:
         assert math.isfinite(score)
 
     @pytest.mark.parametrize(
-        "bad", ["abc", [1000], float("nan"), float("inf"), True]
+        "bad",
+        [
+            "abc",
+            [1000],
+            float("nan"),
+            float("inf"),
+            float("-inf"),
+            True,
+        ],
     )
     def test_fires_high_amount_rather_than_scoring_clean(
         self, engine: RuleEngine, bad: object
     ) -> None:
-        """Garbage input must not produce a low-risk score."""
+        """Garbage input must not produce a low-risk score.
+
+        D1-3. `float("-inf")` is the case that made this test's coverage look
+        complete while the guard it protects was one identifier away from
+        broken. `rule_engine.py:101` reads `not math.isfinite(...)`; narrow it to
+        `math.isnan(...)` and nothing in the suite objects, because:
+
+            -inf  ->  isnan() is False  ->  the else branch takes it verbatim
+                  ->  `-inf > 1000` is False  ->  high_amount does NOT fire
+                  ->  the transaction scores 0.0 and fires nothing
+
+        A negative infinity is the most negative number there is, so `not
+        amount > 1000` is the one comparison that a non-finite amount can pass
+        while a human would call it obviously not-clean. Scored 0.0, it is
+        indistinguishable from a real small purchase.
+
+        `+inf` is caught by a narrowing to `isnan` too, and `nan` is caught by
+        accident (every `nan > 1000` is already False, but `isfinite` sends it
+        to the same untrusted branch as everything else, and `isnan` keeps
+        doing that). Only `-inf` slips, which is why it is listed explicitly
+        instead of trusting the neighbouring cases to carry it.
+
+        NOT REACHABLE OVER HTTP. `TransactionCreate.amount` declares `gt=0` and
+        `allow_inf_nan=False` (src/schemas/transaction.py:17), so pydantic
+        rejects both infinities with a 422 before the engine is called. That is
+        the whole point of the A12 note at the top of this file: the HTTP path
+        is clean, and the engine's own docstring names the consumers that are
+        not -- a batch import, a replay tool, a future queue worker. Those pass
+        plain dicts, and a -inf that reaches one of them reaches the engine
+        directly. The guard is the only thing between that input and a clean
+        score.
+        """
         _, fired = engine.evaluate({"amount": bad, "merchant_name": "X"})
         assert "high_amount" in fired, (
             "an unparseable amount means we do not know the value; scoring it "
