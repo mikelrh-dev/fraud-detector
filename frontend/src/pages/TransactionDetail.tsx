@@ -207,27 +207,48 @@ function CopyReportButton({ text }: { text: string }) {
   );
 }
 
-/** Light-markdown renderer for the completed report body. */
+/**
+ * Report body — the LLM's prose, rendered as a reading surface.
+ *
+ * The previous version set every block in the box to `text-sm text-slate-300`
+ * and made a level-2 heading `text-base`: a two-pixel difference, which is not
+ * a hierarchy, it is a rounding error. The three greys sat one step apart and
+ * the container had no border, so the block floated against the card behind it.
+ *
+ * What carries the structure now, in order of how much it does:
+ *   - level-3 headings go uppercase + wide tracking at 12px. Cap height does
+ *     the work that size cannot at this measure.
+ *   - level-2 headings step to 18px with tight tracking and a top rule, so
+ *     sections divide rather than run together.
+ *   - spacing is asymmetric: a heading sits closer to what it introduces than
+ *     to what it follows, which is the only cue that says "this labels the
+ *     next thing".
+ *   - the measure is capped. Prose set to the full width of a wide screen is
+ *     the single cheapest readability win there is.
+ */
 function ReportBody({ text }: { text: string }) {
   const blocks: ReportBlock[] = parseReportLines(text);
   return (
     <div
       data-testid="report-body"
-      className="animate-report-in space-y-2 bg-slate-800 rounded-lg p-4"
+      className="animate-report-in space-y-3 rounded-lg border border-slate-700/60 bg-slate-800/50 p-5 sm:p-6"
     >
       {blocks.map((block, index) => {
-        if (block.type === "heading") {
-          return block.level === 2 ? (
+        if (block.type === "heading" && block.level === 2) {
+          return (
             <p
               key={index}
-              className="text-base font-semibold text-slate-100 whitespace-pre-wrap"
+              className="mt-6 border-t border-slate-700/70 pt-4 text-lg font-semibold tracking-tight text-slate-100 first:mt-0 first:border-t-0 first:pt-0"
             >
               {block.text}
             </p>
-          ) : (
+          );
+        }
+        if (block.type === "heading") {
+          return (
             <p
               key={index}
-              className="text-sm font-semibold text-slate-200 whitespace-pre-wrap"
+              className="pt-2 text-xs font-semibold uppercase tracking-wider text-slate-400"
             >
               {block.text}
             </p>
@@ -235,9 +256,15 @@ function ReportBody({ text }: { text: string }) {
         }
         if (block.type === "list") {
           return (
-            <ul key={index} className="list-disc space-y-1 pl-5">
+            <ul
+              key={index}
+              className="list-disc space-y-1.5 pl-5 marker:text-slate-600"
+            >
               {block.items.map((item, itemIndex) => (
-                <li key={itemIndex} className="text-sm text-slate-300">
+                <li
+                  key={itemIndex}
+                  className="text-sm leading-relaxed text-slate-300"
+                >
                   {item}
                 </li>
               ))}
@@ -247,7 +274,7 @@ function ReportBody({ text }: { text: string }) {
         return (
           <p
             key={index}
-            className="text-sm leading-relaxed whitespace-pre-wrap text-slate-300 font-sans"
+            className="max-w-[68ch] text-sm leading-relaxed whitespace-pre-wrap text-slate-300"
           >
             {block.text}
           </p>
