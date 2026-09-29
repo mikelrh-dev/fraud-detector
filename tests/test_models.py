@@ -4,23 +4,18 @@ Tests that ORM models are correctly configured with proper defaults and
 soft delete semantics.
 """
 
-from datetime import datetime
-from uuid import UUID, uuid4
 
-import pytest
-from sqlalchemy import inspect
-from sqlalchemy.orm.properties import MappedColumn
 
 from src.core.database import Base
 from src.models.audit_entry import AuditEntry
 from src.models.base import BaseModel
-from src.models.fraud_alert import FraudAlert, AlertStatus
-from src.models.fraud_score import FraudScore, FraudClassification
-from src.models.llm_report import LLMReport, LLMReportStatus
+from src.models.fraud_alert import FraudAlert
+from src.models.fraud_score import FraudScore
+from src.models.llm_report import LLMReport
 from src.models.ml_model_run import MLModelRun
 from src.models.rule import RuleMetadata
-from src.models.transaction import Transaction, TransactionStatus
-from src.models.user import User, UserRole
+from src.models.transaction import Transaction
+from src.models.user import User
 
 
 class TestBaseModelFeatures:

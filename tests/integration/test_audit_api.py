@@ -11,7 +11,9 @@ class TestTransactionAuditEndpoint:
     """GET /api/v1/audit/transactions/{id} — audit trail for a transaction."""
 
     @pytest.mark.asyncio
-    async def test_get_audit_trail_returns_200(self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock):
+    async def test_get_audit_trail_returns_200(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
         """GET /audit/transactions/{id} should return 200 with audit entries."""
         # Mock: first query loads the transaction for ownership check,
         # second query returns audit entries.

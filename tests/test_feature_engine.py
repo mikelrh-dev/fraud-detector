@@ -6,7 +6,6 @@ converting raw transaction data into a fixed-dimension feature vector.
 """
 
 import numpy as np
-import pytest
 
 from src.services.feature_engine import FEATURE_NAMES, FeatureEngine
 

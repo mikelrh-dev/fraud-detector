@@ -24,8 +24,17 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt -r requirements-dev.txt
+      # D1-5. `src/` alone let 62 ruff errors accumulate in `tests/` unnoticed.
+      # That is not a cosmetic debt: an unused import in a test is usually a
+      # symbol the test stopped using, and D1-2's dead formula was exactly that
+      # shape -- a test asserting a local copy of the code instead of the code.
+      # Nothing catches a test that stops testing if nothing lints the tests.
+      #
+      # mypy stays on `src/` only, and that is a decision already written down
+      # in pyproject.toml ("tests are excluded from mypy entirely
+      # (runtime-verified by pytest)"). This change does not reopen it.
       - name: Run ruff
-        run: ruff check src/
+        run: ruff check src/ tests/
       - name: Run mypy
         run: mypy src/
 

@@ -4,9 +4,7 @@ R2: shortest_path_length must use cutoff=2 so BFS stops at depth 2,
 making the algorithm O(edges at depth ≤2) instead of O(V+E).
 """
 
-import asyncio
 
-import pytest
 
 from src.services.graph_service import FraudGraphService
 

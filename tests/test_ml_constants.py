@@ -4,7 +4,6 @@ Tests for the canonical category list and alias normalization used by
 FeatureEngine, RuleEngine, and training scripts.
 """
 
-import pytest
 
 from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
 from src.services.feature_engine import FeatureEngine

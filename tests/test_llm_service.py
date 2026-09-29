@@ -86,7 +86,10 @@ class TestLLMPromptTemplate:
 
         # Should contain the three required sections
         assert "análisis de puntajes" in prompt.lower() or "analisis de puntajes" in prompt.lower()
-        assert "explicación de la decisión" in prompt.lower() or "explicacion de la decision" in prompt.lower()
+        assert (
+            "explicación de la decisión" in prompt.lower()
+            or "explicacion de la decision" in prompt.lower()
+        )
         assert "factores contextuales" in prompt.lower()
 
     def test_prompt_contains_transaction_details(self):

@@ -6,7 +6,7 @@ Verifies that:
 - GET /monitoring/metrics returns actual ml_model_run rows.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -19,9 +19,7 @@ class TestDriftPersistence:
     @pytest.mark.asyncio
     async def test_drift_service_loads_from_db(self):
         """DataDriftService should load reference data from DB when available."""
-        import pandas as pd
 
-        from src.models.drift_reference import DriftReferenceData
         from src.services.drift_service import DataDriftService
 
         mock_db = AsyncMock()
@@ -80,8 +78,6 @@ class TestTrackModelRunAfterScoring:
     @pytest.mark.asyncio
     async def test_track_model_run_invoked_on_scoring(self):
         """ScoringService should call monitoring_service.track_model_run after scoring."""
-        import asyncio
-        from src.services.scoring_service import ScoringService
 
         rule_engine = MagicMock()
         rule_engine.evaluate.return_value = (35.0, ["high_amount"])
@@ -111,7 +107,11 @@ class TestTrackModelRunAfterScoring:
         db = MagicMock()
         db.flush = AsyncMock()
 
-        result = await service.compute_scores(
+        # The return value is deliberately not bound. This test's claim is that
+        # SCORING INVOKES the callback, and every assertion below reads
+        # `monitoring.track_model_run`; nothing reads the score. Binding it to a
+        # name nothing uses is what F841 was pointing at.
+        await service.compute_scores(
             tx_data={"amount": 5000, "merchant_category": "retail"},
             context={"recent_transactions": 2},
             user_history={},
@@ -130,8 +130,6 @@ class TestTrackModelRunAfterScoring:
     @pytest.mark.asyncio
     async def test_track_model_run_does_not_block_scoring(self):
         """track_model_run failure should not prevent scoring from completing."""
-        import asyncio
-        from src.services.scoring_service import ScoringService
 
         rule_engine = MagicMock()
         rule_engine.evaluate.return_value = (0.0, [])

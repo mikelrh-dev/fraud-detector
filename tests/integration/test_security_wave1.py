@@ -4,7 +4,6 @@ Strict TDD: every test here MUST fail before the corresponding fix is applied,
 then pass after. This file covers F1–F5 from the audit remediation plan.
 """
 
-import unittest.mock
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -391,7 +390,6 @@ class TestLogoutRefreshRevocation:
         self, test_client: AsyncClient, fake_redis, mock_db: AsyncMock
     ):
         """After logout with refresh token, using it to refresh → 401."""
-        from src.core.security import create_access_token, create_refresh_token
 
         access = create_access_token(user_id="u1", role="analyst")
         refresh = create_refresh_token(user_id="u1", role="analyst")
@@ -417,7 +415,6 @@ class TestLogoutRefreshRevocation:
         self, test_client: AsyncClient, fake_redis
     ):
         """Logout without refresh token is graceful (204)."""
-        from src.core.security import create_access_token
 
         access = create_access_token(user_id="u1", role="analyst")
         response = await test_client.post(

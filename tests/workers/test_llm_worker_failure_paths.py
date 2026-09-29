@@ -12,7 +12,6 @@ suite:
 """
 
 import json
-from contextlib import suppress
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

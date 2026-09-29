@@ -17,13 +17,14 @@ from pathlib import Path
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
-from alembic import command
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, inspect as sa_inspect
+from sqlalchemy import create_engine
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.compiler import compiles
 
 import src.models  # noqa: F401  — registers every model on Base.metadata
+from alembic import command
 from src.core.config import Settings
 from src.models.base import Base
 

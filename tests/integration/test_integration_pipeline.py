@@ -10,10 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import AsyncClient
 
-from src.core.dependencies import get_db
-from src.schemas.alert import AlertActionRequest
-from src.schemas.transaction import TransactionCreate
-
 
 class TestFullScoringPipeline:
     """Full pipeline: transaction creation, scoring, alert, audit."""

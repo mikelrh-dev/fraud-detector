@@ -28,7 +28,6 @@ behaviour shift.
 import random
 
 import networkx as nx
-import pytest
 
 from src.services.graph_service import FraudGraphService
 

@@ -19,13 +19,12 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.compiler import compiles
 
-from alembic import command
-from src.core.config import Settings
-from src.models.base import Base
-
 # Import for side effects: every model must be registered on Base.metadata
 # before the expected table set is derived from it.
 import src.models  # noqa: F401,E402
+from alembic import command
+from src.core.config import Settings
+from src.models.base import Base
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"

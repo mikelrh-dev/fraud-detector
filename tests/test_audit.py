@@ -4,12 +4,10 @@ Tests for the audit trail service that records every scoring and analyst action
 with SHA-256 checksums for integrity verification.
 """
 
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy import select
 
 from src.services.audit import AuditService
 

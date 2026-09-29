@@ -30,7 +30,9 @@ class TestDriftEndpoint:
             service.is_initialized, service.reference_data = saved
 
     @pytest.mark.asyncio
-    async def test_get_drift_report_returns_200(self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock):
+    async def test_get_drift_report_returns_200(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
         """GET /monitoring/drift should return 200 with drift report."""
         # Mock empty fraud scores (endpoint reads via .scalars().all())
         mock_result = MagicMock()
@@ -150,7 +152,9 @@ class TestMetricsEndpoint:
     """GET /api/v1/monitoring/metrics — model performance metrics."""
 
     @pytest.mark.asyncio
-    async def test_get_metrics_returns_200(self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock):
+    async def test_get_metrics_returns_200(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
         """GET /monitoring/metrics should return 200 with metrics."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
@@ -175,7 +179,9 @@ class TestDashboardEndpoint:
     """GET /api/v1/monitoring/dashboard — summary dashboard metrics."""
 
     @pytest.mark.asyncio
-    async def test_get_dashboard_returns_200(self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock):
+    async def test_get_dashboard_returns_200(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
         """GET /monitoring/dashboard should return 200 with summary."""
         def mock_execute_side_effect(*args, **kwargs):
             r = MagicMock()

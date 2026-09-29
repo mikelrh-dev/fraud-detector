@@ -16,6 +16,8 @@ import pytest
 
 from scripts.generate_synthetic_data import (
     CORPUS_SCHEMA as DEMO_CORPUS_SCHEMA,
+)
+from scripts.generate_synthetic_data import (
     FIELDNAMES,
     generate_transaction,
 )
@@ -142,10 +144,12 @@ class TestSyntheticDataIsNotDegenerate:
 
     @pytest.fixture(scope="class")
     def matrix(self):
-        from src.services.feature_engine import FEATURE_NAMES, FeatureEngine
         from scripts.train_xgboost_aligned import (
-            FRAUD_NOISE_INTENSITY, add_realistic_noise, build_synthetic_history,
+            FRAUD_NOISE_INTENSITY,
+            add_realistic_noise,
+            build_synthetic_history,
         )
+        from src.services.feature_engine import FEATURE_NAMES
 
         transactions, labels = generate_synthetic_data(n_samples=6000, fraud_rate=0.05)
         transactions, labels = add_realistic_noise(

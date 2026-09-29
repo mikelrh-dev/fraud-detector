@@ -4,7 +4,6 @@ Tests for the monitoring service that tracks model drift, computes performance
 metrics, and triggers retraining recommendations.
 """
 
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np

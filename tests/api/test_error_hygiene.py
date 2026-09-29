@@ -10,9 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import AsyncClient
 
-import src.api.v1.transactions as transactions_api
-from src.models.transaction import TransactionStatus
-
 pytestmark = pytest.mark.asyncio
 
 

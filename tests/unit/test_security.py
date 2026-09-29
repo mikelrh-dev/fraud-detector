@@ -3,7 +3,8 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from jose import JWTError, jwt as jose_jwt
+from jose import JWTError
+from jose import jwt as jose_jwt
 
 from src.core.config import settings
 from src.core.security import (
