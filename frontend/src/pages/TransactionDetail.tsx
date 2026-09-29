@@ -210,35 +210,50 @@ function CopyReportButton({ text }: { text: string }) {
 /**
  * Report body — the LLM's prose, rendered as a reading surface.
  *
- * The previous version set every block in the box to `text-sm text-slate-300`
- * and made a level-2 heading `text-base`: a two-pixel difference, which is not
- * a hierarchy, it is a rounding error. The three greys sat one step apart and
- * the container had no border, so the block floated against the card behind it.
+ * Three changes from the version in `a657c53`, all because the parser did not
+ * understand the format the model actually emits. The prompt at
+ * `src/services/llm.py` asks for `1. **Label**: prose`; the parser recognized
+ * only `### `, `## ` and `- `. So the level-2/level-3 treatments below — the
+ * top rule, the uppercase tracking — were dead CSS, and `**` reached the DOM
+ * as literal asterisks. `parseReportLines` now handles that shape.
  *
- * What carries the structure now, in order of how much it does:
- *   - level-3 headings go uppercase + wide tracking at 12px. Cap height does
- *     the work that size cannot at this measure.
- *   - level-2 headings step to 18px with tight tracking and a top rule, so
- *     sections divide rather than run together.
- *   - spacing is asymmetric: a heading sits closer to what it introduces than
- *     to what it follows, which is the only cue that says "this labels the
- *     next thing".
- *   - the measure is capped. Prose set to the full width of a wide screen is
- *     the single cheapest readability win there is.
+ * The other two are structural, and neither depends on the model's output:
+ *
+ * - The measure moved from the paragraph to the CONTAINER. It was on the
+ *   paragraph only, so headings, lists and the top rule all ran to the full
+ *   width of a wide screen while the prose beside them stopped at 68ch: a
+ *   ragged edge that is worse than no cap at all. Capping the container caps
+ *   every block at once.
+ * - The `:first` reset no longer depends on the report opening with a heading.
+ *   `first:mt-0 first:border-t-0 first:pt-0` only ever fired when the first
+ *   child was the level-2 heading, and the prompt's shape does not promise
+ *   that — a report that opens with prose got a rule across the top of its
+ *   first paragraph. It is now a conditional class decided from the parsed
+ *   blocks, not a CSS selector guessing at the first child.
  */
 function ReportBody({ text }: { text: string }) {
   const blocks: ReportBlock[] = parseReportLines(text);
+
+  // True when the level-2 heading is the very first block. Decided from the
+  // parsed structure because a CSS `:first` selector cannot express "first
+  // *section*": it matches the first child whatever that child is.
+  const opensWithLevel2 =
+    blocks.length > 0 && blocks[0].type === "heading" && blocks[0].level === 2;
+
   return (
     <div
       data-testid="report-body"
-      className="animate-report-in space-y-3 rounded-lg border border-slate-700/60 bg-slate-800/50 p-5 sm:p-6"
+      className="animate-report-in max-w-[68ch] space-y-3 rounded-lg border border-slate-700/60 bg-slate-800/50 p-5 sm:p-6"
     >
       {blocks.map((block, index) => {
         if (block.type === "heading" && block.level === 2) {
           return (
             <p
               key={index}
-              className="mt-6 border-t border-slate-700/70 pt-4 text-lg font-semibold tracking-tight text-slate-100 first:mt-0 first:border-t-0 first:pt-0"
+              className={
+                "mt-6 border-t border-slate-700/70 pt-4 text-lg font-semibold tracking-tight text-slate-100" +
+                (opensWithLevel2 ? " mt-0 border-t-0 pt-0" : "")
+              }
             >
               {block.text}
             </p>
@@ -274,7 +289,7 @@ function ReportBody({ text }: { text: string }) {
         return (
           <p
             key={index}
-            className="max-w-[68ch] text-sm leading-relaxed whitespace-pre-wrap text-slate-300"
+            className="text-sm leading-relaxed whitespace-pre-wrap text-slate-300"
           >
             {block.text}
           </p>
