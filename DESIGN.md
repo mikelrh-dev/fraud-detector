@@ -34,7 +34,7 @@ Professional fintech dashboard for fraud detection analysts. Dark-first, data-de
 | State | Hex | Tailwind |
 |---|---|---|
 | Legitimate / Approved | `#22c55e` | `green-500` |
-| Review / Flagged | `#eab308` | `yellow-500` |
+| Review / Flagged | `#f59e0b` | `amber-500` |
 | Fraud / Blocked | `#ef4444` | `red-500` |
 | Info / Neutral | `#3b82f6` | `blue-500` |
 
