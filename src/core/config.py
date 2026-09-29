@@ -104,6 +104,26 @@ class Settings(BaseSettings):
     fraud_detection_enabled: bool = True
     velocity_store_enabled: bool = True
 
+    # Risky merchants the rule engine treats as inherently adversarial
+    # (rule_engine.py fires `unusual_merchant`, +20, on an exact
+    # case-insensitive match against merchant_name).
+    #
+    # These were three string literals inlined in the request path
+    # (api/v1/transactions.py), so extending the list needed a code change and
+    # a deploy. They are additive, not load-bearing: the same rule also fires on
+    # a merchant_category in MERCHANT_ADVERSARIAL_CATEGORIES, so an operator
+    # emptying this list narrows the merchant-name signal without silencing
+    # the rule.
+    #
+    # Override with a JSON array, as pydantic-settings expects for complex
+    # types (same convention as threshold_tiers below):
+    #   MERCHANT_BLACKLIST='["foo","bar"]'
+    merchant_blacklist: list[str] = [
+        "crypto exchange pro",
+        "online gambling",
+        "money transfer now",
+    ]
+
     # Frontend
     frontend_url: str = "http://localhost:3000"
 

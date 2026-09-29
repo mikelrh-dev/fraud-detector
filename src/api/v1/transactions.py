@@ -260,11 +260,11 @@ async def create_and_score_transaction(
     context: dict[str, Any] = {
         "recent_transactions": velocity_counts["5min"],
         "known_cards": known_cards,
-        "merchant_blacklist": [
-            "crypto exchange pro",
-            "online gambling",
-            "money transfer now",
-        ],
+        # From settings, not a literal in the request path (ML-01): extending
+        # the list should not need a code change and a deploy. The default
+        # preserves the previous three entries exactly, so scoring is
+        # unchanged. rule_engine.py lowercases both sides before matching.
+        "merchant_blacklist": settings.merchant_blacklist,
         "home_country": "AR",
         "graph_features": graph_features,
     }
