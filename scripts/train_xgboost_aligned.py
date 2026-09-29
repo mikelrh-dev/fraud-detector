@@ -105,7 +105,14 @@ DATA_PAYSIM = "../transaccion/PS_20174392719_1491204439457_log.csv"
 #: distribution, and retrain. A corpus without a stamp, or with a different
 #: one, is refused — see :func:`_load_synthetic_csv` for why that is a hard
 #: error rather than a warning.
-CORPUS_SCHEMA = "trainer_v2"
+#:
+#: AMT-001 bumped this to trainer_v3. The archetype amount distributions
+#: changed, so the on-disk corpus at data/synthetic_transactions.csv is no
+#: longer the corpus this script would generate. Refusing it is correct: the
+#: whole point of the stamp is that a stale corpus cannot be trained on
+#: silently, and the artifact that ships with the inverted amount response was
+#: trained on exactly such a stale corpus.
+CORPUS_SCHEMA = "trainer_v3"
 
 #: Column carrying :data:`CORPUS_SCHEMA`.
 CORPUS_SCHEMA_COLUMN = "corpus_schema"
@@ -163,13 +170,97 @@ DAY_HOURS = tuple(range(6, 22))
 
 #: name, weight, lognormal(mu, sigma) for amount, P(high-risk category),
 #: P(night hour), velocity_5min window, velocity_1h window, P(round amount)
+#:
+#: AMT-001: the amount distributions below used to be arranged so that the
+#: largest amounts in the corpus were predominantly *legitimate*, and the
+#: model learned exactly that. Measured through the production pipeline on
+#: the crypto/night/velocity-burst path, the risk score peaked at $2,000 and
+#: then fell monotonically to $1,000,000:
+#:
+#:     $1,000 -> 84.36    $5,000 -> 84.25    $10,000 -> 77.24
+#:     $50,000 -> 49.07   $500,000 -> 41.78  $1,000,000 -> 41.78
+#:
+#: so a $1,000,000 crypto transfer scored 41.78 — half the score of a $5,000
+#: one. High-value transfer fraud is a real and important pattern and the ML
+#: layer was actively mis-ranking it.
+#:
+#: The trainer was not at fault. The data was. `fraud_lookalike` — legitimate
+#: traffic that resembles fraud — carried the single highest amount mu in the
+#: corpus (10.0), a narrow sigma (0.7) that concentrated it around ~$22k, and
+#: `big_purchase` at mu 8.0 added more legitimate mass above $50k than
+#: `high_value_wire` did. Conditional on the high-risk path the corpus said
+#: large == legitimate:
+#:
+#:     band                 n     P(fraud | crypto, night, burst)
+#:     $1,000 - $5,000    111          15.32%
+#:     $5,000 - $10,000   605           3.64%
+#:     $10,000 - $50,000 4306           0.42%   <- 4,306 rows, 18 frauds
+#:     $50,000 - $100,000  593           0.17%
+#:     $100,000+            92           0.00%
+#:
+#: The model was faithfully learning an inverted corpus. The fix is below.
+#:
+#: What changed, and why each change is defensible about the real world
+#: rather than about the metric:
+#:
+#:   high_value_wire  mu 9.2 -> 9.8, sigma 0.9 -> 1.1, weight 0.24 -> 0.26.
+#:       Wires and large crypto movements are real, high-value fraud
+#:       vectors; the archetype is supposed to represent them, and it now
+#:       reaches the far tail instead of stopping at it. p_round drops
+#:       0.75 -> 0.55: rounding three quarters of wire amounts to hundreds
+#:       was an artefact of the generator, not a property of wire transfers,
+#:       and it distorted the mid-tail while making `amount_round_number`
+#:       carry weight it should not.
+#:   large_burst      mu 8.8 -> 9.0, weight 0.12 -> 0.19, p_risk 0.55 -> 0.65.
+#:       A compromised account making a large transfer while the burst runs,
+#:       and mule accounts receiving several, is a major pattern. At 12% of
+#:       the fraud portfolio the corpus had almost no high-amount, high-
+#:       velocity fraud, which is precisely the cell the defect lives in.
+#:   fraud_lookalike  mu 10.0 -> 8.0, sigma 0.7 -> 1.1. Kept, and still
+#:       3% of legitimate traffic, because it is what stops merchant risk
+#:       and hour from being deterministic. But it now *overlaps* the fraud
+#:       amount distribution instead of sitting above it. Overlap is the
+#:       point; domination was the bug.
+#:   big_purchase     mu 8.0 -> 9.0, sigma 0.9 -> 1.1.
+#:       Honest five-figure purchases — a car, a house deposit, tuition,
+#:       a medical bill — are ordinary. Without genuine legitimate mass in
+#:       the high tail, the fix above is just a label flip in the opposite
+#:       direction: measured with big_purchase left at mu 8.0, 55% of
+#:       transactions above $100k came out labelled fraud, which is the
+#:       degeneracy cb65b25 already fixed once.
+#:
+#: Measured after the change, 400,000 generated rows, real generator and
+#: real noise pass. The fraud rate now RISES with amount instead of
+#: inverting, and legitimate traffic stays the majority in every band:
+#:
+#:     band                 n     fraud     rate     lift   legitimate
+#:     $0        - $100    198180      983   0.496%   0.50x      99.5%
+#:     $100      - $500    111475      940   0.843%   0.85x      99.2%
+#:     $500      - $1,000   11545      219   1.906%   1.92x      98.1%
+#:     $1,000    - $5,000   28488      403   1.415%   1.43x      98.6%
+#:     $5,000    - $10,000  18751      333   1.776%   1.79x      98.2%
+#:     $10,000   - $50,000  27870      853   3.061%   3.08x      96.9%
+#:     $50,000   - $100,000  2820      162   5.745%   5.79x      94.3%
+#:     $100,000  - $250,000   798       68   8.521%   8.59x      91.5%
+#:     $250,000+               73        7   9.589%   9.66x      90.4%
+#:
+#: Conditional on the high-risk path, where the defect lived, it rises
+#: monotonically too: 1.23% ($1k-$5k) -> 2.77% ($5k-$10k) -> 5.61%
+#: ($10k-$50k) -> 15.00% ($50k-$100k).
+#:
+#: Two honest caveats. The $500-$1,000 band sits slightly above
+#: $1,000-$5,000 (1.906% vs 1.415%); that shoulder is the upper tail of
+#: `account_takeover` and it is pre-existing, not introduced here. And
+#: `amount` as a standalone feature moved from ROC-AUC 0.6458 to 0.6844 —
+#: still far from the 1.0000 that means "this feature is the label", so the
+#: corpus is less degenerate, not more.
 FRAUD_ARCHETYPES: tuple[dict, ...] = (
-    {"name": "card_testing", "weight": 0.20, "amount": (3.3, 0.85),
+    {"name": "card_testing", "weight": 0.17, "amount": (3.3, 0.85),
      "p_risk": 0.08, "p_night": 0.45, "v5": (8, 32), "v1": (20, 85), "p_round": 0.02},
-    {"name": "account_takeover", "weight": 0.32, "amount": (5.6, 0.9),
+    {"name": "account_takeover", "weight": 0.28, "amount": (5.6, 0.9),
      "p_risk": 0.12, "p_night": 0.65, "v5": (10, 45), "v1": (25, 95), "p_round": 0.12},
-    {"name": "high_value_wire", "weight": 0.24, "amount": (9.2, 0.9),
-     "p_risk": 0.92, "p_night": 0.55, "v5": (0, 3), "v1": (0, 20), "p_round": 0.75},
+    {"name": "high_value_wire", "weight": 0.26, "amount": (9.8, 1.1),
+     "p_risk": 0.92, "p_night": 0.55, "v5": (0, 3), "v1": (0, 20), "p_round": 0.55},
     # A compromised account making a large purchase while the burst is still
     # running, and mule accounts receiving several large transfers. Without
     # this archetype the corpus anti-correlated amount against velocity —
@@ -177,20 +268,37 @@ FRAUD_ARCHETYPES: tuple[dict, ...] = (
     # amount of ~£117 — so the model learned "big amount implies a quiet
     # card" and scored a £50k burst at 0.00. That was an artifact of how the
     # archetypes were laid out, not a property of fraud.
-    {"name": "large_burst", "weight": 0.12, "amount": (8.8, 0.9),
-     "p_risk": 0.55, "p_night": 0.60, "v5": (5, 25), "v1": (15, 70), "p_round": 0.30},
-    {"name": "low_signal", "weight": 0.12, "amount": (4.6, 1.1),
+    #
+    # AMT-001: this was also the cell the high-value inversion lived in. At
+    # 12% of the portfolio and mu 8.8 it carried almost no high-amount,
+    # high-velocity fraud, while `fraud_lookalike` at mu 10.0 carried a
+    # great deal of legitimate traffic through it.
+    {"name": "large_burst", "weight": 0.19, "amount": (9.0, 1.0),
+     "p_risk": 0.65, "p_night": 0.60, "v5": (5, 25), "v1": (15, 70), "p_round": 0.30},
+    {"name": "low_signal", "weight": 0.10, "amount": (4.6, 1.1),
      "p_risk": 0.10, "p_night": 0.20, "v5": (0, 2), "v1": (0, 5), "p_round": 0.10},
 )
 
 LEGIT_ARCHETYPES: tuple[dict, ...] = (
     {"name": "everyday", "weight": 0.68, "amount": (4.2, 1.05),
      "p_risk": 0.06, "p_night": 0.12, "v5": (0, 2), "v1": (0, 6), "p_round": 0.10},
-    {"name": "big_purchase", "weight": 0.17, "amount": (8.0, 0.9),
+    # AMT-001: mu 8.0 -> 9.0, sigma 0.9 -> 1.1. Honest five-figure purchases
+    # have to be genuinely present at the top of the range, or the fraud
+    # archetypes above simply become a label flip and the high bands turn
+    # into a near-perfect separator. See the module comment for the measured
+    # cost of leaving this at 8.0.
+    {"name": "big_purchase", "weight": 0.17, "amount": (9.0, 1.1),
      "p_risk": 0.12, "p_night": 0.10, "v5": (0, 3), "v1": (0, 8), "p_round": 0.30},
     {"name": "burst", "weight": 0.12, "amount": (4.6, 1.0),
      "p_risk": 0.08, "p_night": 0.30, "v5": (3, 9), "v1": (8, 28), "p_round": 0.08},
-    {"name": "fraud_lookalike", "weight": 0.03, "amount": (10.0, 0.7),
+    # AMT-001: mu 10.0 -> 8.0, sigma 0.7 -> 1.1. This archetype is kept, and
+    # is still the only legitimate segment that buys crypto at 3am during a
+    # burst, because without it merchant risk and hour would be near
+    # deterministic. What changed is that it no longer sits ABOVE the fraud
+    # amount distribution: at mu 10.0 with a narrow sigma it was a spike
+    # concentrated around ~$22k, and it owned the entire top of the range.
+    # Widening sigma to 1.1 turns it from a monopoly into an overlap.
+    {"name": "fraud_lookalike", "weight": 0.03, "amount": (8.0, 1.1),
      "p_risk": 0.90, "p_night": 0.85, "v5": (4, 14), "v1": (12, 45), "p_round": 0.20},
 )
 
