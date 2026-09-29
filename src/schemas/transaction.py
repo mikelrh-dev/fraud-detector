@@ -2,8 +2,13 @@
 
 import uuid
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+#: The storage resolution of `Transaction.amount` (a Numeric(12, 2) column).
+#: Anything finer than this cannot survive a round trip through the database.
+AMOUNT_QUANTUM = Decimal("0.01")
 
 
 class TransactionCreate(BaseModel):
@@ -19,6 +24,59 @@ class TransactionCreate(BaseModel):
         allow_inf_nan=False,
         description="Transaction amount",
     )
+
+    @field_validator("amount")
+    @classmethod
+    def _quantize_to_column_resolution(cls, value: float) -> float:
+        """Round the amount to what the column can actually hold.
+
+        D2-1. The endpoint scored the raw float and then handed the same float
+        to a Numeric(12, 2) column, so the number that was scored and the
+        number that was persisted were different numbers at every tier
+        boundary:
+
+            amount=1000.005  ->  scored 1000.005   (low tier,    threshold 70)
+                               stored 1000.01    (medium tier, threshold 50)
+
+        The row therefore recorded a threshold its own amount contradicted,
+        and an ensemble of 52 was classified `legitimate` against the 70 while
+        the stored amount implied 50, where the same 52 is `fraud`.
+
+        QUANTIZE, DO NOT REJECT. The choice is deliberate and the alternative
+        was weighed:
+
+        - Rejecting a 3-decimal amount with a 422 would break a client that
+          sends one today. That request is not currently an error: the column
+          silently rounds it on insert, the request succeeds, and the stored
+          row is exactly what the client asked for modulo half a cent. Making
+          it a hard error removes a working write path to buy nothing.
+        - Rounding here is not the same as rounding late. Late, the value
+          changed *after* the decision that depended on it was already made.
+          Here, the value is settled before anything reads it, so the scored
+          number and the stored number are the same number. The client sees
+          the amount it will get back on the created transaction, and the
+          half-cent difference it was always going to lose is now visible in
+          the request it sent rather than hidden in the response.
+
+        Rounding is half-away-from-zero because that is what PostgreSQL's
+        numeric does. Python's built-in `round()` is half-to-even, so
+        `round(0.125, 2) == 0.12` while the column stores 0.13 — using it here
+        would have rebuilt the same class of divergence one rounding mode
+        over.
+
+        The one case that cannot be quantized into something meaningful is a
+        value that rounds to zero: Numeric(12, 2) cannot hold 0.001, and
+        persisting 0.00 would defeat the positive-amount constraint the column
+        encodes. That is refused, because there is no value to round to.
+        """
+        quantized = Decimal(str(value)).quantize(AMOUNT_QUANTUM, rounding=ROUND_HALF_UP)
+        if quantized <= 0:
+            raise ValueError(
+                f"amount {value!r} rounds to 0.00 at the stored resolution "
+                f"({AMOUNT_QUANTUM}); the smallest representable amount is {AMOUNT_QUANTUM}"
+            )
+        return float(quantized)
+
     currency: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code")
     merchant_name: str = Field(..., min_length=1, max_length=255)
     merchant_category: str | None = Field(None, max_length=100)
