@@ -10,9 +10,22 @@ from datetime import datetime
 
 import numpy as np
 
-from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
+from src.core.counters import unknown_merchant_category
+from src.core.ml_constants import (
+    KNOWN_MERCHANT_CATEGORIES,
+    MERCHANT_RISK_CATEGORIES,
+    normalize_category,
+)
 
 logger = logging.getLogger(__name__)
+
+#: Categories already reported to the log this process. D7-3 wants the miss
+#: visible without turning a consistently misspelled merchant into one
+#: WARNING per scored transaction; the counter still counts every occurrence.
+#: Process-local and unbounded — a category string is caller-supplied free text,
+#: so this is a slow leak in the pathological case, bounded in practice by the
+#: number of distinct categories a business actually uses.
+_WARNED_CATEGORIES: set[str] = set()
 
 # Feature names in order — used by get_feature_names() and for model interpretation
 FEATURE_NAMES: list[str] = [
@@ -123,8 +136,29 @@ class FeatureEngine:
         f_hour = float(hour)
 
         # 8. Merchant risk level (normalize aliases first)
-        raw_category = (transaction.get("merchant_category") or "").lower()
-        category = CATEGORY_ALIASES.get(raw_category, raw_category)
+        #
+        # D7-3: this was `(value or "").lower()` plus a two-entry alias dict, so
+        # `bitcoin`, `cripto` and `crypto-exchange` fell through as themselves,
+        # matched nothing, and zeroed the crypto and merchant-risk features with
+        # no error, no log and no counter — a score indistinguishable from one
+        # where the merchant genuinely is not risky. An unmatched value is now
+        # counted and logged (once per distinct value, not per transaction, so
+        # a merchant that always sends the same misspelling cannot flood the
+        # log). This is the single place the observation happens: the rule
+        # engine runs on the same transaction in the same pipeline and shares
+        # the vocabulary without double-counting.
+        category = normalize_category(transaction.get("merchant_category"))
+        if category and category not in KNOWN_MERCHANT_CATEGORIES:
+            unknown_merchant_category.inc()
+            if category not in _WARNED_CATEGORIES:
+                _WARNED_CATEGORIES.add(category)
+                logger.warning(
+                    "unknown_merchant_category %r — no alias in "
+                    "CATEGORY_ALIASES, so merchant_risk_level and is_crypto were "
+                    "scored 0.0. Add it to CATEGORY_ALIASES or to "
+                    "KNOWN_MERCHANT_CATEGORIES.",
+                    category,
+                )
         f_merchant_risk = 1.0 if category in MERCHANT_RISK_CATEGORIES else 0.0
 
         # 9. Is crypto

@@ -61,10 +61,143 @@ MERCHANT_REGULATED_CATEGORIES: frozenset[str] = frozenset({
     "pharmacy",
 })
 
+#: The canonical merchant-category vocabulary. `merchant_category` is free
+#: text on the wire (see D7-3), so this set is what "a category we understand"
+#: means. It is deliberately wider than the risky sets: a grocery purchase is a
+#: category the system knows and that carries no risk, and conflating the two
+#: would make the unknown-category counter useless for the miss it exists to
+#: catch.
+KNOWN_MERCHANT_CATEGORIES: frozenset[str] = frozenset({
+    # canonical, from the risky sets above
+    "cryptocurrency",
+    "gambling",
+    "casino",
+    "money_transfer",
+    "adult",
+    "pharmacy",
+    # canonical, non-risky
+    "retail",
+    "grocery",
+    "restaurant",
+    "travel",
+    "utilities",
+    "healthcare",
+    "education",
+    "entertainment",
+    "fuel",
+    "telecom",
+    "subscription",
+    "charity",
+    "atm",
+    "insurance",
+})
+
 # Alias mapping: incoming category strings → canonical form.
 # Applied in FeatureEngine.transform() input preprocessing so that
 # downstream features (merchant_risk_level, is_crypto) are consistent.
+#
+# D7-3: this mapped `crypto` and `btc` and nothing else, so `bitcoin`,
+# `cripto` and `crypto-exchange` fell through as themselves, matched no set
+# membership test, and produced `is_crypto = 0.0` — indistinguishable, in the
+# persisted score, from a transaction that is genuinely not crypto. The audit
+# measured 47.29 -> 0.63 on that feature.
+#
+# Keys are already-normalized forms (see `normalize_category`): lowercased,
+# trimmed, with `-` and `_` folded to a single space and runs collapsed. Write
+# new keys in normalized form or they will silently never match.
 CATEGORY_ALIASES: dict[str, str] = {
+    # --- cryptocurrency ---
     "crypto": "cryptocurrency",
     "btc": "cryptocurrency",
+    "xbt": "cryptocurrency",
+    "bitcoin": "cryptocurrency",
+    "bitcoins": "cryptocurrency",
+    "cripto": "cryptocurrency",
+    "criptocurrency": "cryptocurrency",
+    "criptomoneda": "cryptocurrency",
+    "cripto coin": "cryptocurrency",
+    "crypto coin": "cryptocurrency",
+    "crypto currency": "cryptocurrency",
+    "crypto exchange": "cryptocurrency",
+    "crypto trading": "cryptocurrency",
+    "cripto exchange": "cryptocurrency",
+    "blockchain": "cryptocurrency",
+    "ethereum": "cryptocurrency",
+    "eth": "cryptocurrency",
+    "monero": "cryptocurrency",
+    "litecoin": "cryptocurrency",
+    # --- gambling ---
+    "apuestas": "gambling",
+    "apuesta": "gambling",
+    "betting": "gambling",
+    "apuestas deportivas": "gambling",
+    "juego": "gambling",
+    "juego de azar": "gambling",
+    "juegos de azar": "gambling",
+    "sportsbook": "gambling",
+    "lottery": "gambling",
+    "loteria": "gambling",
+    # --- casino ---
+    "casinos": "casino",
+    "apuestas casino": "casino",
+    # --- money transfer ---
+    "money transfer": "money_transfer",
+    "money transfers": "money_transfer",
+    "transferencia": "money_transfer",
+    "transferencia de dinero": "money_transfer",
+    "remittance": "money_transfer",
+    "remesas": "money_transfer",
+    "wire transfer": "money_transfer",
+    "envio de dinero": "money_transfer",
+    "p2p": "money_transfer",
+    "p2p transfer": "money_transfer",
+    # --- pharmacy ---
+    "pharmacy": "pharmacy",
+    "farmacia": "pharmacy",
+    "drugstore": "pharmacy",
+    # --- adult ---
+    "adult": "adult",
+    "contenido adulto": "adult",
 }
+
+
+def _normalize_form(value: object) -> str:
+    """Lowercase, trim, and fold separators so spelling variants collapse.
+
+    `-`, `_` and runs of whitespace all become a single space. `crypto-exchange`,
+    `crypto_exchange` and `crypto exchange` are one word to a human and were
+    three separate misses.
+    """
+    if value is None:
+        return ""
+    text = str(value).strip().lower()
+    if not text:
+        return ""
+    for separator in ("-", "_", "\t", "\n", "\r"):
+        text = text.replace(separator, " ")
+    return " ".join(text.split())
+
+
+def normalize_category(value: object) -> str:
+    """Map a free-text `merchant_category` onto the canonical vocabulary.
+
+    Returns the canonical name, or the normalized input itself when nothing
+    matches — never a guess and never an exception. The miss is what
+    `FeatureEngine` counts and logs; this function stays pure so the rule
+    engine and the feature engine can share one vocabulary without the rule
+    engine double-counting the same event.
+
+    WHY NOT A HARD ENUM ON THE SCHEMA. `merchant_category` is nullable free
+    text and existing rows already hold values outside any list we could write
+    today. A `Literal[...]` would reject those writes outright, and building a
+    list complete enough to be safe is a product decision about which
+    categories the business accepts, not a code change. Making the miss loud is
+    reversible and can be done without a migration; narrowing the accepted
+    input is neither. If the business later decides on a closed set, the enum
+    is the right end state and this function becomes the one place that has to
+    learn it.
+    """
+    normalized = _normalize_form(value)
+    if not normalized:
+        return ""
+    return CATEGORY_ALIASES.get(normalized, normalized)

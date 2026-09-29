@@ -10,10 +10,10 @@ from datetime import datetime
 from typing import Any
 
 from src.core.ml_constants import (
-    CATEGORY_ALIASES,
     MERCHANT_ADVERSARIAL_CATEGORIES,
     MERCHANT_REGULATED_CATEGORIES,
     MERCHANT_RISK_CATEGORIES,
+    normalize_category,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,8 +115,13 @@ class RuleEngine:
 
         # 2b. Velocity burst: > 1 tx in 5 min on a risky category
         #     Even 2 crypto/gambling txns in 5 min is anomalous (card testing pattern)
-        category = _as_text(transaction.get("merchant_category")).lower()
-        category = CATEGORY_ALIASES.get(category, category)
+        # D7-3: shares one vocabulary with the feature engine instead of its own
+        # two-entry alias lookup, so `cripto` and `crypto-exchange` fire here
+        # for the same transaction that they zero the crypto feature on. The
+        # unknown-value counter and log stay in the feature engine — this runs
+        # in the same pipeline on the same transaction, and counting in both
+        # would double every event.
+        category = normalize_category(transaction.get("merchant_category"))
         if recent_txns > 1 and category in MERCHANT_RISK_CATEGORIES:
             fired.append("velocity_burst")
 

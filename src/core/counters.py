@@ -71,3 +71,10 @@ shap_skipped_unavailable = _CounterHandle("shap_skipped_unavailable")
 #: apart: `FraudScore.ml_score` is a non-nullable column, so a missing layer was
 #: stored as a plain 0.0 and looked like a model that ran and found nothing.
 degraded_ml_layer = _CounterHandle("degraded_ml_layer")
+
+#: D7-3: transactions scored whose `merchant_category` matched nothing in the
+#: known vocabulary. Each one was scored with the risk features zeroed by
+#: default, and nothing distinguished that score from one where the merchant
+#: genuinely is not risky. The count is the evidence that the vocabulary needs
+#: widening; the log line names the values to widen it with.
+unknown_merchant_category = _CounterHandle("unknown_merchant_category")
