@@ -36,11 +36,27 @@ DELIBERATE_MAINTENANCE_API = {
 
 #: Violations found by this test, recorded rather than deleted. Each names the
 #: audit finding that produced it.
-KNOWN_VIOLATIONS = {
-    "enqueue_for_retry": (
-        "TST-01 (audit 2026-09-29): dead with green tests. Nothing calls it."
-    ),
-}
+#:
+#: EMPTY. Both entries the 2026-09-29 audit added are resolved:
+#:
+#: - `list_transactions` (TST-02) — deleted, with its service-only test. The
+#:   endpoint's `list_transactions_endpoint` was always the real implementation.
+#: - `enqueue_for_retry` (TST-01) — deleted, with its tests. The LLM worker's
+#:   `_recovery_loop` already owns requeue/PEL/DLQ handling.
+#:
+#: The dict is kept rather than removed so the next real violation has a named
+#: place to be recorded, and so the absence of entries is a fact on the page
+#: rather than an absence nobody has to go looking for.
+#:
+#: On strictness, because the earlier version of this comment claimed it: the
+#: exemption used the imperative `pytest.xfail(reason)`, which has NO `strict`
+#: parameter (`pytest.xfail(reason: str = "")` is the entire signature) and so
+#: never turned a resolved exemption into an XPASS failure. The enforcement
+#: that actually happened ran the other way -- taking a name OUT of this dict
+#: turns a live dead symbol red, which is how TST-01 was caught. With the dict
+#: empty there is no path through this test that exempts anything, so the
+#: property is enforced for every public symbol in `src/`.
+KNOWN_VIOLATIONS: dict[str, str] = {}
 
 
 def _read(path: Path) -> str:
