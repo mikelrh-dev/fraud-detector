@@ -40,7 +40,11 @@ import type { ScoreResponse } from "../api/transactions";
  * that, and it is measured rather than assumed — see the note there.
  */
 
-const T = "C:/Users/mikel/Documents/fraud-detector/fraud-detector/frontend/src";
+// Resolved from the vitest root, not from an absolute path. A hardcoded
+// `C:/Users/...` prefix passed on the author's machine and threw ENOENT on
+// every CI runner, which failed `npm run test` and turned the badge red. The
+// rest of the suite already reads sources this way.
+const srcRoot = join(process.cwd(), "src");
 
 /** The classification column in the transactions table. */
 function renderTable(classification: string) {
@@ -356,7 +360,7 @@ describe("the four product sources carry no raw chromatic value at a class posit
     ["src/pages/ScoreResultCard.tsx", "ScoreResultCard.tsx"],
     ["src/lib/classification.ts", "classification.ts"],
   ])("%s", (rel) => {
-    const code = readFileSync(join(T, rel.replace("src/", "")), "utf8");
+    const code = readFileSync(join(srcRoot, rel.replace("src/", "")), "utf8");
     // Comments are stripped first: Tailwind's scanner reads them and so does a
     // naive regex, but a class named in prose is not a class a component uses,
     // and several of these files DISCUSS the raw values they used to carry.
