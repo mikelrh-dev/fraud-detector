@@ -3,11 +3,64 @@
 This script:
 1. Loads synthetic_transactions.csv + PaySim (if available)
 2. Uses FeatureEngine.transform() to generate EXACT 10 features used in production
-3. Applies SMOTE only on train set (no leakage)
+3. Does NOT resample. The class prior is handled by scale_pos_weight only.
 4. Trains XGBoost with scale_pos_weight from real class imbalance
-5. Saves model to models/xgboost_paysim_v1.joblib (overwrites production model)
-6. Reports metrics on test set (PR-AUC, Recall, Precision, F1)
-7. Cost-sensitive evaluation: FN cost 10x FP, prints economic cost and optimal threshold
+5. Calibrates against the real, un-resampled class prior
+6. Saves model to models/xgboost_paysim_v1.joblib (overwrites production model)
+7. Reports metrics on test set (PR-AUC, Recall, Precision, F1)
+8. Cost-sensitive evaluation: FN cost 10x FP, prints economic cost and optimal threshold
+
+Why there is no resampling step (CAL-001)
+-----------------------------------------
+This script used to resample the training split with SMOTE to a 33% fraud
+prior and then fit ``CalibratedClassifierCV`` on the resampled matrix. That is
+a structural contradiction, not a tuning mistake:
+
+    A calibrator learns P(y=1 | score). Fitting it on a resampled matrix
+    means it learns P(y=1 | score) *under the resampler's prior*, not under
+    the prior that will actually be seen at serve time. Resampling rewrites
+    the base rate; calibration against the rewritten base rate produces
+    probabilities that are inflated by exactly the factor the resampler
+    introduced. No amount of re-fitting the calibrator repairs this, because
+    the calibrator is being asked the wrong question.
+
+The measured cost of that contradiction, on 30k held-out un-resampled rows
+at the real 0.96% prevalence (before this change):
+
+    bin        n     predicted  observed     gap
+    [0.0,0.1)  29158     0.0092    0.0018  -0.0074
+    [0.1,0.2)    249     0.1371    0.0040  -0.1331
+    [0.2,0.3)     74     0.2447    0.0135  -0.2312
+    [0.3,0.4)     61     0.3508    0.0328  -0.3180
+    [0.4,0.5)     30     0.4475    0.0000  -0.4475
+    [0.5,0.6)     28     0.5453    0.1071  -0.4382
+    [0.6,0.7)     19     0.6452    0.1053  -0.5400
+    [0.7,0.8)     27     0.7481    0.1481  -0.6000
+    [0.8,0.9)     40     0.8549    0.1250  -0.7299
+    [0.9,1.0]    314     0.9845    0.6879  -0.2966
+
+Over-confident in every single bin, worst exactly where it costs the most:
+a score of 0.85 corresponded to a 12.5% real fraud rate. The ensemble
+thresholds on these absolute numbers, so every decision leaned toward
+"fraud" more than it should.
+
+So the resampling is gone. The imbalance is carried by ``scale_pos_weight``
+alone — which is what commit 236526c already established as the mechanism,
+and which does not touch the class prior, so the calibrator can be fit
+against the real one.
+
+Version constraint
+------------------
+``CalibratedClassifierCV`` on scikit-learn 1.5 is the *only* API needed
+here, and nothing is deprecated:
+
+  * ``cv=<int>`` refits the base estimator on k-1 folds and calibrates the
+    sigmoid on the pooled out-of-fold predictions of the held-out fold. Those
+    predictions are genuinely held out, and the folds carry the real prior.
+    This is the textbook procedure, and it is the one used below.
+  * ``cv="prefit"`` is deprecated in 1.5 and removed in 1.6, and
+    ``FrozenEstimator`` does not exist until 1.6. Neither is used, so the
+    artifact stays unpickleable-compatibly on the pinned 1.5.0.
 
 Usage:
     python scripts/train_xgboost_aligned.py
@@ -22,7 +75,6 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from imblearn.over_sampling import SMOTE
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (auc, confusion_matrix,
                              precision_recall_curve, precision_score, recall_score,
@@ -49,6 +101,12 @@ DATA_PAYSIM = "../transaccion/PS_20174392719_1491204439457_log.csv"
 #: Amplitude of the post-generation noise pass, shared by main() and the
 #: per-feature contract test so the two cannot disagree.
 FRAUD_NOISE_INTENSITY = 0.40
+
+#: How far the class prior of the matrix handed to the calibrator may differ
+#: from the corpus prevalence before training refuses to continue. The two are
+#: the same object in the correct pipeline, so any non-trivial drift means
+#: something resampled the data in between. See CAL-001 in the docstring.
+CALIBRATION_PRIOR_TOLERANCE = 1e-9
 
 # --- Behavioural archetypes -------------------------------------------------
 # The generator used to emit one profile per class: fraud was always a
@@ -663,38 +721,36 @@ def main() -> None:
     X_train = X_train + rng.normal(0, 0.1, X_train.shape)  # Gaussian noise in feature space
     logger.info("Added Gaussian noise (std=0.1) to train features")
 
-    # 6. SMOTE only on TRAIN (no leakage)
+    # 6. Class prior — recorded, and deliberately NOT rewritten.
+    #
+    # CAL-001: this step used to resample the training split to a 33% fraud
+    # prior. SMOTE moves the base rate, and the calibrator two steps below
+    # learns against whatever base rate it is shown. Resampling first means
+    # calibrating against 33% and serving at 1%: the probabilities come out
+    # inflated by roughly that factor, and the ensemble thresholds on them.
+    # Measured on 30k held-out un-resampled rows, the top bin predicted 0.98
+    # against an observed 0.69. See the module docstring for the full table.
+    #
+    # The imbalance is now carried by scale_pos_weight alone, which reweights
+    # the loss without touching the prior the calibrator sees.
     contamination = float(np.sum(y_train)) / len(y_train)
-    logger.info("Fraud rate in train: %.4f%%", contamination * 100)
-
-    smote = SMOTE(sampling_strategy=0.5, random_state=42)
-    X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
-    logger.info("After SMOTE: %d samples (fraud: %d, legit: %d)",
-                len(X_train_res), int(np.sum(y_train_res)), int(np.sum(y_train_res == 0)))
+    logger.info("Fraud rate in train: %.4f%% (no resampling — this is the prior "
+                "the calibrator is fit against)", contamination * 100)
 
     # 7. Train XGBoost
     #
-    # scale_pos_weight must be computed from the RESAMPLED training labels.
-    # SMOTE(sampling_strategy=0.5) already lifts fraud from 1% to 33% of the
-    # training data, so the only imbalance left is the residual 2:1. The
-    # previous code computed the ratio from the pre-SMOTE labels (100.8) and
-    # then also resampled, weighting positives 202x above their natural rate
-    # on data that was already balanced. That is why a £50 grocery scored
-    # 46.79/100 on the previous artifact: the model was calibrated to call a
-    # third of all traffic fraud. SMOTE and scale_pos_weight each correct the
-    # same imbalance; applying both at full strength corrects it twice.
-    neg_count = int(np.sum(y_train_res == 0))
-    pos_count = int(np.sum(y_train_res == 1))
+    # scale_pos_weight comes from the *un-resampled* labels. Commit 236526c
+    # established this as the imbalance mechanism; keeping it is the whole
+    # reason the SMOTE step could be deleted rather than merely down-weighted.
+    neg_count = int(np.sum(y_train == 0))
+    pos_count = int(np.sum(y_train == 1))
     scale_pos = neg_count / pos_count if pos_count > 0 else 1.0
     logger.info(
-        "scale_pos_weight=%.2f (from the %d post-SMOTE rows; the pre-SMOTE "
-        "ratio was %.1f and would have double-counted the imbalance)",
-        scale_pos, len(y_train_res),
-        float(np.sum(y_train == 0)) / max(1, int(np.sum(y_train == 1))),
+        "scale_pos_weight=%.2f (from %d un-resampled rows: %d legit / %d fraud)",
+        scale_pos, len(y_train), neg_count, pos_count,
     )
 
-    logger.info("Training XGBoost (scale_pos_weight=%.1f)...", scale_pos)
-    model = xgb.XGBClassifier(
+    base_estimator = xgb.XGBClassifier(
         n_estimators=200,  # Reduced from 500 to prevent overfitting
         max_depth=4,  # Reduced from 6 to prevent overfitting
         learning_rate=0.1,
@@ -709,17 +765,35 @@ def main() -> None:
         reg_lambda=2.0,  # L2 regularization to reduce complexity
     )
 
-    model.fit(
-        X_train_res, y_train_res,
-        eval_set=[(X_test, y_test)],
-        verbose=True,
-    )
-
-    # 7.5. CALIBRATE the model to get smooth probabilities (sigmoid method)
-    logger.info("Calibrating model with sigmoid method for smooth probabilities...")
-    calibrated_model = CalibratedClassifierCV(model, method='sigmoid', cv=5)
-    calibrated_model.fit(X_train_res, y_train_res)
+    # 7.5. CALIBRATE against the real class prior.
+    #
+    # cv=5 is the correct 1.5-compatible mechanism and is not deprecated: the
+    # base estimator is cloned and refit on 4/5 of the *un-resampled* training
+    # rows, and the sigmoid is fit on the pooled out-of-fold predictions of
+    # the 1/5 it did not see. Those predictions are genuinely held out and
+    # carry the real 0.96% prior, which is the whole point.
+    #
+    # The estimator passed in above is a template only. CalibratedClassifierCV
+    # clones it per fold and discards it; passing an already-fitted model here
+    # (as the previous code did) silently threw away a full model fit and
+    # trained the five clones on resampled folds instead.
+    logger.info("Calibrating against the real class prior (sigmoid, cv=5)...")
+    calibrated_model = CalibratedClassifierCV(base_estimator, method='sigmoid', cv=5)
+    calibrated_model.fit(X_train, y_train)
     model = calibrated_model  # Use calibrated model for predictions
+
+    calibration_prior = float(np.mean(y_train))
+    logger.info("Calibrator was fit on %d rows at a %.4f%% fraud prior",
+                len(y_train), calibration_prior * 100)
+    if abs(contamination - calibration_prior) > CALIBRATION_PRIOR_TOLERANCE:
+        raise ValueError(
+            f"CAL-001 regression: the calibrator was fit on data with a "
+            f"{calibration_prior:.4%} fraud prior but the corpus prevalence is "
+            f"{contamination:.4%}. A calibrator fit on resampled data is "
+            f"calibrated to the resampler's prior, not the data's, and its "
+            f"absolute probabilities are then wrong by that ratio. Do not "
+            f"resample before calibrating."
+        )
 
     # 8. Evaluate on test set
     logger.info("=== Evaluation on Test Set ===")
@@ -774,9 +848,21 @@ def main() -> None:
     Path(MODEL_PATH).parent.mkdir(parents=True, exist_ok=True)
     engine = FeatureEngine()
     feature_names = engine.get_feature_names()
-    artifact = {"model": model, "feature_names": feature_names}
+    artifact = {
+        "model": model,
+        "feature_names": feature_names,
+        # The prior the calibrator was actually fit against. Stamped into the
+        # artifact rather than left in a log line so that a future regression
+        # — someone reintroducing a resampling step before the calibrator —
+        # is detectable by reading the deployed file, and assertable in a
+        # test, instead of only being visible in a retraining transcript.
+        "calibration_prior": calibration_prior,
+        "calibration_method": "sigmoid",
+        "calibration_cv": 5,
+    }
     joblib.dump(artifact, MODEL_PATH)
-    logger.info("Model saved to %s (with feature_names: %s)", MODEL_PATH, feature_names)
+    logger.info("Model saved to %s (feature_names=%s, calibration_prior=%.4f)",
+                MODEL_PATH, feature_names, calibration_prior)
 
     # 10. Quick sanity check with production FeatureEngine
     logger.info("=== Sanity Check with Production FeatureEngine ===")

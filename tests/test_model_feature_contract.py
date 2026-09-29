@@ -34,8 +34,10 @@ boundary, so it cannot participate in a decision at all.
 import sys
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pytest
+from sklearn.model_selection import train_test_split
 
 from src.services.feature_engine import FEATURE_NAMES
 from src.services.ml_model import MLModelService
@@ -54,6 +56,15 @@ RELATIVE_FLOOR = 0.05
 
 #: How many real data rows to use as sweep bases.
 N_BASES = 40
+
+#: Split parameters used by ``train_xgboost_aligned.main()``. Duplicated from
+#: ``scripts/evaluate_model.py`` on purpose: the calibration test has to name
+#: the split the calibrator saw, and a shared constant imported from the
+#: training script would make the test tautological — if training changed the
+#: split, the test would follow and assert nothing. The duplication is the
+#: assertion.
+TEST_SIZE = 0.2
+SPLIT_SEED = 42
 
 
 def _load_training_module():
@@ -221,3 +232,85 @@ class TestModelFeatureContract:
               f"(spread {live[-1] / live[0]:.1f}x)"
         )
         assert live[-1] > SENSITIVITY_FLOOR
+
+
+class TestModelCalibrationContract:
+    """The deployed artifact's absolute probabilities must be calibrated (CAL-001).
+
+    ``ml_score`` is a probability multiplied by 100, and ``EnsembleScorer``
+    thresholds it as one. So the number is only usable if it is a *calibrated*
+    probability against the prior that will actually be seen at serve time.
+
+    A calibrator learns P(y=1 | score) from whatever matrix it is shown. The
+    artifact that shipped before this contract existed had been calibrated on
+    a SMOTE-resampled matrix at a 33% fraud prior, so every score was inflated
+    by roughly the resampling ratio: the top bin predicted 0.98 against an
+    observed 0.69 on held-out un-resampled data.
+
+    Resampling before calibrating is invisible from the artifact itself, which
+    is why it survived five training runs. The artifact now records the prior
+    its calibrator was fit against, and these tests read it back.
+    """
+
+    def test_artifact_records_the_prior_its_calibrator_saw(self):
+        """The stamp must exist. An artifact without it predates CAL-001.
+
+        Falsifiable: the previous artifact, produced by
+        ``train_xgboost_aligned.main()`` before the resampling step was
+        removed, carries no ``calibration_prior`` key and fails here.
+        """
+        if not MODEL_PATH.exists():
+            pytest.skip(f"deployed model not present at {MODEL_PATH}")
+
+        artifact = joblib.load(MODEL_PATH)
+        assert isinstance(artifact, dict), (
+            "deployed artifact is a bare estimator with no provenance stamp; "
+            "nothing in it says which class prior its probabilities are "
+            "calibrated against"
+        )
+        assert "calibration_prior" in artifact, (
+            "deployed artifact carries no calibration_prior stamp. A "
+            "calibrator fit on resampled data is calibrated to the resampler's "
+            "prior rather than the data's, and there is no way to detect that "
+            "from an unstamped file."
+        )
+        assert 0.0 < float(artifact["calibration_prior"]) < 1.0
+
+    def test_calibration_prior_matches_the_corpus_prevalence(self, contract_env):
+        """The recorded prior must be the corpus's own, not a resampler's.
+
+        The expected figure is the prior of the *training split of the real
+        training matrix* — the same object the calibrator is handed — rather
+        than the whole corpus. A stratified split puts 385 of the corpus's 481
+        frauds in train, so the two priors differ by ~5e-6 for reasons that
+        have nothing to do with calibration. What a resampler would move is
+        the prior of the matrix the calibrator actually saw, and that is the
+        number compared here.
+
+        ``build_training_matrix()`` is used rather than a raw CSV read so the
+        comparison stays exact if PaySim is present: the trainer concatenates
+        it, and a comparison against the synthetic rows alone would then be
+        asserting a coincidence.
+        """
+        artifact = joblib.load(MODEL_PATH)
+        assert "calibration_prior" in artifact, "no calibration_prior stamp"
+
+        _, _, X, y = contract_env
+        X_train, _, y_train, _ = train_test_split(
+            X, y, test_size=TEST_SIZE, random_state=SPLIT_SEED, stratify=y
+        )
+        assert len(X_train) > 0
+        expected_prior = float(np.mean(y_train))
+        stamp = float(artifact["calibration_prior"])
+
+        assert abs(stamp - expected_prior) < 1e-9, (
+            f"artifact calibration_prior {stamp:.9f} != training split prior "
+            f"{expected_prior:.9f}. The calibrator was fit on a matrix whose "
+            f"class prior differed from the data's, which means the absolute "
+            f"probabilities are calibrated to a base rate that will not occur "
+            f"at serve time (CAL-001)."
+        )
+        assert 0.005 < stamp < 0.05, (
+            f"calibration_prior {stamp:.4f} is not a plausible card-not-present "
+            f"prevalence; the training split's is {expected_prior:.4f}"
+        )

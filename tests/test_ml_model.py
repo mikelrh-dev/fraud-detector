@@ -187,9 +187,13 @@ class TestMLModelAlignment:
         """ML-ALIGN-004: Normal grocery stays far below the high-risk band.
 
         Recalibrated (R3-006): retraining with train_xgboost_aligned.py
-        reproducibly yields ~26.3 for this profile — the artifact is NOT
-        stale. The meaningful invariant is separation from high-risk
-        crypto (~74), asserted in test_ml_score_high_for_risky_crypto.
+        reproducibly yields a score for this profile — the artifact is NOT
+        stale. Recalibrated again (CAL-001) against the real 0.96% class
+        prior, which lowered every absolute score: this profile now measures
+        ~0.5 and the $50k crypto profile in
+        test_ml_score_high_for_crypto_large_amount measures ~49. The
+        meaningful invariant is separation between the two, not any single
+        value.
         """
         tx = {
             "amount": 50.0,

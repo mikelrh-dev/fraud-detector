@@ -37,6 +37,13 @@ class MLModelService:
         self._model = None
         self.feature_names: list[str] | None = None
         self.n_features: int | None = None
+        #: The class prior the artifact's calibrator was fit against, when the
+        #: artifact records one. ``predict()`` returns a calibrated probability
+        #: multiplied by 100, and callers threshold that number directly, so
+        #: the number is only as trustworthy as this stamp. It is read out of
+        #: the artifact rather than recomputed so a mismatch against the live
+        #: corpus is observable instead of silent.
+        self.calibration_prior: float | None = None
 
     def load_model(self) -> bool:
         """Load the serialized model from disk.
@@ -64,6 +71,23 @@ class MLModelService:
             if isinstance(artifact, dict) and "model" in artifact:
                 self._model = artifact["model"]
                 self.feature_names = artifact.get("feature_names")
+                prior = artifact.get("calibration_prior")
+                if prior is not None:
+                    self.calibration_prior = float(prior)
+                    logger.info(
+                        "Artifact calibrator was fit at a %.4f%% fraud prior; "
+                        "scores are probabilities against that base rate, not "
+                        "against the live one.",
+                        self.calibration_prior * 100,
+                    )
+                else:
+                    logger.warning(
+                        "Artifact at %s carries no calibration_prior stamp. "
+                        "It was produced before CAL-001, so its absolute "
+                        "probabilities may be calibrated to the wrong class "
+                        "prior. Ranking is unaffected; thresholding is not.",
+                        self._model_path,
+                    )
             else:
                 # Legacy format: bare model object
                 self._model = artifact

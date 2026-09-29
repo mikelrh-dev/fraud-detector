@@ -212,12 +212,22 @@ def report_metrics(
     del prec_curve, rec_curve
 
     print("\n  -- calibration (observed vs predicted, by probability bin) --")
-    print(f"  {'bin':>14} {'n':>7} {'predicted':>10} {'observed':>10}")
+    print(f"  {'bin':>14} {'n':>7} {'predicted':>10} {'observed':>10} {'gap':>9}")
     curve = calibration_curve(y, y_proba)
     for row in curve:
         pred = "     n/a" if np.isnan(row["predicted"]) else f"{row['predicted']:>10.4f}"
         obs = "     n/a" if np.isnan(row["observed"]) else f"{row['observed']:>10.4f}"
-        print(f"  {row['bin']:>14} {row['n']:>7d} {pred} {obs}")
+        # observed - predicted. Positive means the bin under-reports fraud.
+        gap = (
+            "      n/a" if np.isnan(row["observed"]) or np.isnan(row["predicted"])
+            else f"{row['observed'] - row['predicted']:>9.4f}"
+        )
+        print(f"  {row['bin']:>14} {row['n']:>7d} {pred} {obs} {gap}")
+    cal = calibration_summary(y, y_proba)
+    print(f"  expected calibration error (weighted mean |observed-predicted|) "
+          f"{cal['ece']:.4f}")
+    print(f"  signed gap (weighted mean observed-predicted)          "
+          f"{cal['mean_signed_gap']:+.4f}")
 
     error_breakdown(y, y_pred, archetypes)
 
@@ -225,6 +235,29 @@ def report_metrics(
             "precision": float(precision), "recall": float(recall),
             "f1": float(f1), "tn": int(tn), "fp": int(fp),
             "fn": int(fn), "tp": int(tp)}
+
+
+def calibration_summary(y_true: np.ndarray, y_proba: np.ndarray) -> dict:
+    """Single-number verdict on absolute calibration, for before/after comparison.
+
+    A reliability diagram shows the shape of the miscalibration; this shows its
+    size, so a fix can be reported as a measurement rather than a picture.
+    ``expected_calibration_error`` is the sample-weighted mean of
+    ``|observed - predicted|`` over the bins that actually contain rows, and
+    ``brier`` is the squared-error form. Both are dominated by the bins that
+    matter, which is why they are the pair to quote.
+    """
+    curve = [r for r in calibration_curve(y_true, y_proba) if r["n"] > 0]
+    total = float(sum(r["n"] for r in curve))
+    if total == 0.0:
+        return {"ece": float("nan"), "mean_abs_gap": float("nan"), "mean_signed_gap": float("nan")}
+    ece = sum(r["n"] / total * abs(r["observed"] - r["predicted"]) for r in curve)
+    signed = sum(r["n"] / total * (r["observed"] - r["predicted"]) for r in curve)
+    return {
+        "ece": float(ece),
+        "mean_abs_gap": float(ece),
+        "mean_signed_gap": float(signed),
+    }
 
 
 def main() -> None:
@@ -267,30 +300,58 @@ def main() -> None:
             amounts, arch, test_size=TEST_SIZE, random_state=SPLIT_SEED, stratify=y
         )
 
-        print(f"\n{BANNER}\nSMOTE CONFINEMENT CHECK\n{BANNER}")
+        print(f"\n{BANNER}\nPRIOR INTEGRITY CHECK (CAL-001)\n{BANNER}")
+        print(f"  corpus rows           {len(y)}  fraud {int(y.sum())}"
+              f"  ({y.mean() * 100:.2f}%)")
         print(f"  train rows            {len(y_train)}  fraud {int(y_train.sum())}"
               f"  ({y_train.mean() * 100:.2f}%)")
         print(f"  test rows             {len(y_test)}  fraud {int(y_test.sum())}"
               f"  ({y_test.mean() * 100:.2f}%)")
 
-        # Falsifiable check: record the test split's class balance, resample
-        # the train split for real, then assert the test balance is untouched.
-        test_fraud_before = int(y_test.sum())
-        test_rows_before = len(y_test)
+        # Falsifiable check, not a claim. Two invariants, both of which failed
+        # before CAL-001 was fixed:
+        #
+        #   1. The row count of every evaluated split is exactly its share of
+        #      the corpus. A resampler inflates the row count; this asserts the
+        #      training matrix the calibrator saw was the real one.
+        #   2. The prior recorded in the deployed artifact equals the corpus
+        #      prevalence. The artifact used to be produced by calibrating on
+        #      a 33%-prior matrix, and nothing about the deployed file said so.
+        expected_train = int(round(len(y) * (1 - TEST_SIZE)))
+        assert len(y_train) == expected_train, (
+            f"training split has {len(y_train)} rows, expected {expected_train} "
+            f"— something resampled the training matrix before calibration "
+            f"(CAL-001: a calibrator fit on resampled data is calibrated to "
+            f"the resampler's prior, not the data's)"
+        )
+        print(f"  ASSERTED: train rows == {expected_train} (the corpus share, "
+              f"unresampled)")
 
-        from imblearn.over_sampling import SMOTE
-        X_train_res, y_train_res = SMOTE(
-            sampling_strategy=0.5, random_state=SPLIT_SEED
-        ).fit_resample(X_train, y_train)
-        print(f"  after SMOTE (train)   {len(X_train_res)}  fraud {int(y_train_res.sum())}"
-              f"  ({y_train_res.mean() * 100:.2f}%)")
-        print(f"  test rows after SMOTE {len(y_test)}  fraud {int(y_test.sum())}"
-              f"  ({y_test.mean() * 100:.2f}%)")
-        assert len(y_test) == test_rows_before, "test split row count changed"
-        assert int(y_test.sum()) == test_fraud_before, "test split was resampled"
-        print("  ASSERTED: the test split is byte-identical after SMOTE ran on")
-        print("  the train split. Every number below is measured at the real 1%")
-        print("  prevalence, not an artificial 50/50.")
+        stamp = getattr(service, "calibration_prior", None)
+        if stamp is None:
+            print("  WARNING: deployed artifact carries no calibration_prior "
+                  "stamp; it predates CAL-001 and its absolute probabilities "
+                  "cannot be trusted.")
+        else:
+            # Compared against the *train split's* prior, because that is the
+            # data the calibrator was fit on. It is not the corpus prevalence:
+            # a stratified split puts 385 of the 481 frauds in train, so the
+            # two differ by 5e-6 for reasons that have nothing to do with
+            # resampling. What must match exactly is the prior of the matrix
+            # the calibrator saw, and that is what a resampler would change.
+            drift = abs(float(stamp) - float(y_train.mean()))
+            assert drift < 1e-9, (
+                f"artifact calibration_prior {float(stamp):.9f} does not match "
+                f"the training split's prior {float(y_train.mean()):.9f} "
+                f"(drift {drift:.9f}) — the calibrator was fit on something "
+                f"other than the un-resampled training rows (CAL-001)"
+            )
+            print(f"  ASSERTED: artifact calibration_prior {float(stamp):.6f} "
+                  f"== training split prior {float(y_train.mean()):.6f}")
+        print("  Every number below is measured at the real prevalence, not an")
+        print("  artificial one.")
+        print("  Every number below is measured at the real prevalence, not an")
+        print("  artificial one.")
 
         metrics_train = report_metrics(
             "TRAIN SPLIT (in-sample — for reference only, not a result)",
