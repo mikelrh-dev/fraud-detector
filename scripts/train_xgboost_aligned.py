@@ -94,12 +94,21 @@ DAY_HOURS = tuple(range(6, 22))
 #: name, weight, lognormal(mu, sigma) for amount, P(high-risk category),
 #: P(night hour), velocity_5min window, velocity_1h window, P(round amount)
 FRAUD_ARCHETYPES: tuple[dict, ...] = (
-    {"name": "card_testing", "weight": 0.22, "amount": (3.3, 0.85),
+    {"name": "card_testing", "weight": 0.20, "amount": (3.3, 0.85),
      "p_risk": 0.08, "p_night": 0.45, "v5": (8, 32), "v1": (20, 85), "p_round": 0.02},
-    {"name": "account_takeover", "weight": 0.36, "amount": (5.6, 0.9),
+    {"name": "account_takeover", "weight": 0.32, "amount": (5.6, 0.9),
      "p_risk": 0.12, "p_night": 0.65, "v5": (10, 45), "v1": (25, 95), "p_round": 0.12},
-    {"name": "high_value_wire", "weight": 0.30, "amount": (9.2, 0.9),
-     "p_risk": 0.92, "p_night": 0.55, "v5": (0, 3), "v1": (0, 9), "p_round": 0.75},
+    {"name": "high_value_wire", "weight": 0.24, "amount": (9.2, 0.9),
+     "p_risk": 0.92, "p_night": 0.55, "v5": (0, 3), "v1": (0, 20), "p_round": 0.75},
+    # A compromised account making a large purchase while the burst is still
+    # running, and mule accounts receiving several large transfers. Without
+    # this archetype the corpus anti-correlated amount against velocity —
+    # every large fraud had velocity <= 2 and every burst had a median
+    # amount of ~£117 — so the model learned "big amount implies a quiet
+    # card" and scored a £50k burst at 0.00. That was an artifact of how the
+    # archetypes were laid out, not a property of fraud.
+    {"name": "large_burst", "weight": 0.12, "amount": (8.8, 0.9),
+     "p_risk": 0.55, "p_night": 0.60, "v5": (5, 25), "v1": (15, 70), "p_round": 0.30},
     {"name": "low_signal", "weight": 0.12, "amount": (4.6, 1.1),
      "p_risk": 0.10, "p_night": 0.20, "v5": (0, 2), "v1": (0, 5), "p_round": 0.10},
 )
@@ -239,7 +248,11 @@ def _assign_user_statistics(
         running_n[uid] += 1
 
 
-def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) -> tuple[list[dict], np.ndarray]:
+def generate_synthetic_data(
+    n_samples: int = 50000,
+    fraud_rate: float = 0.01,
+    seed: int = 42,
+) -> tuple[list[dict], np.ndarray]:
     """Generate synthetic transaction data compatible with FeatureEngine.
 
     The design constraint is that **no single feature may separate the
@@ -248,8 +261,11 @@ def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) ->
     indistinguishable from legitimate traffic. An honest ten-feature model
     therefore tops out well below a perfect score — which is the correct
     answer for this problem, not a shortfall.
+
+    ``seed`` exists so the evaluation harness can build a held-out corpus
+    that shares this distribution but shares none of its rows with training.
     """
-    rng = np.random.RandomState(42)
+    rng = np.random.RandomState(seed)
     transactions: list[dict] = []
     labels: list[int] = []
     user_ids: list[int] = []
@@ -290,6 +306,15 @@ def generate_synthetic_data(n_samples: int = 50000, fraud_rate: float = 0.01) ->
             "timestamp": timestamp,
             "velocity_5min": velocity_5min,
             "velocity_1h": velocity_1h,
+            # Retained as a diagnostic label. It is written to the CSV but the
+            # FeatureEngine never sees it, so it cannot leak into the model.
+            # It exists so the evaluation harness can prove the model's errors
+            # are the *intended* ones: that its false negatives are the
+            # deliberately-indistinguishable fraud and its false positives are
+            # the fraud_lookalike legitimate traffic. An overlap that produces
+            # the right errors is evidence the corpus is honest; one that
+            # produces random errors is not.
+            "archetype": archetype["name"],
         })
         labels.append(1 if is_fraud else 0)
         user_ids.append(int(rng.randint(N_USERS)))
@@ -333,6 +358,8 @@ def _load_synthetic_csv(path: str) -> tuple[list[dict], np.ndarray]:
                 "user_std_amount": float(row.get("user_std_amount", "0") or 0),
                 "velocity_5min": int(row.get("velocity_5min", "0") or 0),
                 "velocity_1h": int(row.get("velocity_1h", "0") or 0),
+                # Diagnostic only — never fed to the FeatureEngine.
+                "archetype": row.get("archetype", "") or "",
             })
             labels.append(int(row["is_fraud"]))
     logger.info("Loaded %d synthetic transactions from %s", len(transactions), path)
@@ -352,7 +379,7 @@ def _save_synthetic_csv(transactions: list[dict], labels: np.ndarray, path: str)
     fieldnames = [
         "user_id", "amount", "merchant_name", "merchant_category",
         "timestamp", "is_fraud", "velocity_5min", "velocity_1h",
-        "user_avg_amount", "user_std_amount",
+        "user_avg_amount", "user_std_amount", "archetype",
     ]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="") as f:
@@ -370,6 +397,7 @@ def _save_synthetic_csv(transactions: list[dict], labels: np.ndarray, path: str)
                 "velocity_1h": tx.get("velocity_1h", 0),
                 "user_avg_amount": tx.get("user_avg_amount", 0),
                 "user_std_amount": tx.get("user_std_amount", 0),
+                "archetype": tx.get("archetype", ""),
             })
     logger.info("Generated and saved %d synthetic transactions to %s", len(transactions), path)
 
@@ -645,9 +673,25 @@ def main() -> None:
                 len(X_train_res), int(np.sum(y_train_res)), int(np.sum(y_train_res == 0)))
 
     # 7. Train XGBoost
-    neg_count = int(np.sum(y_train == 0))
-    pos_count = int(np.sum(y_train == 1))
+    #
+    # scale_pos_weight must be computed from the RESAMPLED training labels.
+    # SMOTE(sampling_strategy=0.5) already lifts fraud from 1% to 33% of the
+    # training data, so the only imbalance left is the residual 2:1. The
+    # previous code computed the ratio from the pre-SMOTE labels (100.8) and
+    # then also resampled, weighting positives 202x above their natural rate
+    # on data that was already balanced. That is why a £50 grocery scored
+    # 46.79/100 on the previous artifact: the model was calibrated to call a
+    # third of all traffic fraud. SMOTE and scale_pos_weight each correct the
+    # same imbalance; applying both at full strength corrects it twice.
+    neg_count = int(np.sum(y_train_res == 0))
+    pos_count = int(np.sum(y_train_res == 1))
     scale_pos = neg_count / pos_count if pos_count > 0 else 1.0
+    logger.info(
+        "scale_pos_weight=%.2f (from the %d post-SMOTE rows; the pre-SMOTE "
+        "ratio was %.1f and would have double-counted the imbalance)",
+        scale_pos, len(y_train_res),
+        float(np.sum(y_train == 0)) / max(1, int(np.sum(y_train == 1))),
+    )
 
     logger.info("Training XGBoost (scale_pos_weight=%.1f)...", scale_pos)
     model = xgb.XGBClassifier(
