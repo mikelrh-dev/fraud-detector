@@ -1,5 +1,8 @@
 """Genera el notebook 01-paysim-fraud-detection.ipynb con explicaciones didacticas y graficos."""
 import json
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 cells = []
 
@@ -736,7 +739,10 @@ notebook = {
     "cells": cells,
 }
 
-output_path = r"C:\Users\mikel\Documents\fraud-detector\fraud-detector\notebooks\01-paysim-fraud-detection.ipynb"
+# Resolved from the repo root rather than an absolute path. The hardcoded form
+# published this contributor's Windows username and home directory in a public
+# repository, and broke on every machine but that one.
+output_path = str(REPO_ROOT / "notebooks" / "01-paysim-fraud-detection.ipynb")
 with open(output_path, "w", encoding="utf-8") as f:
     json.dump(notebook, f, indent=1, ensure_ascii=False)
 
