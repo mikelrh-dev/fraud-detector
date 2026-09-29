@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-08-29",
+  "source_revision": "44829d2",
+  "operation": "frontier-migration",
+  "entries": [
+    {"from": "00-orientacion/que-es-el-sistema.md", "to": "concepts/hybrid-fraud-detection.md", "status": "migrated"},
+    {"from": "00-orientacion/glosario.md", "to": "concepts/fraud-detector-glossary.md", "status": "migrated"},
+    {"from": "01-arquitectura/mapa-del-sistema.md", "to": "codebases/fraud-detector.md", "status": "migrated"},
+    {"from": "01-arquitectura/flujo-de-una-transaccion.md", "to": "synthesis/transaction-scoring-flow.md", "status": "migrated"},
+    {"from": "01-arquitectura/decisiones-clave.md", "to": "decisions/fraud-detector-architecture.md", "status": "migrated"},
+    {"from": "02-backend/", "to": "codebases/, tools/, concepts/", "status": "migrated"},
+    {"from": "03-scoring/", "to": "concepts/", "status": "migrated"},
+    {"from": "04-pipelines/", "to": "tools/, concepts/, runbooks/", "status": "migrated"},
+    {"from": "05-ml/", "to": "tools/, concepts/, entities/", "status": "migrated"},
+    {"from": "06-datos/", "to": "entities/, concepts/", "status": "migrated"},
+    {"from": "07-frontend/", "to": "codebases/, tools/", "status": "migrated"},
+    {"from": "08-operaciones/", "to": "runbooks/, tools/", "status": "migrated"},
+    {"from": "09-contribucion/", "to": "runbooks/, tools/", "status": "migrated"}
+  ]
+}

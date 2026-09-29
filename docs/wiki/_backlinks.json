@@ -1,0 +1,315 @@
+{
+  "generated_at": "2026-08-29",
+  "source_revision": "44829d2",
+  "algorithm": "wikilink-scan",
+  "backlinks": {
+    "codebases/fraud-detector": [
+      "index",
+      "overview",
+      "projects/fraud-detector"
+    ],
+    "codebases/fraud-detector-backend": [
+      "codebases/fraud-detector",
+      "concepts/jwt-session-lifecycle",
+      "index",
+      "overview",
+      "projects/fraud-detector",
+      "tools/fraud-detector-api-contract"
+    ],
+    "codebases/fraud-detector-frontend": [
+      "codebases/fraud-detector",
+      "index",
+      "overview",
+      "projects/fraud-detector",
+      "tools/frontend-design-system"
+    ],
+    "comparisons/current-vs-historical-contracts": [
+      "index",
+      "overview",
+      "projects/fraud-detector",
+      "sources/code-revision-44829d2",
+      "sources/repository-documentation",
+      "sources/source-manifest-44829d2"
+    ],
+    "concept-table": [
+      "index"
+    ],
+    "concepts/at-least-once-processing": [
+      "codebases/fraud-detector",
+      "codebases/fraud-detector-backend",
+      "concept-table",
+      "concepts/fraud-detector-glossary",
+      "concepts/scoring-degradation",
+      "decisions/fraud-detector-architecture",
+      "entities/redis-event-contracts",
+      "overview",
+      "runbooks/worker-recovery",
+      "tools/redis-streams"
+    ],
+    "concepts/fraud-detector-glossary": [
+      "index",
+      "overview"
+    ],
+    "concepts/fraud-explainability": [
+      "concepts/hybrid-fraud-detection",
+      "entities/ml-feature-contract",
+      "entities/redis-event-contracts",
+      "synthesis/transaction-scoring-flow",
+      "tools/xgboost-serving"
+    ],
+    "concepts/fraud-scoring-pipeline": [
+      "codebases/fraud-detector",
+      "codebases/fraud-detector-backend",
+      "concept-table",
+      "concepts/fraud-detector-glossary",
+      "concepts/hybrid-fraud-detection",
+      "concepts/risk-classification",
+      "concepts/scoring-degradation",
+      "entities/ml-feature-contract",
+      "entities/model-monitoring-contract",
+      "index",
+      "runbooks/end-to-end-debugging",
+      "synthesis/transaction-scoring-flow",
+      "tools/velocity-store",
+      "tools/xgboost-serving"
+    ],
+    "concepts/hybrid-fraud-detection": [
+      "concept-table",
+      "concepts/fraud-explainability",
+      "concepts/fraud-scoring-pipeline",
+      "decisions/fraud-detector-architecture",
+      "index"
+    ],
+    "concepts/immutable-audit-trail": [
+      "concept-table",
+      "concepts/jwt-session-lifecycle",
+      "decisions/fraud-detector-architecture",
+      "entities/fraud-detector-domain-model",
+      "overview",
+      "tools/postgresql-and-alembic"
+    ],
+    "concepts/jwt-session-lifecycle": [
+      "concept-table",
+      "tools/fraud-detector-api-contract"
+    ],
+    "concepts/risk-classification": [
+      "concept-table",
+      "concepts/fraud-scoring-pipeline"
+    ],
+    "concepts/scoring-degradation": [
+      "codebases/fraud-detector",
+      "codebases/fraud-detector-backend",
+      "concepts/at-least-once-processing",
+      "concepts/risk-classification",
+      "tools/redis-streams",
+      "tools/velocity-store"
+    ],
+    "decisions/fraud-detector-architecture": [
+      "codebases/fraud-detector",
+      "comparisons/current-vs-historical-contracts",
+      "concepts/hybrid-fraud-detection",
+      "concepts/immutable-audit-trail",
+      "index",
+      "overview",
+      "projects/fraud-detector",
+      "sources/repository-documentation"
+    ],
+    "entities/fraud-detector-domain-model": [
+      "codebases/fraud-detector-backend",
+      "concepts/fraud-detector-glossary",
+      "concepts/immutable-audit-trail",
+      "concepts/risk-classification",
+      "runbooks/end-to-end-debugging",
+      "synthesis/transaction-scoring-flow",
+      "tools/fraud-detector-api-contract",
+      "tools/postgresql-and-alembic"
+    ],
+    "entities/ml-feature-contract": [
+      "concept-table",
+      "concepts/fraud-explainability",
+      "concepts/fraud-scoring-pipeline",
+      "entities/fraud-detector-domain-model",
+      "entities/model-monitoring-contract",
+      "entities/redis-event-contracts",
+      "index",
+      "runbooks/testing-and-ci",
+      "synthesis/transaction-scoring-flow",
+      "tools/model-monitoring",
+      "tools/test-architecture",
+      "tools/velocity-store",
+      "tools/xgboost-serving"
+    ],
+    "entities/model-monitoring-contract": [
+      "comparisons/current-vs-historical-contracts",
+      "concept-table",
+      "entities/ml-feature-contract",
+      "tools/model-monitoring",
+      "tools/xgboost-serving"
+    ],
+    "entities/redis-event-contracts": [
+      "concept-table",
+      "concepts/at-least-once-processing",
+      "concepts/fraud-explainability",
+      "entities/ml-feature-contract",
+      "index",
+      "synthesis/transaction-scoring-flow",
+      "tools/fraud-detector-api-contract",
+      "tools/redis-streams"
+    ],
+    "index": [
+      "concepts/fraud-detector-glossary",
+      "sources/repository-documentation",
+      "sources/source-manifest-44829d2",
+      "tools/frontend-design-system"
+    ],
+    "overview": [
+      "concepts/fraud-detector-glossary",
+      "decisions/fraud-detector-architecture",
+      "index",
+      "sources/repository-documentation",
+      "sources/source-manifest-44829d2",
+      "tools/frontend-design-system"
+    ],
+    "projects/fraud-detector": [
+      "codebases/fraud-detector",
+      "codebases/fraud-detector-backend",
+      "codebases/fraud-detector-frontend",
+      "comparisons/current-vs-historical-contracts",
+      "concepts/hybrid-fraud-detection",
+      "concepts/jwt-session-lifecycle",
+      "entities/fraud-detector-domain-model",
+      "index",
+      "sources/code-revision-44829d2",
+      "sources/repository-documentation",
+      "synthesis/transaction-scoring-flow",
+      "tools/frontend-design-system"
+    ],
+    "runbooks/end-to-end-debugging": [
+      "concepts/fraud-explainability",
+      "concepts/fraud-scoring-pipeline",
+      "concepts/immutable-audit-trail",
+      "concepts/scoring-degradation",
+      "index",
+      "overview",
+      "runbooks/troubleshooting",
+      "runbooks/worker-recovery",
+      "synthesis/transaction-scoring-flow",
+      "tools/fraud-detector-api-contract",
+      "tools/velocity-store"
+    ],
+    "runbooks/local-development": [
+      "codebases/fraud-detector",
+      "index",
+      "overview",
+      "projects/fraud-detector",
+      "runbooks/troubleshooting",
+      "tools/postgresql-and-alembic"
+    ],
+    "runbooks/testing-and-ci": [
+      "codebases/fraud-detector",
+      "codebases/fraud-detector-backend",
+      "entities/ml-feature-contract",
+      "index",
+      "overview",
+      "projects/fraud-detector",
+      "runbooks/local-development",
+      "tools/model-monitoring",
+      "tools/test-architecture",
+      "tools/xgboost-serving"
+    ],
+    "runbooks/troubleshooting": [
+      "codebases/fraud-detector",
+      "concepts/jwt-session-lifecycle",
+      "concepts/scoring-degradation",
+      "entities/model-monitoring-contract",
+      "index",
+      "runbooks/local-development",
+      "tools/model-monitoring",
+      "tools/postgresql-and-alembic"
+    ],
+    "runbooks/worker-recovery": [
+      "codebases/fraud-detector-backend",
+      "concept-table",
+      "concepts/at-least-once-processing",
+      "entities/redis-event-contracts",
+      "index",
+      "overview",
+      "runbooks/end-to-end-debugging",
+      "runbooks/troubleshooting",
+      "tools/redis-streams",
+      "tools/test-architecture"
+    ],
+    "sources/code-revision-44829d2": [
+      "comparisons/current-vs-historical-contracts",
+      "index",
+      "overview",
+      "sources/repository-documentation",
+      "sources/source-manifest-44829d2"
+    ],
+    "sources/repository-documentation": [
+      "index",
+      "overview"
+    ],
+    "sources/source-manifest-44829d2": [
+      "sources/code-revision-44829d2"
+    ],
+    "synthesis/transaction-scoring-flow": [
+      "concepts/fraud-scoring-pipeline",
+      "concepts/hybrid-fraud-detection",
+      "decisions/fraud-detector-architecture",
+      "entities/fraud-detector-domain-model",
+      "index",
+      "sources/code-revision-44829d2"
+    ],
+    "tools/fraud-detector-api-contract": [
+      "codebases/fraud-detector-backend",
+      "concept-table",
+      "concepts/immutable-audit-trail",
+      "concepts/jwt-session-lifecycle",
+      "entities/model-monitoring-contract",
+      "index",
+      "runbooks/testing-and-ci",
+      "synthesis/transaction-scoring-flow",
+      "tools/test-architecture"
+    ],
+    "tools/frontend-design-system": [
+      "index",
+      "overview"
+    ],
+    "tools/model-monitoring": [
+      "entities/model-monitoring-contract"
+    ],
+    "tools/postgresql-and-alembic": [
+      "entities/fraud-detector-domain-model"
+    ],
+    "tools/redis-streams": [
+      "codebases/fraud-detector",
+      "codebases/fraud-detector-backend",
+      "concepts/at-least-once-processing",
+      "concepts/fraud-detector-glossary",
+      "decisions/fraud-detector-architecture",
+      "entities/redis-event-contracts",
+      "overview",
+      "projects/fraud-detector",
+      "runbooks/worker-recovery",
+      "tools/velocity-store"
+    ],
+    "tools/test-architecture": [
+      "runbooks/testing-and-ci"
+    ],
+    "tools/velocity-store": [
+      "concepts/fraud-scoring-pipeline",
+      "concepts/scoring-degradation",
+      "tools/redis-streams"
+    ],
+    "tools/xgboost-serving": [
+      "comparisons/current-vs-historical-contracts",
+      "concepts/fraud-explainability",
+      "concepts/fraud-scoring-pipeline",
+      "entities/ml-feature-contract",
+      "overview",
+      "projects/fraud-detector",
+      "tools/model-monitoring"
+    ]
+  }
+}
