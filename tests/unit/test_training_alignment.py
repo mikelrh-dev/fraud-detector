@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from scripts.generate_synthetic_data import FIELDNAMES, generate_transaction
 from scripts.train_xgboost_aligned import (
@@ -22,7 +23,8 @@ from scripts.train_xgboost_aligned import (
     generate_synthetic_data,
 )
 
-# Velocity windows shared by both generators (mirror the module constants)
+# Velocity windows used by the standalone demo generator. The training
+# generator no longer uses fixed class windows — see TestTrainerGenerator.
 FRAUD_5MIN = (3, 15)
 FRAUD_1H = (10, 60)
 LEGIT_5MIN = (0, 2)
@@ -64,26 +66,120 @@ class TestStandaloneGenerator:
 
 
 class TestTrainerGenerator:
-    """train_xgboost_aligned.generate_synthetic_data keeps velocity in the dict."""
+    """train_xgboost_aligned.generate_synthetic_data keeps velocity in the dict
+    and does not make velocity a sufficient statistic for the label.
+
+    The previous version of this test asserted that fraud velocity always
+    landed in ``(3, 15)`` and legitimate velocity always in ``(0, 2)`` — a
+    hard, disjoint partition. That assertion is the degeneracy, written down:
+    it forbade exactly the overlap real fraud has, and because velocity
+    separated the classes perfectly, ``tx_count_last_5min`` scored ROC-AUC
+    1.0000 on its own. The model then had no reason to combine any signal.
+    The class-conditional window assertions are replaced below by the
+    property that actually matters.
+    """
 
     def test_generated_tx_keeps_velocity_in_dict(self):
         transactions, labels = generate_synthetic_data(n_samples=500, fraud_rate=0.2)
         assert len(transactions) == 500
 
-        seen = {"fraud": 0, "legit": 0}
-        for tx, label in zip(transactions, labels):
+        for tx in transactions:
             assert "velocity_5min" in tx and "velocity_1h" in tx
-            v5, v1 = tx["velocity_5min"], tx["velocity_1h"]
-            if label == 1:
-                seen["fraud"] += 1
-                assert FRAUD_5MIN[0] <= v5 <= FRAUD_5MIN[1]
-                assert FRAUD_1H[0] <= v1 <= FRAUD_1H[1]
-            else:
-                seen["legit"] += 1
-                assert LEGIT_5MIN[0] <= v5 <= LEGIT_5MIN[1]
-                assert LEGIT_1H[0] <= v1 <= LEGIT_1H[1]
+            assert isinstance(tx["velocity_5min"], int)
+            assert isinstance(tx["velocity_1h"], int)
+            assert tx["velocity_5min"] >= 0 and tx["velocity_1h"] >= 0
 
-        assert seen["fraud"] > 0 and seen["legit"] > 0
+    def test_velocity_distributions_overlap(self):
+        """Fraud and legitimate velocity must not be separable by threshold.
+
+        A single wire transfer is not a burst, and a Saturday sale is. Both
+        directions of overlap are required: fraud with legitimate-looking
+        velocity, and legitimate with fraud-looking velocity.
+        """
+        transactions, labels = generate_synthetic_data(n_samples=6000, fraud_rate=0.05)
+        fraud_v5 = [t["velocity_5min"] for t, y in zip(transactions, labels) if y == 1]
+        legit_v5 = [t["velocity_5min"] for t, y in zip(transactions, labels) if y == 0]
+        assert fraud_v5 and legit_v5
+
+        # Fraud that looks legitimate on velocity...
+        assert min(fraud_v5) <= LEGIT_5MIN[1], (
+            f"no fraud transaction has velocity_5min <= {LEGIT_5MIN[1]}; "
+            f"lowest is {min(fraud_v5)} — a single wire is not a burst"
+        )
+        # ...and legitimate that looks fraudulent.
+        assert max(legit_v5) > LEGIT_5MIN[1], (
+            f"no legitimate transaction exceeds velocity_5min "
+            f"{LEGIT_5MIN[1]}; highest is {max(legit_v5)} — shoppers burst too"
+        )
+        # The rate must still differ, otherwise the feature is pure noise.
+        assert np.mean(fraud_v5) > np.mean(legit_v5), (
+            "velocity carries no directional signal at all"
+        )
+
+    def test_user_statistics_are_populated(self):
+        """user_avg_amount / user_std_amount must be positive and varying.
+
+        They were absent from the generator and from the CSV, so
+        ``amount_vs_user_avg`` and ``amount_vs_user_std`` were constant zero
+        and the deployed model weighted a dead column at 19%.
+        """
+        transactions, _ = generate_synthetic_data(n_samples=3000, fraud_rate=0.05)
+        avgs = [t["user_avg_amount"] for t in transactions]
+        stds = [t["user_std_amount"] for t in transactions]
+        assert min(avgs) > 0, "a user_avg_amount of 0 makes the ratio feature dead"
+        assert min(stds) > 0, "a user_std_amount of 0 makes the z-score feature dead"
+        assert np.std(avgs) > 0, "user_avg_amount is constant across the corpus"
+        assert np.std(stds) > 0, "user_std_amount is constant across the corpus"
+
+
+class TestSyntheticDataIsNotDegenerate:
+    """The corpus must not hand the model a single sufficient statistic."""
+
+    @pytest.fixture(scope="class")
+    def matrix(self):
+        from src.services.feature_engine import FEATURE_NAMES, FeatureEngine
+        from scripts.train_xgboost_aligned import (
+            FRAUD_NOISE_INTENSITY, add_realistic_noise, build_synthetic_history,
+        )
+
+        transactions, labels = generate_synthetic_data(n_samples=6000, fraud_rate=0.05)
+        transactions, labels = add_realistic_noise(
+            transactions, labels, fraud_noise_intensity=FRAUD_NOISE_INTENSITY
+        )
+        histories = [build_synthetic_history(t) for t in transactions]
+        X = build_feature_vectors(transactions, histories)
+        return X, labels, FEATURE_NAMES
+
+    def test_every_feature_varies(self, matrix):
+        """A constant column cannot be learned, and the artifact weights it anyway."""
+        X, _, names = matrix
+        dead = [n for i, n in enumerate(names) if X[:, i].std() == 0.0]
+        assert not dead, f"constant features in the generated corpus: {dead}"
+
+    def test_no_single_feature_separates_the_classes(self, matrix):
+        """No feature may be a sufficient statistic for the label.
+
+        This is the regression guard for the original defect, where four
+        features each scored ROC-AUC 1.0000 and the trained model used
+        whichever one the tree found first.
+        """
+        from sklearn.metrics import roc_auc_score
+
+        X, y, names = matrix
+        aucs = {}
+        for i, name in enumerate(names):
+            if X[:, i].std() == 0.0:
+                continue
+            score = roc_auc_score(y, X[:, i])
+            aucs[name] = max(score, 1.0 - score)
+        assert aucs, "no feature has variance"
+        worst = max(aucs.items(), key=lambda kv: kv[1])
+        assert worst[1] < 0.95, (
+            f"{worst[0]} alone reaches AUC {worst[1]:.4f} — the classes are "
+            f"separable by one field, which is what the model then relied on. "
+            f"All single-feature AUCs: "
+            f"{ {k: round(v, 4) for k, v in sorted(aucs.items())} }"
+        )
 
 
 class TestSyntheticCsvRoundTrip:

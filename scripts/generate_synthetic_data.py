@@ -16,8 +16,20 @@ NUM_TRANSACTIONS = 50_000
 FRAUD_RATE = 0.05
 OUTPUT_PATH = "data/synthetic_transactions.csv"
 
-# Velocity windows per class — mirrors scripts/train_xgboost_aligned.py so
-# both generators emit the same distribution (FD-VEL-004 train/serve parity).
+# Velocity windows per class.
+#
+# NOTE: the FD-VEL-004 train/serve parity this used to claim no longer
+# holds. scripts/train_xgboost_aligned.py now generates velocity from
+# behavioural archetypes whose windows deliberately overlap between the two
+# classes, because fixed disjoint per-class windows made `tx_count_last_5min`
+# a sufficient statistic for the label (ROC-AUC 1.0000 on its own). This
+# script is the demo/seed generator, not the training corpus.
+#
+# This script also writes to the SAME path the trainer reads
+# (data/synthetic_transactions.csv) using a `low_risk`/`medium_risk`/
+# `high_risk` merchant_category vocabulary that FeatureEngine does not
+# recognise — so running it leaves the deployed model structurally blind to
+# merchant risk and crypto. Do not run it against the training path.
 VELOCITY_5MIN_FRAUD = (3, 15)
 VELOCITY_5MIN_LEGIT = (0, 2)
 VELOCITY_1H_FRAUD = (10, 60)
