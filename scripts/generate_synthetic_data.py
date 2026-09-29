@@ -14,7 +14,29 @@ from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
 # Configuration
 NUM_TRANSACTIONS = 50_000
 FRAUD_RATE = 0.05
-OUTPUT_PATH = "data/synthetic_transactions.csv"
+OUTPUT_PATH = "data/demo_seed_transactions.csv"
+
+# Provenance stamp. Deliberately NOT the trainer's value.
+#
+# DATA-001: this script used to write to data/synthetic_transactions.csv —
+# the exact path scripts/train_xgboost_aligned.py reads — with a corpus that
+# is degenerate for training. Measured through the production pipeline,
+# three of the ten features reach ROC-AUC 1.0000 on their own, which is the
+# failure mode cb65b25 fixed, and the 5% fraud rate is five times the training
+# corpus's 0.96%, which would re-break the calibration c1a4f6a fixed. The
+# trainer accepted all of it without a word.
+#
+# Two independent guards now, because one is not enough:
+#   1. This script writes a DIFFERENT PATH. It cannot clobber the corpus.
+#   2. This script writes a DIFFERENT STAMP. If the file is copied onto the
+#      training path anyway, train_xgboost_aligned._load_synthetic_csv
+#      refuses it and names what it found.
+#
+# Do not "fix" the stamp to match the trainer's. That would satisfy the check
+# while leaving the corpus degenerate, which is the silent coercion this
+# exists to prevent.
+CORPUS_SCHEMA_COLUMN = "corpus_schema"
+CORPUS_SCHEMA = "demo_seed_v1"
 
 # Velocity windows per class.
 #
@@ -22,14 +44,10 @@ OUTPUT_PATH = "data/synthetic_transactions.csv"
 # holds. scripts/train_xgboost_aligned.py now generates velocity from
 # behavioural archetypes whose windows deliberately overlap between the two
 # classes, because fixed disjoint per-class windows made `tx_count_last_5min`
-# a sufficient statistic for the label (ROC-AUC 1.0000 on its own). This
-# script is the demo/seed generator, not the training corpus.
-#
-# This script also writes to the SAME path the trainer reads
-# (data/synthetic_transactions.csv) using a `low_risk`/`medium_risk`/
-# `high_risk` merchant_category vocabulary that FeatureEngine does not
-# recognise — so running it leaves the deployed model structurally blind to
-# merchant risk and crypto. Do not run it against the training path.
+# a sufficient statistic for the label (ROC-AUC 1.0000 on its own). The
+# windows below have exactly that defect and are the measured cause of two of
+# the three perfect separations above. They stay, because this is a
+# demo/seed generator for notebooks and dashboards, not a training corpus.
 VELOCITY_5MIN_FRAUD = (3, 15)
 VELOCITY_5MIN_LEGIT = (0, 2)
 VELOCITY_1H_FRAUD = (10, 60)
@@ -37,6 +55,7 @@ VELOCITY_1H_LEGIT = (0, 5)
 
 # CSV schema — velocity columns must be persisted so training sees real counts.
 FIELDNAMES = [
+    CORPUS_SCHEMA_COLUMN,
     "transaction_id", "user_id", "amount", "currency",
     "merchant_name", "merchant_category", "timestamp",
     "is_fraud", "hour_of_day", "is_weekend",
@@ -136,6 +155,7 @@ def generate_transaction(txn_id: int, base_time: datetime) -> dict:
         velocity_1h = random.randint(*VELOCITY_1H_LEGIT)
 
     return {
+        CORPUS_SCHEMA_COLUMN: CORPUS_SCHEMA,
         "transaction_id": f"tx-{txn_id:06d}",
         "user_id": user_id,
         "amount": amount,

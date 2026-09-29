@@ -98,6 +98,18 @@ MODEL_PATH = "models/xgboost_paysim_v1.joblib"
 DATA_SYNTHETIC = "data/synthetic_transactions.csv"
 DATA_PAYSIM = "../transaccion/PS_20174392719_1491204439457_log.csv"
 
+#: Provenance stamp written into every training corpus and required of every
+#: corpus this script loads (DATA-001).
+#:
+#: Bump this when the generator changes in a way that alters the feature
+#: distribution, and retrain. A corpus without a stamp, or with a different
+#: one, is refused — see :func:`_load_synthetic_csv` for why that is a hard
+#: error rather than a warning.
+CORPUS_SCHEMA = "trainer_v2"
+
+#: Column carrying :data:`CORPUS_SCHEMA`.
+CORPUS_SCHEMA_COLUMN = "corpus_schema"
+
 #: Amplitude of the post-generation noise pass, shared by main() and the
 #: per-feature contract test so the two cannot disagree.
 FRAUD_NOISE_INTENSITY = 0.40
@@ -400,6 +412,68 @@ def load_synthetic_data(path: str) -> tuple[list[dict], np.ndarray]:
 
 
 def _load_synthetic_csv(path: str) -> tuple[list[dict], np.ndarray]:
+    """Load a training corpus, refusing anything this script did not write.
+
+    DATA-001: this loader used to read whatever sat at the path. That made a
+    silent, total corruption of the model one command away, because
+    ``scripts/generate_synthetic_data.py`` writes to the *same path* with a
+    different generator. Measured, on the corpus that script produces, fed
+    through the real pipeline:
+
+      tx_count_last_5min   ROC-AUC 1.0000   separates the classes on its own
+      tx_count_last_1h     ROC-AUC 1.0000   separates the classes on its own
+      merchant_risk_level  ROC-AUC 1.0000   separates the classes on its own
+      amount_vs_user_std   0.9657
+      amount               0.9614
+      fraud rate           4.81%   (the training corpus is 0.96%)
+
+    Three features that each *are* the label, which is the exact degeneracy
+    cb65b25 was written to remove, plus a prior five times too high, which
+    would re-break the calibration c1a4f6a was written to fix. And the loader
+    raised nothing: it read 50,000 rows, 2,405 of them fraud, and carried on.
+
+    So the check is a hard error, before a single row is parsed, and it names
+    the file it refused. Silently coercing a foreign vocabulary to zeros is
+    the failure mode this replaces — that is what made the old model blind to
+    merchant risk and crypto without saying so.
+    """
+    with open(path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        columns = set(reader.fieldnames or [])
+        stamp = None
+        if CORPUS_SCHEMA_COLUMN in columns:
+            stamp = next(iter(reader), {}).get(CORPUS_SCHEMA_COLUMN)
+        else:
+            # Still need to drain nothing: refuse before parsing any row.
+            stamp = None
+
+    if stamp != CORPUS_SCHEMA:
+        found = (
+            f"{CORPUS_SCHEMA_COLUMN}={stamp!r}" if CORPUS_SCHEMA_COLUMN in columns
+            else f"no {CORPUS_SCHEMA_COLUMN} column (found: {', '.join(sorted(columns))})"
+        )
+        raise ValueError(
+            f"REFUSING to train on a corpus this script did not write.\n"
+            f"  file:   {path}\n"
+            f"  found:  {found}\n"
+            f"  wanted: {CORPUS_SCHEMA_COLUMN}={CORPUS_SCHEMA!r}\n"
+            f"\n"
+            f"This is almost certainly the output of "
+            f"scripts/generate_synthetic_data.py, which is a demo/seed "
+            f"generator and not the training corpus. It writes a different "
+            f"schema and a corpus that degenerates the model: three of the "
+            f"ten features separate the classes perfectly on their own "
+            f"(ROC-AUC 1.0000), and its fraud rate is 4.81% against the "
+            f"training corpus's 0.96%, which would also invalidate the "
+            f"calibration.\n"
+            f"\n"
+            f"To build the training corpus, delete the file and run this "
+            f"script, which regenerates it deterministically. To use a real "
+            f"labelled corpus, add a {CORPUS_SCHEMA_COLUMN} column containing "
+            f"{CORPUS_SCHEMA!r} only once it has been checked against the "
+            f"schema above."
+        )
+
     transactions = []
     labels = []
     with open(path, "r") as f:
@@ -420,7 +494,8 @@ def _load_synthetic_csv(path: str) -> tuple[list[dict], np.ndarray]:
                 "archetype": row.get("archetype", "") or "",
             })
             labels.append(int(row["is_fraud"]))
-    logger.info("Loaded %d synthetic transactions from %s", len(transactions), path)
+    logger.info("Loaded %d synthetic transactions from %s (%s=%s)",
+                len(transactions), path, CORPUS_SCHEMA_COLUMN, CORPUS_SCHEMA)
     return transactions, np.array(labels)
 
 
@@ -438,6 +513,7 @@ def _save_synthetic_csv(transactions: list[dict], labels: np.ndarray, path: str)
         "user_id", "amount", "merchant_name", "merchant_category",
         "timestamp", "is_fraud", "velocity_5min", "velocity_1h",
         "user_avg_amount", "user_std_amount", "archetype",
+        CORPUS_SCHEMA_COLUMN,
     ]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="") as f:
@@ -445,6 +521,7 @@ def _save_synthetic_csv(transactions: list[dict], labels: np.ndarray, path: str)
         writer.writeheader()
         for tx, label in zip(transactions, labels):
             writer.writerow({
+                CORPUS_SCHEMA_COLUMN: CORPUS_SCHEMA,
                 "user_id": tx.get("user_id", ""),
                 "amount": tx["amount"],
                 "merchant_name": tx["merchant_name"],

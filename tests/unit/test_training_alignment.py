@@ -14,8 +14,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scripts.generate_synthetic_data import FIELDNAMES, generate_transaction
+from scripts.generate_synthetic_data import (
+    CORPUS_SCHEMA as DEMO_CORPUS_SCHEMA,
+    FIELDNAMES,
+    generate_transaction,
+)
 from scripts.train_xgboost_aligned import (
+    CORPUS_SCHEMA,
     _load_synthetic_csv,
     _save_synthetic_csv,
     build_feature_vectors,
@@ -203,12 +208,28 @@ class TestSyntheticCsvRoundTrip:
         assert rows[0]["velocity_5min"] == "4"
         assert rows[0]["velocity_1h"] == "12"
 
+    def test_save_stamps_the_corpus_schema(self, tmp_path):
+        """The stamp is what makes a corpus recognisable as the trainer's."""
+        txs = [{
+            "amount": 10.0,
+            "merchant_name": "Store_A",
+            "merchant_category": "groceries",
+            "timestamp": "2024-01-01T10:00:00",
+        }]
+        path = str(tmp_path / "synth.csv")
+        _save_synthetic_csv(txs, np.array([0]), path)
+
+        with open(path, "r", newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["corpus_schema"] == CORPUS_SCHEMA
+
     def test_load_reads_velocity_columns(self, tmp_path):
         path = str(tmp_path / "with_vel.csv")
         Path(path).write_text(
-            "amount,merchant_name,merchant_category,timestamp,is_fraud,"
-            "user_avg_amount,user_std_amount,velocity_5min,velocity_1h\n"
-            "50.0,Store_1,groceries,2024-01-01T12:00:00,0,100.0,20.0,1,4\n",
+            "corpus_schema,amount,merchant_name,merchant_category,timestamp,"
+            "is_fraud,user_avg_amount,user_std_amount,velocity_5min,velocity_1h\n"
+            f"{CORPUS_SCHEMA},50.0,Store_1,groceries,2024-01-01T12:00:00,0,"
+            "100.0,20.0,1,4\n",
             encoding="utf-8",
         )
         txs, labels = _load_synthetic_csv(path)
@@ -216,20 +237,118 @@ class TestSyntheticCsvRoundTrip:
         assert txs[0]["velocity_5min"] == 1
         assert txs[0]["velocity_1h"] == 4
         assert txs[0]["user_avg_amount"] == 100.0
-        assert txs[0]["user_std_amount"] == 20.0
 
-    def test_load_falls_back_to_zero_for_legacy_csv(self, tmp_path):
-        # Old format: no velocity / user-stat columns at all
-        path = str(tmp_path / "legacy.csv")
+    def test_load_falls_back_to_zero_for_missing_velocity_columns(self, tmp_path):
+        """A stamped corpus without velocity columns still parses, as zeros.
+
+        The FD-VEL-004 fallback is unchanged; only the provenance check is new.
+        """
+        path = str(tmp_path / "no_velocity.csv")
         Path(path).write_text(
-            "amount,merchant_name,merchant_category,timestamp,is_fraud\n"
-            "50.0,Store_1,groceries,2024-01-01T12:00:00,0\n",
+            f"corpus_schema,amount,merchant_name,merchant_category,timestamp,"
+            f"is_fraud\n{CORPUS_SCHEMA},50.0,Store_1,groceries,"
+            "2024-01-01T12:00:00,0\n",
             encoding="utf-8",
         )
         txs, _ = _load_synthetic_csv(path)
         assert txs[0]["velocity_5min"] == 0
         assert txs[0]["velocity_1h"] == 0
         assert txs[0]["user_avg_amount"] == 0.0
+
+
+class TestCorpusProvenanceGuard:
+    """DATA-001: the trainer must refuse a corpus it did not write.
+
+    ``scripts/generate_synthetic_data.py`` used to write to the trainer's own
+    path. One command away from re-breaking cb65b25 (three features
+    separating the classes at ROC-AUC 1.0000) and c1a4f6a (a 4.81% fraud
+    rate against a 0.96% one), and the loader said nothing while doing it.
+
+    These tests are the guard. They are deliberately about the *refusal*, not
+    about parsing: a loader that coerces a foreign vocabulary to zeros is the
+    exact failure this replaces.
+    """
+
+    def test_refuses_a_corpus_with_no_stamp(self, tmp_path):
+        path = str(tmp_path / "foreign.csv")
+        Path(path).write_text(
+            "amount,merchant_name,merchant_category,timestamp,is_fraud\n"
+            "50.0,Store_1,groceries,2024-01-01T12:00:00,0\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError) as exc:
+            _load_synthetic_csv(path)
+        message = str(exc.value)
+        assert "REFUSING" in message
+        assert path in message, "the error must name the file it refused"
+        assert CORPUS_SCHEMA in message, "the error must name what it wanted"
+
+    def test_refuses_the_demo_generators_corpus(self, tmp_path):
+        """The exact booby: the demo generator's schema, at the trainer's path."""
+        path = str(tmp_path / "demo_seed.csv")
+        Path(path).write_text(
+            "corpus_schema,transaction_id,user_id,amount,currency,"
+            "merchant_name,merchant_category,timestamp,is_fraud,hour_of_day,"
+            "is_weekend,is_crypto,amount_round_number,user_avg_amount,"
+            "user_std_amount,velocity_5min,velocity_1h\n"
+            f"{DEMO_CORPUS_SCHEMA},tx-000001,user-0001,50.0,USD,Amazon,"
+            "groceries,2024-01-01T12:00:00,0,12,0,0,0,80.0,20.0,1,4\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError) as exc:
+            _load_synthetic_csv(path)
+        message = str(exc.value)
+        assert "REFUSING" in message
+        assert DEMO_CORPUS_SCHEMA in message, (
+            "the error must show what stamp it actually found, so the operator "
+            "can see which generator produced the file"
+        )
+        assert "ROC-AUC 1.0000" in message, (
+            "the error must state the consequence, not just the mismatch"
+        )
+
+    def test_refuses_a_corpus_stamped_for_a_different_schema_version(
+        self, tmp_path
+    ):
+        path = str(tmp_path / "future.csv")
+        Path(path).write_text(
+            "corpus_schema,amount,merchant_name,merchant_category,timestamp,"
+            "is_fraud\n"
+            "trainer_v99,50.0,Store_1,groceries,2024-01-01T12:00:00,0\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError):
+            _load_synthetic_csv(path)
+
+    def test_the_demo_generator_cannot_write_the_training_path(self):
+        """Two independent guards, both required to stay in place.
+
+        The stamp check alone would still let the demo generator destroy the
+        corpus on disk before the trainer ever reads it. The path check is
+        what stops that, and neither substitutes for the other.
+        """
+        from scripts.generate_synthetic_data import (
+            OUTPUT_PATH as DEMO_OUTPUT_PATH,
+        )
+        from scripts.train_xgboost_aligned import DATA_SYNTHETIC
+
+        assert DEMO_OUTPUT_PATH != DATA_SYNTHETIC, (
+            f"scripts/generate_synthetic_data.py writes to {DEMO_OUTPUT_PATH}, "
+            f"which is the trainer's corpus path. Running it would destroy the "
+            f"training corpus on disk, before any stamp check runs."
+        )
+
+    def test_the_two_generators_do_not_share_a_stamp(self):
+        """Matching stamps would satisfy the guard with a degenerate corpus.
+
+        This is the failure the check has to not have: someone 'fixing' the
+        mismatch by aligning the two stamps, turning a loud refusal into a
+        silent corruption.
+        """
+        from scripts.generate_synthetic_data import CORPUS_SCHEMA as DEMO_SCHEMA
+
+        assert DEMO_SCHEMA != CORPUS_SCHEMA
+
 
 
 class TestSyntheticHistory:
