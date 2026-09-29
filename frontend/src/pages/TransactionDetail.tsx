@@ -108,18 +108,38 @@ const STATUS_TO_CLASSIFICATION: Record<string, string> = {
  * Map a fetched transaction into the ScoreResponse shape consumed by
  * ScoreResultCard. fired_rules is a client-side adapter constant only —
  * it is never part of any GET API response (not persisted in fraud_scores).
+ *
+ * `friction_level` and `action` are required on ScoreResponse, and the GET
+ * response carries neither: ScoreBreakdown (schemas/transaction.py) is the
+ * score arithmetic, while friction is a POST-only outcome. The mapping below
+ * mirrors `_determine_friction_level` in api/v1/transactions.py and is exact
+ * for the level — fraud → block, review → challenge, otherwise allow — because
+ * that half needs no arithmetic beyond the classification. `action` stays null
+ * rather than being derived: picking 3-D Secure over SMS needs the score
+ * against `threshold * 0.875`, and re-deriving a server policy here is exactly
+ * the second implementation that drifts. Nothing on this page reads either
+ * field. The real fix is for ScoreBreakdown to carry friction_level; this
+ * adapter should not have to guess it.
  */
 function buildScoreResponse(tx: Transaction): ScoreResponse {
+  const classification =
+    tx.scoring?.classification ?? statusToClassification(tx.status);
   return {
     transaction_id: tx.id,
     rule_score: tx.scoring?.rule_score ?? 0,
     ml_score: tx.scoring?.ml_score ?? 0,
     ensemble_score: tx.scoring?.ensemble_score ?? tx.risk_score ?? 0,
     threshold: tx.scoring?.threshold ?? 0,
-    classification:
-      tx.scoring?.classification ?? statusToClassification(tx.status),
+    classification,
     fired_rules: [],
     created_at: tx.created_at,
+    friction_level:
+      classification === "fraud"
+        ? "block"
+        : classification === "review"
+          ? "challenge"
+          : "allow",
+    action: null,
   };
 }
 

@@ -5,12 +5,16 @@ interface FixtureBase {
   transaction_id: string;
   threshold: number;
   created_at: string;
+  friction_level: string;
+  action: string | null;
 }
 
 const baseResponse: FixtureBase = {
   transaction_id: "test-uuid",
   threshold: 40,
   created_at: new Date().toISOString(),
+  friction_level: "allow",
+  action: null,
 };
 
 const fixtures: Record<string, ScoreResponse> = {
@@ -29,6 +33,8 @@ const fixtures: Record<string, ScoreResponse> = {
     ensemble_score: 62,
     classification: "review",
     fired_rules: ["high_amount"],
+    friction_level: "challenge",
+    action: "request_3d_secure",
   },
   fraud: {
     ...baseResponse,
@@ -37,14 +43,8 @@ const fixtures: Record<string, ScoreResponse> = {
     ensemble_score: 91,
     classification: "fraud",
     fired_rules: ["high_amount", "high_velocity", "new_merchant"],
-  },
-  ml_not_trained: {
-    ...baseResponse,
-    rule_score: 10,
-    ml_score: null,
-    ensemble_score: 11,
-    classification: "legitimate",
-    fired_rules: [],
+    friction_level: "block",
+    action: "block_transaction",
   },
 };
 

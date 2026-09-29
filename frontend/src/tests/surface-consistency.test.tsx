@@ -91,6 +91,8 @@ function renderChips(fired_rules: string[]) {
     ml_score: 88.0,
     ensemble_score: 91.0,
     fired_rules,
+    friction_level: "block",
+    action: "block_transaction",
   };
   return render(<ScoreResultCard result={result} />);
 }

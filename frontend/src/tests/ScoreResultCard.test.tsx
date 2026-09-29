@@ -7,6 +7,8 @@ const baseFixture = {
   transaction_id: "test-uuid",
   threshold: 40,
   created_at: new Date().toISOString(),
+  friction_level: "allow",
+  action: null,
 };
 
 describe("ScoreResultCard", () => {
@@ -44,6 +46,8 @@ describe("ScoreResultCard", () => {
       ml_score: 55.0,
       ensemble_score: 62.0,
       fired_rules: ["high_amount"],
+      friction_level: "challenge",
+      action: "request_3d_secure",
     };
     render(<ScoreResultCard result={result} />);
     expect(screen.getByText("Revisión")).toBeInTheDocument();
@@ -61,6 +65,8 @@ describe("ScoreResultCard", () => {
       ml_score: 88.0,
       ensemble_score: 91.0,
       fired_rules: ["high_amount", "high_velocity", "new_merchant"],
+      friction_level: "block",
+      action: "block_transaction",
     };
     render(<ScoreResultCard result={result} />);
     expect(screen.getByText("Fraude")).toBeInTheDocument();
@@ -68,26 +74,5 @@ describe("ScoreResultCard", () => {
     expect(screen.getByText("high_amount")).toBeInTheDocument();
     expect(screen.getByText("high_velocity")).toBeInTheDocument();
     expect(screen.getByText("new_merchant")).toBeInTheDocument();
-  });
-
-  it("renders ML-not-trained state when ml_score is null", () => {
-    const result: ScoreResponse = {
-      ...baseFixture,
-      classification: "legitimate",
-      rule_score: 10,
-      ml_score: null,
-      ensemble_score: 15.0,
-      fired_rules: [],
-    };
-    render(<ScoreResultCard result={result} />);
-    // ML-not-trained indicator
-    expect(screen.getByText("ML: no entrenado")).toBeInTheDocument();
-    // Rule and ensemble scores still render (15.0 appears in gauge + card)
-    expect(screen.getByText("10.0")).toBeInTheDocument();
-    expect(screen.getAllByText("15.0").length).toBeGreaterThan(0);
-    // Phosphor Brain icon present (single icon system)
-    expect(
-      document.querySelector('[data-testid="ml-untrained-icon"] svg'),
-    ).not.toBeNull();
   });
 });

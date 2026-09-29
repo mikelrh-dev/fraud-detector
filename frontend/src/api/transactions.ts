@@ -54,12 +54,29 @@ export interface CreateTransactionRequest {
 export interface ScoreResponse {
   transaction_id: string;
   rule_score: number;
-  ml_score: number | null;
+  // Non-nullable, and that is a real guarantee rather than an optimistic
+  // guess. ScoreResponse.ml_score is `float` in Pydantic (schemas/scoring.py),
+  // and scoring_service.py:154-158 is an explicit decision (A15): when the ML
+  // layer is absent the ensemble redistributes its weight and the *stored*
+  // value stays 0.0, because FraudScore.ml_score is a non-nullable column. The
+  // absence is recorded in `layers_used`, never by nulling the score. The wire
+  // therefore cannot carry a null here, and the old `number | null` let the
+  // client defend against a state the server cannot produce.
+  ml_score: number;
   ensemble_score: number;
   threshold: number;
   classification: string;
   fired_rules: string[];
   created_at: string;
+  // Required on the server (str) and required here. `action` is nullable on
+  // both sides: it is one of request_3d_secure | request_sms |
+  // request_biometric | block_transaction, or null when the transaction is
+  // allowed through with no friction. Both were missing from this interface
+  // while the sibling `Transaction.scoring` above carried a comment about
+  // backend guarantees -- two interfaces in one file disagreeing about the
+  // same backend.
+  friction_level: string;
+  action: string | null;
 }
 
 export interface TransactionFilters {

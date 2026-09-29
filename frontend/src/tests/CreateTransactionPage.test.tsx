@@ -58,6 +58,8 @@ const SCORE_FIXTURE: ScoreResponse = {
   ensemble_score: 11,
   classification: "legitimate",
   fired_rules: [],
+  friction_level: "allow",
+  action: null,
 };
 
 /**
