@@ -34,9 +34,23 @@ email-validator==2.3.0
 # Data Science / ML (imported by src/** — verified Wave 0)
 scikit-learn==1.5.0
 xgboost==2.1.0
-imbalanced-learn==0.12.0
+# 0.12.0 imports `parse_version` from `sklearn.utils`, which scikit-learn
+# removed in 1.5 — the pair below could not import. 0.12.4 is the first
+# release that works against scikit-learn 1.5.0 (and is what the running
+# container already has installed, so this file was the only thing out of
+# sync).  Reverting to 0.12.0 breaks every import of src.services.ml_model
+# consumers at collection time, not just training.
+imbalanced-learn==0.12.4
 joblib==1.4.2
 numpy==1.26.4
+# Not imported anywhere in src/ or scripts/ — it arrives transitively through
+# scikit-learn (`scikit-learn>=1.5` requires `scipy>=1.6.0`).  Declared with a
+# range, not an exact pin, for the same reason the imblearn line above exists:
+# an unbounded transitive upgrade is how the stack breaks.  The upper bound
+# keeps a scipy 2.0 major bump from silently breaking scikit-learn's internals
+# with nothing in this file to point at; the floor keeps the resolver from
+# choosing a scipy too old for the pinned scikit-learn.
+scipy>=1.11,<2.0
 pandas==2.2.0
 shap==0.46.0
 evidently==0.4.30
