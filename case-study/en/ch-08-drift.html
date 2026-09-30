@@ -60,25 +60,37 @@
         <p>PSI is the textbook measure here, and it is deliberately implemented directly rather than
         pulled in as a dependency — <code>DataDriftService._compute_psi</code> is about fifteen
         lines of numpy, and owning it means the binning, the epsilon guarding <code>log(0)</code>
-        and the threshold are all readable in one place. The figure below is that exact function
-        applied to two real windows of the corpus.</p>
-        <p>Two details make the monitor refuse to report confident nonsense. It will not evaluate at
-        all below a reference of 200 rows, and it records the SHA-256 prefix of the model artifact
-        that produced the reference — because a reference is only valid for the artifact it came
-        from, and comparing today's distribution against last quarter's model is not a drift signal,
-        it is two variables changing at once.</p>
+        and the threshold are all readable in one place. The figure below is not that function,
+        though: it comes from a second, self-contained PSI in the chart generator, which cuts its
+        bins from the <em>reference</em> window's deciles alone. The monitor pools the reference and
+        the current window together and cuts from the combined deciles instead. Those two sets of
+        edges land in different places as soon as the distribution moves, so the bars below are the
+        chart's own arithmetic — they show the shape of a shift, not a reading the monitor would
+        return.</p>
+        <p>Two details make the monitor refuse to report confident nonsense. It records the
+        SHA-256 prefix of the model artifact that produced the reference — because a reference is
+        only valid for the artifact it came from, and comparing today's distribution against last
+        quarter's model is not a drift signal, it is two variables changing at once. And it holds a
+        200-row floor on the one path where it invents its own baseline: auto-seeding a reference
+        from live traffic below that size returns an empty report instead of a number, because 200
+        rows is only 20 per bin. That floor guards the seeding path, not evaluation. An admin who
+        uploads a reference through the reference-data endpoint installs a baseline of whatever
+        size they send, and the next evaluation is measured against it without a row-count
+        check.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Horizontal bar chart of Population Stability Index per feature under a simulated drift scenario: amount towers at 0.634, far past the red critical line at 0.25, while velocity_5min shows a small bump at 0.016 and user_avg_amount, user_std_amount and velocity_1h stay flat near zero; dashed amber and red lines mark the conventional warn 0.10 and critical 0.25 thresholds." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Horizontal bar chart of Population Stability Index per feature under a simulated drift scenario: amount reaches 0.139, crossing the amber warn line at 0.10 but staying below the red critical line at 0.25; velocity_5min shows a small bump at 0.029 and user_avg_amount and user_std_amount sit at 0.001 with velocity_1h at 0.000; dashed amber and red lines mark the conventional warn 0.10 and critical 0.25 thresholds." width="1440" height="750">
           <figcaption><strong>Simulated drift scenario:</strong> PSI computed with plain numpy
           between two real windows of <code>data/synthetic_transactions.csv</code> — reference
           rows 0&ndash;24,999 untouched versus current rows 25,000&ndash;49,999 carrying a fully
           documented shift applied on top (<code>amount</code> &times;1.6 across the whole current
           window; <code>velocity_5min</code> &times;3 on its last 15%, the CSV column behind the
-          production feature <code>tx_count_last_5min</code>). Result: amount blows far past the
-          conventional critical threshold while untouched features hug zero — precisely what a real
-          spend-inflation attack would look like to this detector. The 0.10 / 0.25 lines are the
-          conventional industry readings of PSI (warn / critical), not project-specific alarms.
+          production feature <code>tx_count_last_5min</code>). Result: <code>amount</code> at
+          <strong>0.139</strong> is the only feature to cross a threshold at all, and it lands in
+          the warn band rather than past critical — every other feature stays at or below 0.029. That
+          selectivity is the point: the feature that was shifted is the one that moves, and the
+          three that were not do not. The 0.10 / 0.25 lines are the conventional industry readings
+          of PSI (warn / critical), not project-specific alarms.
           Artifact: <code>case-study/assets/feature-drift.png</code>, generated by
           <code>scripts/generate_case_study_charts.py</code>.</figcaption>
         </figure>

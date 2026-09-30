@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>04 Model Evaluation - Fraud Detector Case Study</title>
-  <meta name="description" content="Held-out evaluation of the fraud model: PR-AUC 0.7728 at the production threshold, and an error breakdown by behavioural archetype showing the model's remaining mistakes are the cases the corpus was built to be hard on.">
+  <meta name="description" content="Held-out evaluation of the fraud model: PR-AUC 0.7728 read off the score vector, precision 0.8353 and recall 0.7100 at the production threshold, and an error breakdown by behavioural archetype showing the model's remaining mistakes are the cases the corpus was built to be hard on.">
   <meta property="og:title" content="04 Model Evaluation - Fraud Detector Case Study">
-  <meta property="og:description" content="Held-out evaluation of the fraud model: PR-AUC 0.7728 at the production threshold, and an error breakdown by behavioural archetype showing the model's remaining mistakes are the cases the corpus was built to be hard on.">
+  <meta property="og:description" content="Held-out evaluation of the fraud model: PR-AUC 0.7728 read off the score vector, precision 0.8353 and recall 0.7100 at the production threshold, and an error breakdown by behavioural archetype showing the model's remaining mistakes are the cases the corpus was built to be hard on.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
@@ -82,12 +82,15 @@
           </tbody>
         </table>
         </div>
-        <p class="table-caption">Measured at the production operating point: the amount-tiered
-        threshold of Chapter 5 (70 / 50 / 45 / 40 by amount tier), not a flat 0.50 cut. Confusion
-        matrix on the test split: TN=9,886 · FP=14 · FN=29 · TP=71. The dummy row's PR-AUC of 0.010
-        is not a tuned number — it <em>is</em> the prevalence. A majority-class classifier scores
-        PR-AUC equal to the base rate by definition, so at 1% prevalence the entire useful range of
-        that metric lives between 0.010 and 1.000, and 0.7728 is roughly 76&times; the floor.</p>
+        <p class="table-caption">The three right-hand columns — precision, recall and F1 — are
+        measured at the production operating point: the amount-tiered threshold of Chapter 5
+        (70 / 50 / 45 / 40 by amount tier), not a flat 0.50 cut. PR-AUC and ROC-AUC are not: both
+        are read straight off the score vector and do not move with where any threshold sits.
+        Confusion matrix on the test split: TN=9,886 · FP=14 · FN=29 · TP=71. The dummy row's PR-AUC
+        of 0.010 is not a tuned number — it <em>is</em> the prevalence. A majority-class classifier
+        scores PR-AUC equal to the base rate by definition, so at 1% prevalence the entire useful
+        range of that metric lives between 0.010 and 1.000, and 0.7728 ÷ 0.010 = 77.3&times; the
+        floor.</p>
 
         <figure class="figure">
           <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Two confusion matrices side by side. At threshold 0.50: 9,890 true negatives, 10 false positives, 29 false negatives, 71 true positives. At the cost-optimal threshold 0.15: 9,840 true negatives, 60 false positives, 23 false negatives, 77 true positives." width="1440" height="660">
@@ -280,12 +283,17 @@
           is the analysis.</figcaption>
         </figure>
 
-        <p>There is also a floor worth naming: below a ratio of <strong>99.0&times;</strong> the
-        cheapest policy that involves no model at all is to review nothing, so the model only has to
-        beat a floor of 0.0100 per transaction. Above 99.0&times; that floor flips to 0.9900 — the cost
-        of reviewing every transaction — which is roughly 99&times; harder to clear. That breakeven is
-        a property of the base rate alone: it is the same number whether the model is excellent or
-        inverted, which is exactly why it cannot be used as evidence in either direction.</p>
+        <p>There is also a floor worth naming, and it is not a constant. Below a ratio of
+        <strong>99.0&times;</strong> the cheapest policy that involves no model at all is to review
+        nothing — and reviewing nothing costs the price of every missed fraud, so its cost per
+        transaction climbs with the ratio. At the 1% base rate that works out to
+        <code>p&nbsp;&times;&nbsp;C_fn</code>: 0.0100 at 1&times;, 0.1000 at 10&times;, 0.5000 at
+        50&times;. Each row of the sweep above is measured against its own floor, which is why a
+        model cost of 0.0291 at 10&times; still clears it. Above 99.0&times; the cheaper no-model
+        policy flips to reviewing every transaction and the floor becomes a fixed 0.9900 — roughly
+        99&times; harder to clear, and unmoved by the ratio. That breakeven is a property of the base
+        rate alone: it is the same number whether the model is excellent or inverted, which is
+        exactly why it cannot be used as evidence in either direction.</p>
       </div>
     </section>
 
@@ -336,7 +344,8 @@
         <code>n</code> column sums to the full 10,000; the top bin is genuinely empty and is left in
         rather than hidden. The model is systematically <em>over-confident in the middle</em> — every
         bin from 0.1 to 0.8 sits below the diagonal, and a score of 0.66 corresponded to a 0.00
-        observed fraud rate — and under-confident at the top. On a flat score this does not hurt
+        observed fraud rate — and <em>under</em>-confident at the top, where it scores 0.8692 against
+        an observed rate of 1.0000 and so understates the risk. On a flat score this does not hurt
         much, because the production thresholds sit at 40&ndash;70. It is still the thing to fix
         first, and the fix is a calibration step fit against the real class prior rather than a
         resampled one (Chapter 3).</p>

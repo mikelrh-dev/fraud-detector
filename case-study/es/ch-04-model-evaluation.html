@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>04 Evaluación del Modelo - Caso de Estudio Fraud Detector</title>
-  <meta name="description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
+  <meta name="description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 leído directamente del vector de scores, precisión 0.8353 y recall 0.7100 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
   <meta property="og:title" content="04 Evaluación del Modelo - Caso de Estudio Fraud Detector">
-  <meta property="og:description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
+  <meta property="og:description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 leído directamente del vector de scores, precisión 0.8353 y recall 0.7100 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="es_ES">
   <meta property="og:locale:alternate" content="en_US">
@@ -85,13 +85,15 @@
           </tbody>
         </table>
         </div>
-        <p class="table-caption">Medido en el punto operativo de producción: el umbral por monto del
-        Capítulo 5 (70 / 50 / 45 / 40 según el tramo de monto), no un corte plano en 0.50. Matriz de
-        confusión en el test split: TN=9.886 · FP=14 · FN=29 · TP=71. El PR-AUC de 0.010 de la fila
-        dummy no es un número ajustado — <em>es</em> la prevalencia. Un clasificador de clase
-        mayoritaria puntúa PR-AUC igual a la tasa base por definición, así que con 1% de prevalencia
-        todo el rango útil de esa métrica vive entre 0.010 y 1.000, y 0.7728 es unas 76&times; el
-        suelo.</p>
+        <p class="table-caption">Las tres columnas de la derecha —precisión, recall y F1— están
+        medidas en el punto operativo de producción: el umbral por monto del Capítulo 5
+        (70 / 50 / 45 / 40 según el tramo de monto), no un corte plano en 0.50. PR-AUC y ROC-AUC no:
+        ambos se leen directamente del vector de scores y no se mueven según dónde esté el umbral.
+        Matriz de confusión en el test split: TN=9.886 · FP=14 · FN=29 · TP=71. El PR-AUC de 0.010
+        de la fila dummy no es un número ajustado — <em>es</em> la prevalencia. Un clasificador de
+        clase mayoritaria puntúa PR-AUC igual a la tasa base por definición, así que con 1% de
+        prevalencia todo el rango útil de esa métrica vive entre 0.010 y 1.000, y
+        0.7728 ÷ 0.010 = 77,3&times; el suelo.</p>
 
         <figure class="figure">
           <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Dos matrices de confusión lado a lado. En el umbral 0.50: 9.890 verdaderos negativos, 10 falsos positivos, 29 falsos negativos, 71 verdaderos positivos. En el umbral costo-óptimo 0.15: 9.840 verdaderos negativos, 60 falsos positivos, 23 falsos negativos, 77 verdaderos positivos." width="1440" height="660">
@@ -292,13 +294,18 @@
           de 10:1 es un ejemplo didáctico; la tabla barrida de arriba es el análisis.</figcaption>
         </figure>
 
-        <p>También hay un suelo que merece nombrarse: por debajo de una ratio de
-        <strong>99.0&times;</strong> la política más barata que no involucra ningún modelo es no
-        revisar nada, así que el modelo solo tiene que superar un suelo de 0.0100 por transacción.
-        Por encima de 99.0&times; ese suelo salta a 0.9900 — el costo de revisar cada transacción —
-        que es unas 99&times; más difícil de superar. Ese punto de equilibrio es una propiedad
-        únicamente de la tasa base: es el mismo número tanto si el modelo es excelente como si
-        estuviera invertido, y por eso mismo no puede usarse como evidencia en ninguna dirección.</p>
+        <p>También hay un suelo que merece nombrarse, y no es una constante. Por debajo de una ratio
+        de <strong>99.0&times;</strong> la política más barata que no involucra ningún modelo es no
+        revisar nada — y no revisar nada cuesta el precio de cada fraude perdido, así que su costo
+        por transacción sube con la ratio. Con la tasa base del 1% eso da
+        <code>p&nbsp;&times;&nbsp;C_fn</code>: 0.0100 en 1&times;, 0.1000 en 10&times;, 0.5000 en
+        50&times;. Cada fila del barrido de arriba se mide contra su propio suelo, y por eso un
+        costo de modelo de 0.0291 en 10&times; todavía lo supera. Por encima de 99.0&times; la
+        política más barata sin modelo pasa a ser revisar cada transacción y el suelo se vuelve un
+        0.9900 fijo — unas 99&times; más difícil de superar, e inmutable frente a la ratio. Ese
+        punto de equilibrio es una propiedad únicamente de la tasa base: es el mismo número tanto si
+        el modelo es excelente como si estuviera invertido, y por eso mismo no puede usarse como
+        evidencia en ninguna dirección.</p>
       </div>
     </section>
 
@@ -350,10 +357,11 @@
         genuinamente vacío y se deja visible en lugar de ocultarse. El modelo
         es sistemáticamente <em>sobreconfiante en el medio</em> — todos los bins entre 0.1 y 0.8
         quedan por debajo de la diagonal, y un score de 0.66 correspondió a una
-        tasa de fraude observada de 0.00 — y autoconfidente en la parte alta. Sobre un score plano
-        esto molesta poco, porque los umbrales de producción se sitúan entre 40 y 70. Aun así es lo
-        primero que habría que arreglar, y el arreglo es un paso de calibración ajustado contra la
-        tasa base real y no contra una remuestreada (Capítulo 3).</p>
+        tasa de fraude observada de 0.00 — y con <em>baja confianza</em> en la parte alta, donde
+        puntúa 0.8692 frente a una tasa observada de 1.0000 y por tanto subestima el riesgo. Sobre
+        un score plano esto molesta poco, porque los umbrales de producción se sitúan entre 40 y 70.
+        Aun así es lo primero que habría que arreglar, y el arreglo es un paso de calibración
+        ajustado contra la tasa base real y no contra una remuestreada (Capítulo 3).</p>
       </div>
     </section>
 

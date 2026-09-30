@@ -61,25 +61,37 @@
         <p>PSI es la medida de manual en este caso, y se implementa deliberadamente en casa en
         lugar de traerse como dependencia — <code>DataDriftService._compute_psi</code> son unas
         quince líneas de numpy, y Poseerla significa que el binned, el épsilon que protege
-        <code>log(0)</code> y el umbral son todos legibles en un solo sitio. La figura de abajo es
-        exactamente esa función aplicada a dos ventanas reales del corpus.</p>
-        <p>Dos detalles hacen que el monitor se niegue a reportar insensatez con confianza. No
-        evalúa por debajo de una referencia de 200 filas, y graba el prefijo SHA-256 del artefacto del
-        modelo que produjo esa referencia — porque una referencia solo es válida para el artefacto
-        del que salió, y comparar la distribución de hoy contra el modelo del trimestre pasado no es
-        una señal de drift, son dos variables cambiando a la vez.</p>
+        <code>log(0)</code> y el umbral son todos legibles en un solo sitio. La figura de abajo no
+        es esa función: viene de un segundo PSI autónomo en el generador de gráficos, que corta sus
+        bins solo con los deciles de la ventana de <em>referencia</em>. El monitor agrupa la
+        referencia y la ventana actual y corta con los deciles combinados. Los dos conjuntos de
+        bordes caen en sitios distintos en cuanto la distribución se mueve, así que las barras de
+        abajo son la aritmética del propio gráfico: muestran la forma de un shift, no una lectura
+        que devolvería el monitor.</p>
+        <p>Dos detalles hacen que el monitor se niegue a reportar insensatez con confianza. Graba
+        el prefijo SHA-256 del artefacto del modelo que produjo esa referencia — porque una
+        referencia solo es válida para el artefacto del que salió, y comparar la distribución de
+        hoy contra el modelo del trimestre pasado no es una señal de drift, son dos variables
+        cambiando a la vez. Y mantiene un suelo de 200 filas en el único camino donde se inventa su
+        propia línea base: auto-sembrar una referencia desde tráfico en vivo por debajo de ese
+        tamaño devuelve un informe vacío en lugar de un número, porque 200 filas son solo 20 por
+        bin. Ese suelo protege el sembrado, no la evaluación: un admin que sube una referencia por
+        el endpoint de reference-data instala una línea base del tamaño que envíe, y la siguiente
+        evaluación se mide contra ella sin ninguna comprobación de número de filas.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Gráfico de barras horizontales del Population Stability Index por feature bajo un escenario de drift simulado: amount se dispara a 0,634, muy por encima de la línea crítica roja en 0,25, mientras velocity_5min muestra una pequeña suba en 0,016 y user_avg_amount, user_std_amount y velocity_1h quedan planos cerca de cero; líneas punteadas ámbar y roja marcan los umbrales convencionales warn 0,10 y critical 0,25." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Gráfico de barras horizontales del Population Stability Index por feature bajo un escenario de drift simulado: amount llega a 0,139, cruzando la línea ámbar de aviso en 0,10 pero por debajo de la línea crítica roja en 0,25; velocity_5min muestra una pequeña suba en 0,029 y user_avg_amount y user_std_amount se quedan en 0,001 con velocity_1h en 0,000; líneas punteadas ámbar y roja marcan los umbrales convencionales warn 0,10 y critical 0,25." width="1440" height="750">
           <figcaption><strong>Escenario de drift simulado:</strong> PSI calculado con numpy puro
           entre dos ventanas reales de <code>data/synthetic_transactions.csv</code> — filas
           0&ndash;24.999 de referencia intactas contra filas 25.000&ndash;49.999 actuales llevando
           un shift completamente documentado aplicado encima (<code>amount</code>
           &times;1,6 sobre toda la ventana actual; <code>velocity_5min</code> &times;3 sobre su
           último 15%, la columna del CSV detrás de la feature de producción
-          <code>tx_count_last_5min</code>). Resultado: amount rebasa con creces el umbral crítico
-          convencional mientras las features intactas se pegan a cero — exactamente cómo
-          se vería un ataque real de inflación de importes ante este detector. Las líneas
+          <code>tx_count_last_5min</code>). Resultado: <code>amount</code> con
+          <strong>0,139</strong> es la única feature que cruza algún umbral, y cae en la banda de
+          aviso en lugar de rebasar la crítica — todas las demás se quedan en 0,029 o menos. Esa
+          selectividad es el punto: la feature que se desplazó es la que se mueve, y las tres que
+          no, no. Las líneas
           0,10 / 0,25 son las lecturas convencionales de la industria para PSI (warn / critical),
           no alarmas específicas del proyecto. Artefacto:
           <code>case-study/assets/feature-drift.png</code>, generado por
