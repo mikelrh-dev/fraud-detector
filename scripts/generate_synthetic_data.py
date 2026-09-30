@@ -9,7 +9,7 @@ import csv
 import random
 from datetime import datetime, timedelta, timezone
 
-from src.core.ml_constants import CATEGORY_ALIASES, MERCHANT_RISK_CATEGORIES
+from src.core.ml_constants import CATEGORY_ALIAS_SPELLINGS, normalize_category
 
 # Configuration
 NUM_TRANSACTIONS = 50_000
@@ -142,9 +142,14 @@ def generate_transaction(txn_id: int, base_time: datetime) -> dict:
         hour_offset = random.randint(0, 720)  # Up to 30 days apart
         ts = base_time + timedelta(hours=hour_offset)
 
-    # Resolve alias for is_crypto check
-    resolved_cat = CATEGORY_ALIASES.get(merchant_category, merchant_category)
-    is_crypto = resolved_cat == "cryptocurrency"
+    # Resolve the alias for the is_crypto check through the shared normalizer.
+    # This was a raw `CATEGORY_ALIASES.get(merchant_category, merchant_category)`,
+    # and the keys of that table are stored NORMALIZED (ml_constants.py says so
+    # directly above it), so any spelling carrying a separator, a space run or a
+    # capital missed the table entirely and fell through to the default — the
+    # input unchanged. `Crypto-Exchange` is a crypto exchange by every reading
+    # and was recorded here as is_crypto=0.
+    is_crypto = normalize_category(merchant_category) == "cryptocurrency"
     is_round = amount % 100 == 0 and amount > 0
 
     if is_fraud:
@@ -185,11 +190,19 @@ def generate_fraudulent_tx(user: dict) -> tuple[float, str, str]:
     # Use canonical risk categories (with occasional alias for realism)
     risk_cats = ["cryptocurrency", "money_transfer", "gambling", "adult", "pharmacy"]
     merchant_category = random.choice(risk_cats)
-    # Occasionally emit alias form so training data sees both variants
+    # Occasionally emit alias form so training data sees both variants.
+    #
+    # This was `CATEGORY_ALIASES.get(merchant_category)`, which looks a CANONICAL
+    # name up in a table keyed BY ALIAS: None for cryptocurrency /
+    # money_transfer / gambling, and the identical string for adult / pharmacy.
+    # The branch was dead, so the comment above it described code that never
+    # ran. Resolving through `normalize_category` cannot fix this one — on a
+    # canonical name it returns the canonical name — so emission draws from the
+    # shared INVERSION of the table, CATEGORY_ALIAS_SPELLINGS.
     if random.random() < 0.15:
-        alias = CATEGORY_ALIASES.get(merchant_category)
-        if alias:
-            merchant_category = random.choice([merchant_category, alias])
+        spellings = CATEGORY_ALIAS_SPELLINGS.get(merchant_category)
+        if spellings:
+            merchant_category = random.choice(spellings)
 
     if pattern == "amount_outlier":
         amount = round(user["avg_amount"] + user["std_amount"] * random.uniform(5, 20), 2)

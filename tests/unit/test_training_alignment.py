@@ -239,6 +239,137 @@ class TestCorpusCarriesAliasSpellings:
         assert emitted, "no emitted category is a known alias key"
 
 
+class TestDemoGeneratorUsesTheSharedNormalizer:
+    """scripts/generate_synthetic_data.py must not roll its own alias lookup.
+
+    Two call sites did a raw `CATEGORY_ALIASES.get(...)`, and
+    `ml_constants.py:105-107` warns in as many words that keys are stored in
+    NORMALIZED form, so a raw lookup silently never matches. This is a demo /
+    seed generator, so the blast radius is notebooks and dashboards rather than
+    production — which is exactly why the defect could sit here unnoticed.
+    """
+
+    def test_no_raw_alias_lookup_survives_in_the_demo_generator(self):
+        """The structural guard: the raw dict is never consulted in code.
+
+        Parsed rather than text-matched. A substring scan also fires on the
+        comments that quote the old line to explain why it was wrong, and
+        `production_call_count` in test_audit_orphans.py exists because this
+        repository already learned what a comment that looks like code costs.
+        An `ast.Attribute(value=Name('CATEGORY_ALIASES'), attr='get')` is the
+        actual offence and nothing else is.
+        """
+        import ast
+
+        import scripts.generate_synthetic_data as demo
+
+        tree = ast.parse(Path(demo.__file__).read_text(encoding="utf-8"))
+        offenders = [
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and node.attr == "get"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "CATEGORY_ALIASES"
+        ]
+        assert not offenders, (
+            f"raw CATEGORY_ALIASES.get at line(s) {offenders} of the demo "
+            f"generator. Keys are stored normalized, so a raw lookup never "
+            f"matches — use normalize_category() to resolve and "
+            f"CATEGORY_ALIAS_SPELLINGS to emit."
+        )
+
+    def test_the_demo_generator_does_not_import_the_raw_table(self):
+        """Importing `CATEGORY_ALIASES` at all is the smell.
+
+        The forward table is the wrong tool in a producer: it answers "what does
+        this spelling mean", never "what else could this category be called".
+        A generator needs the second question, which is the inversion.
+        """
+        import ast
+
+        import scripts.generate_synthetic_data as demo
+
+        tree = ast.parse(Path(demo.__file__).read_text(encoding="utf-8"))
+        imported: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                imported.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.Import):
+                imported.extend(alias.name for alias in node.names)
+
+        assert "CATEGORY_ALIASES" not in imported, (
+            "the demo generator imports CATEGORY_ALIASES; it should use "
+            "normalize_category and CATEGORY_ALIAS_SPELLINGS instead"
+        )
+
+    def test_is_crypto_survives_a_non_normalized_spelling(self, monkeypatch):
+        """The miss `is_crypto` is computed from, reproduced end to end.
+
+        `Crypto-Exchange` folds to `crypto exchange`, which IS a key. The raw
+        `.get()` compared the un-normalized string, found nothing, and returned
+        the input — so `is_crypto` was 0 for a transaction that is
+        cryptocurrency by any reading. The feature is then indistinguishable in
+        the generated corpus from a genuinely non-crypto transaction.
+        """
+        import random as _random
+
+        import scripts.generate_synthetic_data as demo
+
+        monkeypatch.setattr(_random, "random", lambda: 0.0)  # force the fraud branch
+        monkeypatch.setattr(
+            demo,
+            "generate_fraudulent_tx",
+            lambda user: (100.0, "Crypto-Exchange", "Exchange Ltd"),
+        )
+
+        tx = demo.generate_transaction(1, datetime(2024, 1, 1, tzinfo=timezone.utc))
+
+        assert tx["merchant_category"] == "Crypto-Exchange"
+        assert tx["is_crypto"] == 1, (
+            "a crypto exchange was labelled is_crypto=0 because the demo "
+            "generator resolved the alias with a raw dict lookup"
+        )
+
+    def test_is_crypto_is_zero_for_a_genuinely_non_crypto_category(self, monkeypatch):
+        """The other direction, so the fix is not just 'always 1'."""
+        import random as _random
+
+        import scripts.generate_synthetic_data as demo
+
+        monkeypatch.setattr(_random, "random", lambda: 0.0)
+        monkeypatch.setattr(
+            demo,
+            "generate_fraudulent_tx",
+            lambda user: (100.0, "grocery", "Tienda"),
+        )
+
+        tx = demo.generate_transaction(2, datetime(2024, 1, 1, tzinfo=timezone.utc))
+
+        assert tx["is_crypto"] == 0
+
+    def test_the_demo_generator_actually_emits_an_alias_spelling(self):
+        """The other call site was a dead branch, not a wrong one.
+
+        It read `CATEGORY_ALIASES.get(canonical_name)`, which is None for
+        cryptocurrency / money_transfer / gambling and the identical string for
+        adult / pharmacy — so the "occasionally emit alias form so training data
+        sees both variants" comment above it described code that never ran.
+        """
+        import scripts.generate_synthetic_data as demo
+
+        seen = {demo.generate_fraudulent_tx(demo.USERS[0])[1] for _ in range(4000)}
+        canonical = {normalize_category(c) for c in seen}
+        aliases = {c for c in seen if c not in canonical}
+
+        assert aliases, (
+            "4,000 generated fraud rows produced no alias spelling — the demo "
+            "corpus exercises the canonical names only"
+        )
+        for alias in aliases:
+            assert normalize_category(alias) in canonical
+
+
 class TestSyntheticCsvRoundTrip:
     """CSV save/load round-trips the velocity columns."""
 
