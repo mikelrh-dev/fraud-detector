@@ -37,43 +37,48 @@ DELIBERATE_MAINTENANCE_API = {
 #: Violations found by this test, recorded rather than deleted. Each names the
 #: audit finding that produced it.
 #:
-#: EMPTY. Both entries the 2026-09-29 audit added are resolved:
+#: NOT EMPTY. It holds eight live exemptions. An earlier revision of this
+#: comment said "EMPTY" three times while this dict carried those eight entries,
+#: which is a dangerous kind of wrong: a maintainer who believed it would delete
+#: the dict, turning eight xfails into eight hard failures, and a maintainer who
+#: half-believed it could not tell which entries were open. The count below is
+#: now enforced by `test_the_exemption_count_on_the_page_is_accurate`.
 #:
-#: - `list_transactions` (TST-02) — deleted, with its service-only test. The
-#:   endpoint's `list_transactions_endpoint` was always the real implementation.
-#: - `enqueue_for_retry` (TST-01) — deleted, with its tests. The LLM worker's
-#:   `_recovery_loop` already owns requeue/PEL/DLQ handling.
+#: The eight, by what they are:
+#:   - `MonitoringService` — a capability wired nowhere, not dead code. Its
+#:     decision is recorded on its entry.
+#:   - `FrozenClock` — a test utility that lives in src/ and should move.
+#:   - `enqueue` / `dequeue` — the unused LLM-worker wrapper pair; the worker
+#:     calls redis directly. Both were hidden because a COMMENT mentioning
+#:     `dequeue` was being counted as a caller.
+#:   - `migrate_legacy_list` — a stream migration path never wired up.
+#:   - `alerts_per_day` / `optimal_threshold` / `breakeven_cost_ratio` — dead in
+#:     cost_model.py.
 #:
-#: The dict is kept rather than removed so the next real violation has a named
-#: place to be recorded, and so the absence of entries is a fact on the page
-#: rather than an absence nobody has to go looking for.
+#: `test_every_exemption_is_still_a_live_violation` keeps the set honest in the
+#: other direction: wire one of these up and the entry must be deleted, so an
+#: exemption can never outlive the problem it excuses.
+#:
+#: WHAT THE GUARD DOES NOT COVER. Stated because a guard whose own comment
+#: overstates it is the defect class this repository keeps auditing.
+#:   - `src/` only. A caller in `scripts/`, `alembic/` or `notebooks/` is
+#:     invisible, and no CI gate reads those either.
+#:   - It fires only for a symbol that is BOTH uncalled and test-referenced.
+#:     Dead code no test touches cannot be seen by it at all.
+#:   - Two skip paths bypass this dict entirely and are deliberate:
+#:     `is_route` (FastAPI invokes handlers through the router, never by name)
+#:     and `DELIBERATE_MAINTENANCE_API` (one entry, `reset`, with its reason).
+#:     So "eight exemptions" is not "eight ways a test can be suppressed" —
+#:     those two are skips, not exemptions, and they are counted separately.
 #:
 #: On strictness, because the earlier version of this comment claimed it: the
 #: exemption used the imperative `pytest.xfail(reason)`, which has NO `strict`
 #: parameter (`pytest.xfail(reason: str = "")` is the entire signature) and so
-#: never turned a resolved exemption into an XPASS failure. The enforcement
-#: that actually happened ran the other way -- taking a name OUT of this dict
-#: turns a live dead symbol red, which is how TST-01 was caught.
-#:
-#: On coverage, because the previous revision of this comment ALSO claimed it
-#: and was wrong twice over. With this dict empty it is true that no
-#: `KNOWN_VIOLATIONS` entry can exempt anything. It is NOT true that nothing is
-#: exempt, and this file must not imply that: two skip paths remain live and
-#: deliberate -- `is_route` (FastAPI invokes handlers through the router, never
-#: by name) and `DELIBERATE_MAINTENANCE_API` (one entry, `reset`, with its
-#: reason on the page). Both are stated rather than hidden because a guard whose
-#: own comment overstates it is the defect class this repository keeps auditing.
-#:
-#: Two further limits, so the property is not read as stronger than it is:
-#:   - It covers `src/` only. A caller in `scripts/`, `alembic/` or `notebooks/`
-#:     is invisible, and no CI gate reads those either.
-#:   - It fires only for a symbol that is BOTH uncalled and test-referenced.
-#:     Dead code no test touches cannot be seen by it at all.
-#: Violations found by this test, recorded rather than deleted, so the gate stays
-#: green and each one is visible on the page. All eight surfaced at once when
-#: `production_call_count` was corrected to parse instead of text-match: a comment
-#: had been counting as a caller, which hid every symbol whose only mention was
-#: prose. See `tests/test_audit_orphans.py` module docstring.
+#: never turned a resolved exemption into an XPASS failure. The enforcement that
+#: actually happened ran the other way -- taking a name OUT of this dict turns a
+#: live dead symbol red, which is how TST-01 was caught. That is why the
+#: staleness test above is written as an explicit assertion rather than relied on
+#: from `xfail` semantics.
 KNOWN_VIOLATIONS = {
     "MonitoringService": (
         "AUDIT-2026-09-29: NOT dead code — a capability that is wired nowhere. "
@@ -181,6 +186,85 @@ def production_call_count(name: str, symbols: list[tuple[str, Path, bool]]) -> i
                     if (alias.asname or alias.name).split(".")[0] == name:
                         hits += 1
     return hits
+
+
+def _known_violations_comment() -> str:
+    """The comment block immediately above KNOWN_VIOLATIONS."""
+    source = _read(Path(__file__))
+    start = source.index("#: Violations found by this test")
+    end = source.index("KNOWN_VIOLATIONS = {")
+    return source[start:end]
+
+
+def test_the_exemption_count_on_the_page_is_accurate():
+    """The comment states a number. This makes the number true.
+
+    This comment previously said "EMPTY" three times while the dict held eight
+    entries, and nothing failed, because prose is not executable. The count is
+    pinned here so that adding or removing an entry forces a deliberate edit of
+    the sentence describing it, instead of the two drifting apart in silence.
+    """
+    assert len(KNOWN_VIOLATIONS) == 8, (
+        f"KNOWN_VIOLATIONS holds {len(KNOWN_VIOLATIONS)} entries, not 8. Its "
+        f"comment states the count and names the entries — update both, and say "
+        f"what the new entry is, so the page stays true."
+    )
+    assert "eight" in _known_violations_comment().lower()
+
+
+def test_the_exemption_comment_does_not_claim_the_dict_is_empty():
+    """A narrow literal guard on a specific, already-observed regression.
+
+    Weak on purpose and weak on record: this asserts a string, not a behaviour.
+    It is here because this exact false claim shipped three times in this
+    comment, and a reader who believes it deletes the dict and turns eight
+    xfails into eight failures. The substantive guards are the two tests above.
+    """
+    comment = _known_violations_comment().lower()
+    assert "not empty" in comment, (
+        "the KNOWN_VIOLATIONS comment must open by denying it is empty, since "
+        "it is not and three revisions of this file claimed otherwise"
+    )
+    for false_claim in ("#: empty.", "dict is empty", "is currently empty"):
+        assert false_claim not in comment, (
+            f"the KNOWN_VIOLATIONS comment still claims {false_claim!r}, which "
+            f"is false — it holds {len(KNOWN_VIOLATIONS)} live exemptions"
+        )
+
+
+@pytest.mark.parametrize("name", sorted(KNOWN_VIOLATIONS))
+def test_every_exemption_is_still_a_live_violation(name: str):
+    """An exemption for a symbol that now HAS a caller is stale.
+
+    This is the forward guard for the confusion the `KNOWN_VIOLATIONS` comment
+    used to cause: a reader who believed the dict was empty would delete it, and
+    a reader who could not tell which entries were live would trust a resolved
+    finding. Both errors are prevented by the comment now counting the entries
+    and naming them, and this test is what keeps that count honest — wiring one
+    of these eight symbols up has to remove its exemption, not leave it behind
+    reading as an open finding.
+    """
+    assert production_call_count(name, public_symbols()) == 0, (
+        f"{name} is in KNOWN_VIOLATIONS but now has a production caller. "
+        f"The exemption is stale — remove it and the guard will police the "
+        f"symbol for real from now on."
+    )
+
+
+@pytest.mark.parametrize("name", sorted(KNOWN_VIOLATIONS))
+def test_every_exemption_carries_its_reason(name: str):
+    """An exemption without a reason is indistinguishable from a suppression.
+
+    The whole reason this dict is allowed to exist at all is that each entry is
+    challengeable: a reader has to be able to disagree with it. An empty string
+    is a suppression wearing the costume of a finding.
+    """
+    reason = KNOWN_VIOLATIONS[name]
+    assert reason.strip(), f"{name} is exempt with no reason recorded"
+    assert "AUDIT-" in reason, (
+        f"{name}'s reason does not name the audit finding that produced it, so "
+        f"there is nothing to look up"
+    )
 
 
 @pytest.mark.parametrize(
