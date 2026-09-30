@@ -8,7 +8,7 @@
 >
 > 🧭 **Wiki técnica:** consulta la [wiki para desarrolladores](docs/wiki/index.md), con el modelo del sistema, arquitectura, scoring, workers, ML y operación.
 
-Sistema híbrido de detección de fraude en transacciones financieras. Un **motor de reglas determinista** (9 reglas), un **modelo ML supervisado** (XGBoost) y un **LLM local** (Ollama) que redacta informes explicativos para analistas — el LLM nunca decide, solo explica.
+Sistema híbrido de detección de fraude en transacciones financieras. Un **motor de reglas determinista** (7 reglas), un **modelo ML supervisado** (XGBoost) y un **LLM local** (Ollama) que redacta informes explicativos para analistas — el LLM nunca decide, solo explica.
 
 > **Sobre el modelo ML, sin rodeos:** está entrenado sobre un **corpus sintético** de arquetipos de fraude generado en este repositorio — no con PaySim, ni con datos bancarios. Las reglas deciden; la capa ML aporta un 25% calibrado. Las cifras medidas y los límites conocidos están en [Qué hace el modelo y qué no](#qué-hace-el-modelo-y-qué-no).
 
@@ -17,17 +17,17 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 ## Características destacadas
 
 - **Scoring ensemble de 3 capas**: reglas 60% + ML 25% + contexto 15%, con umbrales de fraude dinámicos por tier de monto
-- **9 reglas deterministas**: importe, velocidad, riesgo de merchant, card mismatch, patrones nocturnos, country mismatch y proximidad a redes de fraude
+- **7 reglas deterministas**: importe, velocidad, riesgo de merchant, patrones nocturnos y proximidad a redes de fraude
 - **XGBoost** con 10 features engineered, degradación elegante (el sistema funciona con `ml_score = 0` si no hay modelo)
 - **Explicabilidad SHAP**: top-5 contribuciones de features persistidas por transacción
 - **Detección de redes de fraude**: grafo dirigido (NetworkX), marca usuarios a ≤ 2 saltos de un defraudador conocido
 - **Detección de suplantación de merchant**: embeddings sentence-transformers + similitud coseno (detecta `AMAZ0N_STORE` → `Amazon`)
 - **Redis Streams** con consumer groups, recuperación de mensajes pendientes (`XAUTOCLAIM`) y dead-letter queue
-- **Monitoreo del modelo**: drift con Evidently + PSI propio, triggers automáticos de reentrenamiento (F1 < 0.7 o drift > 30) — implementados, aún no ejercitados contra una referencia poblada
+- **Monitoreo del modelo**: drift con PSI propio, triggers automáticos de reentrenamiento (F1 < 0.7 o drift > 30) — implementados, aún no ejercitados contra una referencia poblada
 - **Audit trail inmutable** con checksums SHA-256 en cada decisión de scoring y acción de analista
 - **Auth JWT** (access + refresh + blacklist), acceso por roles (user/admin), rate limiting por ruta
 - **Dashboard React 19** con tendencias de score, tarjetas SHAP y flujo de trabajo de alertas
-- **846 tests de backend** (unitarios + integración) y 746 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker)
+- **1210 tests de backend** (unitarios + integración) y 789 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker)
 
 ## Arquitectura
 
@@ -35,7 +35,7 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 flowchart TB
     FE["Dashboard React 19"] -->|"REST + JWT"| API["FastAPI (async)"]
 
-    API --> RE["Capa 1 · Rule Engine<br/>9 reglas deterministas"]
+    API --> RE["Capa 1 · Rule Engine<br/>7 reglas deterministas"]
     API --> ML["Capa 2 · XGBoost<br/>10 features engineered"]
     API --> CTX["Capa 3 · Contexto<br/>historial · geo · tiempo"]
 
@@ -54,7 +54,7 @@ flowchart TB
     W2 -. "3 reintentos fallidos" .-> DLQ
 ```
 
-**Stack:** Python 3.11 · FastAPI · PostgreSQL 16 (asyncpg) · Redis 7 (Streams) · XGBoost · SHAP · NetworkX · sentence-transformers · Evidently · Ollama · React 19 + TypeScript + Vite + Tailwind 4 · Docker Compose (8 servicios)
+**Stack:** Python 3.11 · FastAPI · PostgreSQL 16 (asyncpg) · Redis 7 (Streams) · XGBoost · SHAP · NetworkX · sentence-transformers · Ollama · React 19 + TypeScript + Vite + Tailwind 4 · Docker Compose (8 servicios)
 
 ## Cómo se puntúa una transacción
 
@@ -66,12 +66,15 @@ La clasificación se compara contra un umbral dinámico que se endurece con mont
 
 | Tier de monto | Umbral de fraude |
 |---|---|
-| $0 – $1,000 | ≥ 70 |
-| $1,001 – $10,000 | ≥ 50 |
-| $10,001 – $50,000 | ≥ 45 |
-| $50,001+ | ≥ 40 |
+| $0 – $1,000 | > 70 |
+| $1,001 – $10,000 | > 50 |
+| $10,001 – $50,000 | > 45 |
+| $50,001+ | > 40 |
 
-La banda `review` arranca al 75% del umbral del tier. Por debajo, la transacción es `legitimate`.
+La puntuación debe ser **estrictamente mayor** que el umbral del tier para ser `fraud`; los
+tiers son semiabiertos `[min, max)`, así que no hay huecos en un límite. La banda `review`
+arranca al 75% del umbral del tier (`>=`, porque ese es el comienzo de la banda). Por debajo,
+la transacción es `legitimate`.
 
 ### Capa 1 — Motor de Reglas (determinista, tope 100)
 
@@ -80,14 +83,27 @@ La banda `review` arranca al 75% del umbral del tier. Por debajo, la transacció
 | `high_amount` | 35 | importe > $1,000 |
 | `velocity_burst` | 30 | > 1 txn en 5 min en categoría de riesgo |
 | `high_velocity` | 25 | > 3 txns en 5 minutos |
-| `off_hours_crypto` | 25 | horario nocturno (0–6) + categoría de riesgo |
-| `unusual_merchant` | 20 | merchant en blacklist o categoría de riesgo |
-| `card_mismatch` | 20 | tarjeta fuera de las conocidas del usuario |
-| `country_mismatch` | 15 | país de la txn ≠ país del usuario |
+| `off_hours_crypto` | 25 | horario nocturno (0–6) **y** categoría adversarial |
+| `unusual_merchant` | 20 | merchant en blacklist **o** categoría adversarial **o** categoría regulada con corroboración |
 | `near_fraud` | 15 | usuario a ≤ 2 saltos de un defraudador (grafo) |
 | `unusual_hours` | 10 | txn entre 00:00–06:00 |
 
-Categorías de riesgo: `btc`, `crypto`, `gambling`, `casino`, `money_transfer`.
+El total es la suma de los pesos disparados, con tope 100.
+
+Las categorías de merchant están jerarquizadas, y el nivel decide cuánto vale la categoría por
+sí sola (`src/core/ml_constants.py`):
+
+- **Adversarial** — la categoría es en sí misma evidencia de riesgo, así que `off_hours_crypto`
+  y `unusual_merchant` se disparan con ella sola: `cryptocurrency`, `gambling`, `casino`, `adult`
+  (`crypto` y `btc` son grafías alias que se normalizan a `cryptocurrency`).
+- **Regulada** — es normal para el negocio, así que solo cuenta como *corroboración*:
+  `unusual_merchant` se dispara con `pharmacy` o `money_transfer` solo cuando va acompañada de
+  velocidad, una hora nocturna o un merchant en blacklist.
+- **Conjunto de riesgo** (`MERCHANT_RISK_CATEGORIES`, 8 grafías — la unión de ambos niveles) — lo
+  que comprueban `velocity_burst` y el feature engine.
+
+La división es deliberada. Una única lista plana de "riesgo" cobraba 20 puntos de regla a cada
+compra en una farmacia y a cada remesa sin ninguna evidencia.
 
 ### Capa 2 — Modelo ML (XGBoost)
 
@@ -158,7 +174,7 @@ Segunda, el modelo tiene que superar *ambas* políticas sin modelo, y en este co
 ## Explicabilidad, Monitoreo y Auditoría
 
 - **SHAP** (`TreeExplainer` sobre XGBoost): top-5 atribuciones calculadas async por transacción puntuada, visualizadas en el dashboard.
-- **Detección de drift**: Evidently `DataDriftPreset` (distribuciones referencia vs actual) más una implementación PSI propia. `GET /api/v1/monitoring/drift`.
+- **Detección de drift**: una implementación PSI propia (distribuciones referencia vs actual). `GET /api/v1/monitoring/drift`.
 - **Triggers de reentrenamiento**: se activan con `F1 < 0.7` o `drift_score > 30` (verificado en `MonitoringService`). La lógica está viva; la referencia de drift contra la que se compara nunca se ha poblado con una ventana completa, y ahora se niega a sembrarse con menos de 200 filas.
 - **Audit trail**: cada score, revisión de analista e informe LLM se registra con checksums SHA-256. La exportación de actividad de analistas es solo admin.
 
@@ -215,10 +231,14 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
+# Obligatorio: Settings tiene tres campos sin default (DB_PASSWORD, REDIS_PASSWORD,
+# REDIS_URL), así que la app no puede importarse sin un .env.
+cp .env.example .env
+
 # Solo infraestructura
 docker compose up postgres redis ollama -d
 
-python scripts/init_db.py
+python scripts/init_db.py    # create_all; el loop de dev no corre alembic
 uvicorn src.api.main:app --reload
 
 # Frontend (segunda terminal)
@@ -286,13 +306,32 @@ Si el artefacto falta o no se puede leer, la API igualmente arranca y puntúa, a
 |---|---|---|
 | GET | `/api/v1/transactions/{id}/report` | user — informe LLM (200 / 202 / 404) |
 | GET | `/api/v1/monitoring/drift` | user — análisis de drift |
+| GET | `/api/v1/monitoring/dashboard` | user — agregados del dashboard |
+| GET | `/api/v1/monitoring/metrics` | analyst + admin — métricas de corridas ML |
+| POST | `/api/v1/monitoring/reference-data` | **admin** — sembrar la ventana de referencia de drift |
 | GET | `/api/v1/audit/transactions/{id}` | user — trail de decisiones |
 | GET | `/api/v1/audit/analysts/{uid}` | **admin** — actividad del analista |
 | POST | `/api/v1/audit/export` | **admin** — exportar por rango de fechas |
 
-Health: `GET /health`, `GET /api/v1/health`, `GET /api/v1/status` (públicos).
+Health, todos públicos: `GET /health` (liveness estático) · `GET /health/ready` (ejecuta
+`SELECT 1` contra Postgres y `PING` contra Redis — esto es lo que llama el healthcheck de
+compose) · `GET /health/workers` (topología por worker) · `GET /api/v1/health` ·
+`GET /api/v1/status`.
 
-**Rate limits:** login y registro 10/min · transacciones 100/min · alertas 60/min.
+**Rate limits** (ventana fija de 60s, por IP de cliente, fail-open si Redis está caído):
+
+| Ruta | Límite |
+|---|---|
+| `/api/v1/auth/login`, `/api/v1/auth/register` | 10/min |
+| `/api/v1/auth/refresh` | 5/min |
+| `/api/v1/auth/logout` | 20/min |
+| `/api/v1/transactions` | 100/min |
+| `/api/v1/alerts` | 60/min |
+| `/api/v1/audit` | 60/min |
+| `/api/v1/monitoring` | 30/min |
+
+`/metrics` reporta la topología de workers sin auth. nginx deliberadamente **no** lo hace
+proxy, así que es inalcanzable desde fuera de la red de compose — ver ADR-006.
 
 ## Estructura del Proyecto
 
@@ -301,15 +340,15 @@ fraud-detector/
 ├── src/
 │   ├── api/                # FastAPI: main, rate_limit, v1/ (auth, transactions, alerts, reports, monitoring, audit)
 │   ├── core/               # config, database, redis, security + stream_publisher / stream_manager / stream_dlq
-│   ├── models/             # 10 modelos SQLAlchemy (transaction, user, fraud_score, fraud_alert, llm_report,
-│   │                       #   ml_model_run, audit_entry, shap_attribution, rule_metadata, base)
+│   ├── models/             # 12 modelos SQLAlchemy (transaction, user, fraud_score, fraud_alert, llm_report,
+│   │                       #   ml_model_run, audit_entry, shap_attribution, rule, drift_reference,
 │   ├── schemas/            # esquemas Pydantic v2
 │   ├── services/           # rule_engine, feature_engine, ml_model, ensemble, shap_service,
 │   │                       #   graph_service, merchant_embedding_service, velocity_store,
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (consumidores Redis Streams)
-├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 páginas, 7 componentes, vitest + MSW)
-├── tests/                  # unitarios + integración (846 tests de backend)
+├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 páginas, 24 componentes, vitest + MSW)
+├── tests/                  # unitarios + integración (1210 tests de backend)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # notebooks de exploración/entrenamiento con PaySim
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -320,7 +359,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (846 tests)
+# Backend (1210 tests)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # solo unitarios
 pytest tests/integration -v     # solo integración (requiere postgres + redis)
@@ -343,41 +382,47 @@ GitHub Actions (`.github/workflows/ci.yml`), disparado en push/PR a `main`:
 
 ## Variables de Entorno
 
-Ver [.env.example](.env.example). Configuraciones clave (defaults de `src/core/config.py`):
+[.env.example](.env.example) es la lista autoritativa: cópiala y ajústala, en lugar de armar
+una a mano:
+
+```bash
+cp .env.example .env
+```
+
+Tres configurações **no tienen default** en `Settings` y la app no arranca sin ellas:
+`DB_PASSWORD`, `REDIS_PASSWORD` y `REDIS_URL`. Bajo compose, `REDIS_PASSWORD` también se
+inyecta en `REDIS_URL` por ti.
 
 ```env
-# Base de datos
-DB_USER=fraud
-DB_PASSWORD=change_me_in_production
-DB_NAME=fraud_detector
-DB_HOST=localhost
-DB_PORT=5432
+# Sin default — la app se niega a arrancar sin estas tres
+DB_PASSWORD=...
+REDIS_PASSWORD=...
+REDIS_URL=redis://:...@localhost:6379/0
 
-# Redis
-REDIS_URL=redis://localhost:6379/0
+# Por defecto es un secrets.token_urlsafe(32) nuevo en cada arranque de proceso.
+# Dejarlo vacío está bien en dev local; en producción debe inyectarse
+# explícitamente o el arranque falla.
+JWT_SECRET_KEY=
 
-# Ollama
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:0.5b        # sirve cualquier tag local
-OLLAMA_TIMEOUT=30
+# ENVIRONMENT (alias: API_ENV) selecciona en silencio la rama de producción,
+# que cambia CORS de "*" a solo FRONTEND_URL, desactiva /docs y
+# /openapi.json, y exige que JWT_SECRET_KEY + API_SECRET_KEY se inyecten.
+ENVIRONMENT=development
 
-# JWT
-JWT_SECRET_KEY=change-me-in-production
-JWT_ALGORITHM=HS256
-JWT_EXP_MINUTES=15
-
-# Pesos del ensemble
-ENSEMBLE_RULE_WEIGHT=0.60
-ENSEMBLE_ML_WEIGHT=0.25
-ENSEMBLE_CONTEXT_WEIGHT=0.15
-
-# Feature flags
-FRAUD_DETECTION_ENABLED=true     # false → los endpoints de scoring devuelven 503
-VELOCITY_STORE_ENABLED=true
-
-# CORS
-FRONTEND_URL=http://localhost:3000
+# Solo es seguro detrás de un proxy que SOBREESCRIBA X-Real-IP y
+# X-Forwarded-For. docker/nginx.conf los sobrescribe, así que compose pone
+# esto en true por su cuenta. Ponlo en false si expones el puerto de la API
+# directamente: si no, un cliente puede falsear su IP y saltarse el
+# limitador por IP.
+TRUST_PROXY_HEADERS=false
 ```
+
+Todo lo demás sí tiene un default real en `src/core/config.py`: `DB_USER=fraud`,
+`DB_NAME=fraud_detector`, `DB_HOST=localhost`, `DB_PORT=5432`,
+`OLLAMA_HOST=http://localhost:11434`, `OLLAMA_MODEL=qwen2.5:0.5b`, `OLLAMA_TIMEOUT=30`,
+`JWT_ALGORITHM=HS256`, `JWT_EXP_MINUTES=15`, los pesos del ensemble `0,60 / 0,25 / 0,15`,
+`FRAUD_DETECTION_ENABLED=true`, `VELOCITY_STORE_ENABLED=true` y
+`FRONTEND_URL=http://localhost:3000`.
 
 ## Decisiones de Arquitectura
 
@@ -403,4 +448,4 @@ Proyecto de portfolio de [mikelrh-dev](https://github.com/mikelrh-dev) que demue
 - ML en producción: feature engineering alineado entre entrenamiento y serving, explicabilidad SHAP, monitoreo de drift, triggers de reentrenamiento
 - Pipelines async confiables: Redis Streams, consumer groups, reintentos, DLQ
 - Seguridad: JWT con refresh + blacklist, RBAC, rate limiting, audit trail inmutable con SHA-256
-- Disciplina de testing: 846 tests de backend + suite vitest de frontend (746 tests), CI de 5 jobs
+- Disciplina de testing: 1210 tests de backend + suite vitest de frontend (789 tests), CI de 5 jobs

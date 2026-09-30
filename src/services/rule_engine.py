@@ -62,10 +62,10 @@ class RuleEngine:
         """Evaluate a transaction against all rules.
 
         Args:
-            transaction: Dict with keys like amount, merchant_name, card_last4,
-                user_id, timestamp, country.
+            transaction: Dict with keys like amount, merchant_name,
+                merchant_category, timestamp.
             context: Optional dict with recent_transactions, merchant_blacklist,
-                known_cards, home_country.
+                graph_features.
 
         Returns:
             Tuple of (total_score, list_of_fired_rule_names).

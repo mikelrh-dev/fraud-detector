@@ -8,7 +8,7 @@
 >
 > 🧭 **Technical wiki:** [browse the developer wiki](docs/wiki/index.md) for the system model, architecture, scoring pipeline, workers, ML and operations.
 
-Hybrid fraud detection system for financial transactions. A **deterministic rule engine** (9 rules), a **supervised ML model** (XGBoost) and a **local LLM** (Ollama) that writes explanatory reports for analysts — the LLM never decides, it only explains.
+Hybrid fraud detection system for financial transactions. A **deterministic rule engine** (7 rules), a **supervised ML model** (XGBoost) and a **local LLM** (Ollama) that writes explanatory reports for analysts — the LLM never decides, it only explains.
 
 > **On the ML model, plainly:** it is trained on a **synthetic corpus** of fraud archetypes generated in this repo — not on PaySim, and not on bank data. The rules decide; the ML layer contributes a calibrated 25%. The measured numbers, and the limits we know about, are in [What the model does and does not do](#what-the-model-does-and-does-not-do).
 
@@ -17,17 +17,17 @@ Every transaction gets a 0–100 risk score, a classification (`legitimate | rev
 ## Highlights
 
 - **3-layer ensemble scoring**: rules 60% + ML 25% + context 15%, with dynamic fraud thresholds by amount tier
-- **9 deterministic rules** covering amount, velocity, merchant risk, card mismatch, off-hours patterns, country mismatch and fraud-ring proximity
+- **7 deterministic rules** covering amount, velocity, merchant risk, off-hours patterns and fraud-ring proximity
 - **XGBoost** with 10 engineered features, graceful degradation (system works with `ml_score = 0` if no model is loaded)
 - **SHAP explainability**: top-5 feature contributions persisted per transaction
 - **Fraud ring detection**: directed graph (NetworkX), flags users within 2 hops of a known fraudster
 - **Merchant spoofing detection**: sentence-transformers embeddings + cosine similarity (catches `AMAZ0N_STORE` → `Amazon`)
 - **Redis Streams** with consumer groups, pending-message recovery (`XAUTOCLAIM`) and a dead-letter queue
-- **Model monitoring**: Evidently data drift + custom PSI, automatic retraining triggers (F1 < 0.7 or drift > 30) — implemented, not yet exercised against a populated reference
+- **Model monitoring**: PSI data drift, automatic retraining triggers (F1 < 0.7 or drift > 30) — implemented, not yet exercised against a populated reference
 - **Immutable audit trail** with SHA-256 checksums on every scoring decision and analyst action
 - **JWT auth** (access + refresh + blacklist), role-based access (user/admin), per-route rate limiting
 - **React 19 dashboard** with score trends, SHAP cards and alert workflow
-- **846 backend tests** (unit + integration) and 746 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build)
+- **1210 backend tests** (unit + integration) and 789 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build)
 
 ## Architecture
 
@@ -35,7 +35,7 @@ Every transaction gets a 0–100 risk score, a classification (`legitimate | rev
 flowchart TB
     FE["React 19 Dashboard"] -->|"REST + JWT"| API["FastAPI (async)"]
 
-    API --> RE["Layer 1 · Rule Engine<br/>9 deterministic rules"]
+    API --> RE["Layer 1 · Rule Engine<br/>7 deterministic rules"]
     API --> ML["Layer 2 · XGBoost<br/>10 engineered features"]
     API --> CTX["Layer 3 · Context<br/>user history · geo · time"]
 
@@ -54,7 +54,7 @@ flowchart TB
     W2 -. "3 failed retries" .-> DLQ
 ```
 
-**Stack:** Python 3.11 · FastAPI · PostgreSQL 16 (asyncpg) · Redis 7 (Streams) · XGBoost · SHAP · NetworkX · sentence-transformers · Evidently · Ollama · React 19 + TypeScript + Vite + Tailwind 4 · Docker Compose (8 services)
+**Stack:** Python 3.11 · FastAPI · PostgreSQL 16 (asyncpg) · Redis 7 (Streams) · XGBoost · SHAP · NetworkX · sentence-transformers · Ollama · React 19 + TypeScript + Vite + Tailwind 4 · Docker Compose (8 services)
 
 ## How a Transaction Is Scored
 
@@ -66,12 +66,14 @@ Classification against a dynamic threshold that tightens for larger amounts:
 
 | Amount tier | Fraud threshold |
 |---|---|
-| $0 – $1,000 | ≥ 70 |
-| $1,001 – $10,000 | ≥ 50 |
-| $10,001 – $50,000 | ≥ 45 |
-| $50,001+ | ≥ 40 |
+| $0 – $1,000 | > 70 |
+| $1,001 – $10,000 | > 50 |
+| $10,001 – $50,000 | > 45 |
+| $50,001+ | > 40 |
 
-`review` band starts at 75% of the tier threshold. Everything below is `legitimate`.
+A score must be **strictly greater** than the tier threshold to be `fraud`; the tiers are
+half-open `[min, max)` so there is no gap at a boundary. `review` starts at 75% of the tier
+threshold (`>=`, since that is the start of the band). Everything below is `legitimate`.
 
 ### Layer 1 — Rule Engine (deterministic, capped at 100)
 
@@ -80,14 +82,27 @@ Classification against a dynamic threshold that tightens for larger amounts:
 | `high_amount` | 35 | amount > $1,000 |
 | `velocity_burst` | 30 | > 1 txn in 5 min in a risky category |
 | `high_velocity` | 25 | > 3 txns in 5 minutes |
-| `off_hours_crypto` | 25 | night hours (0–6) + risky category |
-| `unusual_merchant` | 20 | blacklisted merchant or risky category |
-| `card_mismatch` | 20 | card not among the user's known cards |
-| `country_mismatch` | 15 | txn country ≠ user home country |
+| `off_hours_crypto` | 25 | night hours (0–6) **and** an adversarial category |
+| `unusual_merchant` | 20 | blacklisted merchant **or** adversarial category **or** regulated category with corroboration |
 | `near_fraud` | 15 | user ≤ 2 hops from a known fraudster (graph) |
 | `unusual_hours` | 10 | txn between 00:00–06:00 |
 
-Risky categories: `btc`, `crypto`, `gambling`, `casino`, `money_transfer`.
+The total is the sum of fired weights, capped at 100.
+
+Merchant categories are tiered, and the tier decides how much the category alone is worth
+(`src/core/ml_constants.py`):
+
+- **Adversarial** — the category is itself evidence of risk, so `off_hours_crypto` and
+  `unusual_merchant` fire on it alone: `cryptocurrency`, `gambling`, `casino`, `adult`
+  (`crypto` and `btc` are alias spellings that normalise to `cryptocurrency`).
+- **Regulated** — normal for the business, so it only counts as *corroboration*:
+  `unusual_merchant` fires on `pharmacy` or `money_transfer` only when paired with velocity,
+  a night hour, or a blacklisted merchant.
+- **Risk set** (`MERCHANT_RISK_CATEGORIES`, 8 spellings — the union of both tiers) — what
+  `velocity_burst` and the feature engine test against.
+
+The split is deliberate. One flat "risky" list charged 20 rule points to every pharmacy
+purchase and every remittance with no evidence at all.
 
 ### Layer 2 — ML Model (XGBoost)
 
@@ -158,7 +173,7 @@ Second, the model has to beat *both* no-model policies, and on this corpus it do
 ## Explainability, Monitoring & Audit
 
 - **SHAP** (`TreeExplainer` over XGBoost): top-5 feature attributions computed async per scored transaction, rendered in the dashboard.
-- **Drift detection**: Evidently `DataDriftPreset` (reference vs current distributions) plus a custom PSI implementation. `GET /api/v1/monitoring/drift`.
+- **Drift detection**: a custom PSI implementation (reference vs current distributions). `GET /api/v1/monitoring/drift`.
 - **Retraining triggers**: fire when `F1 < 0.7` or `drift_score > 30` (checked in `MonitoringService`). The logic is live; the drift reference it compares against has never been populated with a full window, and it now refuses to seed from fewer than 200 rows.
 - **Audit trail**: every score, analyst review and LLM report is recorded with SHA-256 checksums. Analyst activity export is admin-only.
 
@@ -214,10 +229,14 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
+# Required: Settings has three fields with no default (DB_PASSWORD, REDIS_PASSWORD,
+# REDIS_URL), so the app cannot import until a .env exists.
+cp .env.example .env
+
 # Infrastructure only
 docker compose up postgres redis ollama -d
 
-python scripts/init_db.py
+python scripts/init_db.py    # create_all; the dev loop does not run alembic
 uvicorn src.api.main:app --reload
 
 # Frontend (second terminal)
@@ -284,13 +303,31 @@ If the artifact is missing or unreadable the API still starts and scores, contri
 |---|---|---|
 | GET | `/api/v1/transactions/{id}/report` | user — LLM report (200 / 202 / 404) |
 | GET | `/api/v1/monitoring/drift` | user — drift analysis |
+| GET | `/api/v1/monitoring/dashboard` | user — dashboard aggregates |
+| GET | `/api/v1/monitoring/metrics` | analyst + admin — ML run metrics |
+| POST | `/api/v1/monitoring/reference-data` | **admin** — seed the drift reference window |
 | GET | `/api/v1/audit/transactions/{id}` | user — decision trail |
 | GET | `/api/v1/audit/analysts/{uid}` | **admin** — analyst activity |
 | POST | `/api/v1/audit/export` | **admin** — export by date range |
 
-Health: `GET /health`, `GET /api/v1/health`, `GET /api/v1/status` (public).
+Health, all public: `GET /health` (static liveness) · `GET /health/ready` (runs `SELECT 1`
+against Postgres and `PING` against Redis — this is what the compose healthcheck calls) ·
+`GET /health/workers` (per-worker topology) · `GET /api/v1/health` · `GET /api/v1/status`.
 
-**Rate limits:** login & register 10/min · transactions 100/min · alerts 60/min.
+**Rate limits** (fixed 60s window, per client IP, fail-open if Redis is down):
+
+| Route | Limit |
+|---|---|
+| `/api/v1/auth/login`, `/api/v1/auth/register` | 10/min |
+| `/api/v1/auth/refresh` | 5/min |
+| `/api/v1/auth/logout` | 20/min |
+| `/api/v1/transactions` | 100/min |
+| `/api/v1/alerts` | 60/min |
+| `/api/v1/audit` | 60/min |
+| `/api/v1/monitoring` | 30/min |
+
+`/metrics` reports worker topology with no auth. It is deliberately **not** proxied by
+nginx, so it is unreachable from outside the compose network — see ADR-006.
 
 ## Project Structure
 
@@ -299,15 +336,15 @@ fraud-detector/
 ├── src/
 │   ├── api/                # FastAPI: main, rate_limit, v1/ (auth, transactions, alerts, reports, monitoring, audit)
 │   ├── core/               # config, database, redis, security + stream_publisher / stream_manager / stream_dlq
-│   ├── models/             # 10 SQLAlchemy models (transaction, user, fraud_score, fraud_alert, llm_report,
-│   │                       #   ml_model_run, audit_entry, shap_attribution, rule_metadata, base)
+│   ├── models/             # 12 SQLAlchemy models (transaction, user, fraud_score, fraud_alert, llm_report,
+│   │                       #   ml_model_run, audit_entry, shap_attribution, rule, drift_reference,
 │   ├── schemas/            # Pydantic v2 schemas
 │   ├── services/           # rule_engine, feature_engine, ml_model, ensemble, shap_service,
 │   │                       #   graph_service, merchant_embedding_service, velocity_store,
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (Redis Streams consumers)
-├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 7 components, vitest + MSW)
-├── tests/                  # unit + integration (846 backend tests)
+├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 24 components, vitest + MSW)
+├── tests/                  # unit + integration (1210 backend tests)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # PaySim exploration / training notebooks
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -318,7 +355,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (846 tests)
+# Backend (1210 tests)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # unit only
 pytest tests/integration -v     # integration only (needs postgres + redis)
@@ -341,41 +378,44 @@ GitHub Actions (`.github/workflows/ci.yml`), triggered on push/PR to `main`:
 
 ## Environment Variables
 
-See [.env.example](.env.example). Key settings (defaults from `src/core/config.py`):
+[.env.example](.env.example) is the authoritative list — copy it and adjust, rather than
+hand-assembling one:
+
+```bash
+cp .env.example .env
+```
+
+Three settings have **no default** in `Settings` and the app will not start without them:
+`DB_PASSWORD`, `REDIS_PASSWORD` and `REDIS_URL`. Under compose, `REDIS_PASSWORD` is also
+injected into `REDIS_URL` for you.
 
 ```env
-# Database
-DB_USER=fraud
-DB_PASSWORD=change_me_in_production
-DB_NAME=fraud_detector
-DB_HOST=localhost
-DB_PORT=5432
+# No default — the app refuses to boot without these three
+DB_PASSWORD=...
+REDIS_PASSWORD=...
+REDIS_URL=redis://:...@localhost:6379/0
 
-# Redis
-REDIS_URL=redis://localhost:6379/0
+# Defaults to a fresh secrets.token_urlsafe(32) on every process start.
+# Unset is fine for local dev; production must set it explicitly or boot fails.
+JWT_SECRET_KEY=
 
-# Ollama
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:0.5b        # any local tag works
-OLLAMA_TIMEOUT=30
+# ENVIRONMENT (alias: API_ENV) silently selects the production branch,
+# which turns CORS from "*" to FRONTEND_URL only, disables /docs and
+# /openapi.json, and requires JWT_SECRET_KEY + API_SECRET_KEY to be injected.
+ENVIRONMENT=development
 
-# JWT
-JWT_SECRET_KEY=change-me-in-production
-JWT_ALGORITHM=HS256
-JWT_EXP_MINUTES=15
-
-# Ensemble weights
-ENSEMBLE_RULE_WEIGHT=0.60
-ENSEMBLE_ML_WEIGHT=0.25
-ENSEMBLE_CONTEXT_WEIGHT=0.15
-
-# Feature flags
-FRAUD_DETECTION_ENABLED=true     # false → scoring endpoints return 503
-VELOCITY_STORE_ENABLED=true
-
-# CORS
-FRONTEND_URL=http://localhost:3000
+# Only safe behind a proxy that OVERWRITES X-Real-IP / X-Forwarded-For.
+# docker/nginx.conf overwrites them, so compose sets this to true itself.
+# Set it false if you expose the API port directly, or clients can spoof
+# their IP and bypass the per-IP rate limiter.
+TRUST_PROXY_HEADERS=false
 ```
+
+Everything else has a real default in `src/core/config.py`: `DB_USER=fraud`,
+`DB_NAME=fraud_detector`, `DB_HOST=localhost`, `DB_PORT=5432`, `OLLAMA_HOST=http://localhost:11434`,
+`OLLAMA_MODEL=qwen2.5:0.5b`, `OLLAMA_TIMEOUT=30`, `JWT_ALGORITHM=HS256`, `JWT_EXP_MINUTES=15`,
+the ensemble weights `0.60 / 0.25 / 0.15`, `FRAUD_DETECTION_ENABLED=true`,
+`VELOCITY_STORE_ENABLED=true` and `FRONTEND_URL=http://localhost:3000`.
 
 ## Design Decisions
 
@@ -401,4 +441,4 @@ Portfolio project by [mikelrh-dev](https://github.com/mikelrh-dev) demonstrating
 - ML in production: feature engineering aligned between training and serving, SHAP explainability, drift monitoring, retraining triggers
 - Reliable async pipelines: Redis Streams, consumer groups, retries, DLQ
 - Security: JWT with refresh + blacklist, RBAC, rate limiting, immutable SHA-256 audit trail
-- Testing discipline: 846 backend tests + frontend vitest suite (746 tests), 5-job CI
+- Testing discipline: 1210 backend tests + frontend vitest suite (789 tests), 5-job CI
