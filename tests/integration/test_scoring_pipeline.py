@@ -239,36 +239,85 @@ class TestVelocityWriteOrdering:
     async def test_the_velocity_counts_actually_reach_the_feature_vector(
         self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
     ):
-        """The coupling itself, not just the call order.
+        """The coupling itself, not just the call order — and it must FAIL.
 
-        Proves the read is load-bearing: a non-zero velocity count moves the
-        score. This is the reason the write cannot simply be deferred, stated as
-        a behaviour rather than as a comment.
+        Proves the read is load-bearing: the value `get_counts` returns reaches
+        the rule engine and the feature vector, so the write cannot simply be
+        deferred. Stated as a behaviour rather than as a comment, which is what
+        the previous version of this test failed to be.
+
+        W-3: it used to assert `ensemble_score > 0`, and that is vacuous. The
+        payload seeds `amount=5000`, which fires `high_amount` for 35 points on
+        its own. With NO velocity signal at all the rule score is 35 and the
+        ensemble is 35 * 0.60 / 1.0 = 21.0 — strictly greater than zero. The
+        assertion passed with the coupling completely severed, which is the one
+        thing ADR-007 says must not be possible.
+
+        A single absolute threshold cannot fix that, because any threshold
+        above the zero-velocity baseline is a guess about the model, and the
+        model gets retrained. The discriminating form is a CONTRAST: the same
+        request twice, identical in every other respect, differing only in what
+        `get_counts` returns. Whatever else is true, the burst cannot score
+        the same as no burst. That fails if the counts are dropped, if
+        `get_counts` is not consulted, or if the feature vector is built
+        without them.
         """
-        store = MagicMock()
-        self._given_empty_context_queries(mock_db)
-        store.record_transaction = AsyncMock()
-        store.get_counts = AsyncMock(return_value={"5min": 40, "1h": 400})
-        app.dependency_overrides[get_velocity_store] = lambda: store
+        payload = {
+            "amount": 5000.00,
+            "currency": "USD",
+            "merchant_name": "Electronics Store",
+            "merchant_category": "electronics",
+            "card_last4": "5678",
+        }
 
-        response = await test_client.post(
-            "/api/v1/transactions",
-            json={
-                "amount": 5000.00,
-                "currency": "USD",
-                "merchant_name": "Electronics Store",
-                "merchant_category": "electronics",
-                "card_last4": "5678",
-            },
-            headers=auth_headers,
+        async def _score_with(counts: dict) -> dict:
+            store = MagicMock()
+            self._given_empty_context_queries(mock_db)
+            store.record_transaction = AsyncMock()
+            store.get_counts = AsyncMock(return_value=counts)
+            app.dependency_overrides[get_velocity_store] = lambda: store
+
+            response = await test_client.post(
+                "/api/v1/transactions", json=payload, headers=auth_headers
+            )
+            assert response.status_code == 201
+            store.get_counts.assert_awaited_once()
+            store.record_transaction.assert_awaited_once()
+            return response.json()
+
+        # 40 in 5 minutes is a burst; rule_engine.py:113 fires high_velocity
+        # above 3. The 0 case is the control the old assertion never had.
+        burst = await _score_with({"5min": 40, "1h": 400})
+        still = await _score_with({"5min": 0, "1h": 0})
+
+        # The rule engine saw the count. This half is independent of the model
+        # and would still hold after a retrain.
+        assert "high_velocity" in burst["fired_rules"], (
+            f"a burst of 40 transactions in 5 minutes did not fire "
+            f"high_velocity; fired rules were {burst['fired_rules']}. The count "
+            f"returned by get_counts is not reaching the rule engine, so the "
+            f"read is not load-bearing."
+        )
+        assert "high_velocity" not in still["fired_rules"], (
+            f"high_velocity fired with a velocity count of 0; fired rules were "
+            f"{still['fired_rules']}. Something other than the count is driving "
+            f"this rule, so the contrast below would not be measuring the "
+            f"coupling."
         )
 
-        assert response.status_code == 201
-        store.get_counts.assert_awaited_once()
-        data = response.json()
-        # 40 transactions in 5 minutes is a burst, so the velocity signal is
-        # non-zero and the rule engine had something to work with.
-        assert data["ensemble_score"] > 0
+        # And the count reached the score, through the rule layer, the ML
+        # feature vector and the context term. Not asserted against hardcoded
+        # numbers: those belong to a model that will be retrained.
+        assert burst["rule_score"] > still["rule_score"], (
+            f"a velocity burst scored the same rule score as no velocity "
+            f"({burst['rule_score']} vs {still['rule_score']})."
+        )
+        assert burst["ensemble_score"] > still["ensemble_score"], (
+            f"a velocity burst scored the same ensemble as no velocity "
+            f"({burst['ensemble_score']} vs {still['ensemble_score']}). The "
+            f"count reaches the response but not the score, so the coupling "
+            f"ADR-007 depends on is broken."
+        )
 
 
 class TestHealthEndpoints:
