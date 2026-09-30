@@ -44,7 +44,15 @@ select = ["E", "F", "I"]
 # - ignore_missing_imports is global; narrow to per-module ignores for the
 #   few untyped deps (ollama, shap) once lint debt allows.
 # - warn_unused_ignores=false until stale `# type: ignore` comments are swept.
-# - tests are excluded from mypy entirely (runtime-verified by pytest).
+# - tests are NOT type-checked, and NOT because of this file. `exclude` below
+#   lists scripts/, alembic/ and notebooks/ only. The gate runs `mypy src/` and
+#   stops there, so tests are never passed to mypy at all. An earlier line here
+#   asserted a configuration-based exclusion that this file does not contain,
+#   and ci.yml quoted it as a decision recorded here. Corrected in the same
+#   commit; the exclusion was always real, but it comes from the command.
+#   `mypy tests/` currently reports 46 errors in 18 files, so this is an open
+#   gap rather than a settled policy. tests/ci/test_ci_quality_gate.py fails if
+#   the mechanism stops being stated.
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.10"

@@ -30,9 +30,17 @@ jobs:
       # shape -- a test asserting a local copy of the code instead of the code.
       # Nothing catches a test that stops testing if nothing lints the tests.
       #
-      # mypy stays on `src/` only, and that is a decision already written down
-      # in pyproject.toml ("tests are excluded from mypy entirely
-      # (runtime-verified by pytest)"). This change does not reopen it.
+      # mypy stays on `src/` only, and the exclusion comes from the COMMAND, not
+      # from configuration. The step below runs `mypy src/` and stops there, so
+      # tests are never passed to mypy at all. `[tool.mypy] exclude` in
+      # pyproject.toml lists scripts/, alembic/ and notebooks/, and tests are
+      # absent from it. The earlier comment here attributed this scope to a
+      # decision recorded in pyproject.toml, quoting a line that made the same
+      # false attribution; that line is corrected in the same commit. Worth being
+      # precise, because `mypy tests/` reports 46 errors in 18 files — an open
+      # gap, not a policy. This change does not reopen the decision to keep mypy
+      # on src/; it only stops this file citing a configuration that does not
+      # say what it claims. tests/ci/test_ci_quality_gate.py guards the citation.
       - name: Run ruff
         run: ruff check src/ tests/
       - name: Run mypy
