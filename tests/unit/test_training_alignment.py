@@ -28,6 +28,7 @@ from scripts.train_xgboost_aligned import (
     build_feature_vectors,
     build_synthetic_history,
     generate_synthetic_data,
+    load_synthetic_data,
 )
 from src.core.ml_constants import normalize_category
 
@@ -532,6 +533,126 @@ class TestCorpusProvenanceGuard:
 
         assert DEMO_SCHEMA != CORPUS_SCHEMA
 
+
+#: The stamp carried by the corpus that shipped before 7e81876 added alias
+#: emission to the generator. A historical fact about a file that is no longer
+#: in git, written out rather than derived from the module on purpose: deriving
+#: it would make the "the stamp moved" assertion below compare the constant to
+#: itself and pass unconditionally.
+SUPERSEDED_CORPUS_SCHEMA = "trainer_v3"
+
+
+def _alias_spellings(categories: set[str]) -> set[str]:
+    """The subset of `categories` that is a SPELLING rather than a canonical name.
+
+    Membership in `CATEGORY_ALIASES` is not the test: that table is keyed like
+    an alias, so `pharmacy` and `adult` are keys of it while being their own
+    canonical names. A category is a spelling only when normalizing it actually
+    changes it.
+    """
+    return {c for c in categories if normalize_category(c) != c}
+
+
+class TestTheAliasEmissionIsReachableFromTheRetrainPath:
+    """W-1: the fix existed; the path that runs it was unreachable.
+
+    7e81876 taught `generate_synthetic_data` to emit alias spellings and pinned
+    that with `TestCorpusCarriesAliasSpellings` above — which calls the
+    GENERATOR. But `build_training_matrix()` does not call the generator. It
+    calls `load_synthetic_data`, which returns `_load_synthetic_csv(path)`
+    whenever the file exists, and data/synthetic_transactions.csv exists. So
+    the documented training command read a canonical-only corpus and the
+    generator that would have emitted the aliases was never entered.
+
+    The guard is therefore written against the LOADER, and against the corpus
+    the loader actually hands back, because that is the object the defect was
+    about. A generator-level test cannot fail here: the generator was correct
+    the whole time.
+
+    Three claims, one test each, because they fail for different reasons:
+      1. the generation branch is still reachable from the loader;
+      2. the corpus on the training path is not canonical-only;
+      3. the provenance stamp is a live function of the generator, not a
+         constant that happens to match the file next to it.
+    """
+
+    def test_the_loader_reaches_the_generator_and_its_output_carries_aliases(
+        self, tmp_path
+    ):
+        """Claim 1, through the loader.
+
+        Calls `load_synthetic_data` on a path that does not exist, so the only
+        way to return is to generate. This is the test that fails if the
+        generation branch is made unreachable again — if `load_synthetic_data`
+        were changed to return `_load_synthetic_csv(path)` unconditionally, a
+        fresh path raises `FileNotFoundError` and this goes red.
+        """
+        path = str(tmp_path / "fresh_corpus.csv")
+        assert not Path(path).exists()
+
+        transactions, labels = load_synthetic_data(path)
+
+        assert Path(path).exists(), (
+            "load_synthetic_data generated nothing: the file it was pointed at "
+            "does not exist afterwards"
+        )
+        assert len(labels) == len(transactions)
+        categories = {t["merchant_category"] for t in transactions}
+        assert _alias_spellings(categories), (
+            "the loader generated a canonical-only corpus: the alias emission in "
+            "_draw_category is not running on the path the retrain takes"
+        )
+
+    def test_the_corpus_on_the_training_path_is_not_canonical_only(self):
+        """Claim 2: the actual W-1 finding, stated on the shipped file.
+
+        Red as of 7e81876 and green only once the stamp moved and the corpus
+        was regenerated. Reads the file through the same loader the training
+        command uses, so it cannot pass while the loader is still handing back
+        a corpus the generator would no longer produce.
+        """
+        from scripts.train_xgboost_aligned import DATA_SYNTHETIC
+
+        transactions, _ = load_synthetic_data(DATA_SYNTHETIC)
+
+        categories = {t["merchant_category"] for t in transactions}
+        assert _alias_spellings(categories), (
+            f"{DATA_SYNTHETIC} holds no alias spelling. The documented training "
+            f"command reads this file, so the model is fit on canonical names "
+            f"only and nothing exercises the normalization every live request "
+            f"depends on — the exact defect 7e81876 claimed to fix."
+        )
+
+    def test_the_stamp_moved_because_the_generator_moved(self, tmp_path):
+        """Claim 3: a stamp that never changes cannot catch staleness.
+
+        The stamp is the only thing standing between a changed generator and a
+        silently reused corpus. It worked once — AMT-001 moved it v2 -> v3 to
+        refuse a corpus the amount fix had invalidated — and then 7e81876
+        changed the generator again without moving it, which is how the
+        trainer_v3 corpus survived a change that made it a lie.
+
+        The first assertion is the load-bearing one. It is what fails when
+        someone 'fixes' a stale corpus by re-stamping the file to whatever the
+        constant currently says.
+        """
+        assert CORPUS_SCHEMA != SUPERSEDED_CORPUS_SCHEMA, (
+            f"CORPUS_SCHEMA is still {SUPERSEDED_CORPUS_SCHEMA!r}, the value the "
+            f"pre-alias corpus was written under. The stamp has to move when the "
+            f"generator changes, or it stops detecting that anything changed."
+        )
+
+        path = str(tmp_path / "superseded.csv")
+        Path(path).write_text(
+            "corpus_schema,amount,merchant_name,merchant_category,timestamp,"
+            "is_fraud\n"
+            f"{SUPERSEDED_CORPUS_SCHEMA},50.0,Store_1,groceries,"
+            "2024-01-01T12:00:00,0\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError) as exc:
+            _load_synthetic_csv(path)
+        assert SUPERSEDED_CORPUS_SCHEMA in str(exc.value)
 
 
 class TestSyntheticHistory:

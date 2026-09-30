@@ -94,6 +94,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+#: Shipped model artifact.
+#:
+#: STALE AS OF trainer_v4. This file was fit on the trainer_v3 corpus, which no
+#: longer exists on disk or in git history: the corpus was regenerated to carry
+#: the alias spellings 7e81876 added. The retrain needs a container and has not
+#: run, so nothing has measured this artifact against the corpus it now sits
+#: beside.
+#:
+#: Two measured facts about what changed, and they are not the same claim.
+#:
+#: The aliases are INVISIBLE to the feature vector, exactly. Rewriting all
+#: 781 alias-bearing rows (1.56% of the corpus) to their canonical names and
+#: rebuilding the matrix produces a bitwise-identical result: max absolute
+#: difference 0.000e+00 across all ten features and all 50,000 rows. That is
+#: what makes emitting them safe rather than mislabelling, and it is a
+#: measurement, not an argument.
+#:
+#: The REGENERATED CORPUS IS A DIFFERENT SAMPLE, because alias emission draws
+#: from the generator's RNG stream and shifts every later draw. The corpus is
+#: the same size and the same archetypes, but per-feature ROC-AUC moved against
+#: the shipped model by up to 0.0406 (`amount` 0.6737 -> 0.7143), and the fraud
+#: rate moved 0.96% -> 1.00%. That is ordinary resampling noise, not a
+#: regression, and it is also enough to mean the retrain is NOT a no-op.
+#:
+#: So: emitting aliases cannot corrupt the model, and regenerating the corpus
+#: can still move it. Do not read the first as a licence to skip the second.
 MODEL_PATH = "models/xgboost_paysim_v1.joblib"
 DATA_SYNTHETIC = "data/synthetic_transactions.csv"
 DATA_PAYSIM = "../transaccion/PS_20174392719_1491204439457_log.csv"
@@ -107,12 +133,33 @@ DATA_PAYSIM = "../transaccion/PS_20174392719_1491204439457_log.csv"
 #: error rather than a warning.
 #:
 #: AMT-001 bumped this to trainer_v3. The archetype amount distributions
-#: changed, so the on-disk corpus at data/synthetic_transactions.csv is no
+#: changed, so the on-disk corpus at data/synthetic_transactions.csv was no
 #: longer the corpus this script would generate. Refusing it is correct: the
 #: whole point of the stamp is that a stale corpus cannot be trained on
 #: silently, and the artifact that ships with the inverted amount response was
 #: trained on exactly such a stale corpus.
-CORPUS_SCHEMA = "trainer_v3"
+#:
+#: W-1 bumped this to trainer_v4. 7e81876 added alias emission to
+#: :func:`generate_synthetic_data` and did NOT move this stamp, so the stamp
+#: still matched a corpus written before the change and the alias branch was
+#: unreachable from the retrain path: `build_training_matrix` goes through
+#: `load_synthetic_data`, which returns the existing CSV without ever entering
+#: the generator. The documented training command therefore fit the model on
+#: canonical category names only.
+#:
+#: A stamp that never changes cannot detect that anything changed. It had
+#: moved once (v2 -> v3) and then sat still through a second generator change,
+#: which is precisely how a stale corpus survives the mechanism built to catch
+#: it. The rule is not "bump when the change looks big", it is "bump whenever
+#: the generator's output differs from what is on disk".
+#:
+#: Note what this does NOT do. Bumping the stamp alone would make the shipped
+#: corpus unloadable, and `tests/test_model_feature_contract.py` builds its
+#: feature matrix through `load_synthetic_data` — so the corpus had to be
+#: regenerated at the same time or that guard would have stopped running.
+#: The model artifact was NOT retrained; see the staleness note on
+#: :data:`MODEL_PATH`.
+CORPUS_SCHEMA = "trainer_v4"
 
 #: Column carrying :data:`CORPUS_SCHEMA`.
 CORPUS_SCHEMA_COLUMN = "corpus_schema"
