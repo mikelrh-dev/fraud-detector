@@ -6,7 +6,7 @@ dictionaries. The output is always a 10-dimensional feature vector.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -127,6 +127,19 @@ class FeatureEngine:
             try:
                 # Python 3.10 fromisoformat doesn't accept 'Z' suffix
                 dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+                # Normalise to UTC before reading hour AND weekday. Both are
+                # local values on an offset-aware datetime, so a `-05:00` feed
+                # produced a different `hour_of_day` and a different
+                # `is_weekend` than a `+00:00` feed for the same instant — the
+                # score depended on the producer's locale rather than on the
+                # transaction.
+                #
+                # A NAIVE datetime is used as-is, never passed to astimezone:
+                # that would make Python assume the process's local zone, so the
+                # same corpus would score differently on a laptop in Madrid and
+                # in a UTC container. See tests/test_timestamp_timezone_normalization.py.
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(timezone.utc)
                 hour = dt.hour
                 is_weekend = 1.0 if dt.weekday() >= 5 else 0.0
             except (ValueError, TypeError):

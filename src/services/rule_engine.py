@@ -6,7 +6,7 @@ a cumulative risk score (0-100) with the list of fired rules.
 
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from src.core.ml_constants import (
@@ -147,6 +147,18 @@ class RuleEngine:
             try:
                 # Python 3.10 fromisoformat doesn't accept 'Z' suffix
                 dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+                # Normalise to UTC before reading the hour. `dt.hour` on an
+                # offset-aware value is the LOCAL hour, so 23:00-05:00 read as
+                # 23 and this rule did not fire on a 04:00 UTC transaction.
+                #
+                # A NAIVE datetime is used as-is, never passed to astimezone:
+                # that would make Python assume the process's local zone, so the
+                # same corpus would score differently on a laptop in Madrid and
+                # in a UTC container. See tests/test_timestamp_timezone_normalization.py
+                # for the full statement — and for why this is unreachable from
+                # the HTTP API today and reachable from every other consumer.
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(timezone.utc)
                 hour = dt.hour
                 if 0 <= hour < 6:
                     fired.append("unusual_hours")
