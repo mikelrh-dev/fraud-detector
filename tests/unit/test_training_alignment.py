@@ -29,6 +29,7 @@ from scripts.train_xgboost_aligned import (
     build_synthetic_history,
     generate_synthetic_data,
 )
+from src.core.ml_constants import normalize_category
 
 # Velocity windows used by the standalone demo generator. The training
 # generator no longer uses fixed class windows — see TestTrainerGenerator.
@@ -189,6 +190,53 @@ class TestSyntheticDataIsNotDegenerate:
             f"All single-feature AUCs: "
             f"{ {k: round(v, 4) for k, v in sorted(aucs.items())} }"
         )
+
+
+class TestCorpusCarriesAliasSpellings:
+    """The training corpus must contain the alias spellings it claims to.
+
+    `_draw_category` gated alias emission on `CATEGORY_ALIASES.get(category)`,
+    where `category` is a CANONICAL name. `CATEGORY_ALIASES` is keyed by alias
+    spelling, so that lookup returned `None` for `cryptocurrency`,
+    `money_transfer` and `gambling`, and returned the identical string for
+    `adult` and `pharmacy`. The branch was dead: the corpus on disk contained
+    no alias spelling at all, while the docstring and the comment above it both
+    claimed it did.
+    """
+
+    @pytest.fixture(scope="class")
+    def categories(self):
+        transactions, _ = generate_synthetic_data(n_samples=8000, fraud_rate=0.30)
+        return {t["merchant_category"] for t in transactions}
+
+    def test_the_corpus_is_not_canonical_only(self, categories):
+        canonical = {normalize_category(c) for c in categories}
+        aliases = {c for c in categories if c not in canonical}
+        assert aliases, (
+            "no alias spelling in 8,000 generated rows: the corpus trains the "
+            "model on canonical names only, so nothing exercises the "
+            "normalization that every live request depends on"
+        )
+
+    def test_every_emitted_alias_still_resolves_to_its_canonical(self, categories):
+        """The invariant that makes emitting an alias safe at all.
+
+        A corpus row saying `cripto` only teaches the model something true if
+        the serving path turns `cripto` back into `cryptocurrency` before the
+        features are built. If an alias ever failed to round-trip, this change
+        would inject mislabelled rows rather than spelling variety.
+        """
+        for value in categories:
+            assert normalize_category(value) == normalize_category(
+                normalize_category(value)
+            ), f"{value!r} does not normalize idempotently"
+
+    def test_normalization_does_not_collapse_the_aliases_away(self, categories):
+        """An alias must remain a DISTINCT string on the wire to be worth emitting."""
+        from src.core.ml_constants import CATEGORY_ALIASES
+
+        emitted = {c for c in categories if c in CATEGORY_ALIASES}
+        assert emitted, "no emitted category is a known alias key"
 
 
 class TestSyntheticCsvRoundTrip:

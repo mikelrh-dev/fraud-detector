@@ -201,3 +201,36 @@ def normalize_category(value: object) -> str:
     if not normalized:
         return ""
     return CATEGORY_ALIASES.get(normalized, normalized)
+
+
+def _build_alias_spellings() -> dict[str, tuple[str, ...]]:
+    """Invert :data:`CATEGORY_ALIASES` into canonical → the spellings for it.
+
+    Written as an inversion rather than a hand-kept second table so the two
+    cannot drift: adding an entry to `CATEGORY_ALIASES` is enough, and a
+    hand-written table would go stale the moment somebody added an alias and
+    forgot the second file.
+
+    Identity entries are dropped. `"adult": "adult"` and `"pharmacy":
+    "pharmacy"` are not spelling variants, they are the canonical name keyed to
+    itself, and including them would let an "alias" emit the canonical string —
+    which is precisely how the dead branch in the corpus generator managed to
+    look like it was doing something.
+
+    Every value here round-trips by construction: keys of `CATEGORY_ALIASES` are
+    documented as already being in normalized form, so `normalize_category`
+    normalizes them to themselves and then looks them up to the canonical name.
+    """
+    collected: dict[str, list[str]] = {}
+    for spelling, canonical in CATEGORY_ALIASES.items():
+        if spelling == canonical:
+            continue
+        collected.setdefault(canonical, []).append(spelling)
+    return {canonical: tuple(sorted(v)) for canonical, v in collected.items()}
+
+
+#: Canonical category → the alias spellings that normalize onto it. Emitting one
+#: of these is how a producer (the training corpus, the demo generator) makes sure
+#: its output passes through the same normalization a live request does, instead
+#: of quietly only ever exercising the canonical names.
+CATEGORY_ALIAS_SPELLINGS: dict[str, tuple[str, ...]] = _build_alias_spellings()

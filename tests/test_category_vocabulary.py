@@ -294,6 +294,54 @@ class TestConstants:
         for category in KNOWN_MERCHANT_CATEGORIES:
             assert CATEGORY_ALIASES.get(category, category) == category
 
+    def test_every_advertised_spelling_normalizes_to_its_canonical(self):
+        """The contract that makes it safe to WRITE an alias into a corpus.
+
+        A producer emitting `"cripto"` only produces a truthful row if the
+        serving path turns it back into `"cryptocurrency"` before the features
+        are built. A spelling that failed to round-trip would turn spelling
+        variety into mislabelled training rows, so this is asserted directly on
+        the constant rather than only through whatever consumes it.
+        """
+        from src.core.ml_constants import CATEGORY_ALIAS_SPELLINGS
+
+        for canonical, spellings in CATEGORY_ALIAS_SPELLINGS.items():
+            for spelling in spellings:
+                assert normalize_category(spelling) == canonical, (
+                    f"{spelling!r} is advertised as a spelling of {canonical!r} "
+                    f"but normalizes to {normalize_category(spelling)!r}"
+                )
+
+    def test_no_advertised_spelling_is_the_canonical_name_itself(self):
+        """An identity entry is not a spelling variant.
+
+        `"adult": "adult"` and `"pharmacy": "pharmacy"` are in the forward table
+        because they are keyed like an alias, not because they are one. If they
+        leaked into the reverse table, a producer could "emit an alias" that was
+        the canonical string — the dead branch this constant replaced.
+        """
+        from src.core.ml_constants import CATEGORY_ALIAS_SPELLINGS
+
+        for canonical, spellings in CATEGORY_ALIAS_SPELLINGS.items():
+            assert canonical not in spellings, (
+                f"{canonical!r} is listed as its own alias spelling"
+            )
+
+    def test_the_three_spellable_risk_categories_are_covered(self):
+        """The categories the corpus generator draws all have real variants.
+
+        Guarding this by name is deliberate: it fails loudly if someone adds a
+        risk category to the generator's vocabulary and forgets it has no
+        aliases, which is the exact shape of the bug being fixed here.
+        """
+        from src.core.ml_constants import CATEGORY_ALIAS_SPELLINGS
+
+        for canonical in ("cryptocurrency", "gambling", "money_transfer"):
+            assert CATEGORY_ALIAS_SPELLINGS.get(canonical), (
+                f"{canonical!r} has no alias spelling, so the corpus generator "
+                f"cannot emit a variant for it"
+            )
+
     def test_the_risky_vocabulary_normalizes_into_the_known_vocabulary(self):
         """A risky category the normalizer cannot produce is unreachable.
 

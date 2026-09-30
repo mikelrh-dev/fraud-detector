@@ -86,7 +86,7 @@ import xgboost as xgb
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.services.feature_engine import FeatureEngine  # noqa: E402
-from src.core.ml_constants import MERCHANT_RISK_CATEGORIES, CATEGORY_ALIASES  # noqa: E402
+from src.core.ml_constants import MERCHANT_RISK_CATEGORIES, CATEGORY_ALIAS_SPELLINGS  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -308,6 +308,20 @@ LEGIT_ARCHETYPES: tuple[dict, ...] = (
 RISK_CATEGORY_WEIGHTS_FRAUD = (0.45, 0.32, 0.13, 0.05, 0.05)  # crypto, transfer, gambling, adult, pharmacy
 RISK_CATEGORY_WEIGHTS_LEGIT = (0.60, 0.15, 0.20, 0.025, 0.025)
 
+#: Share of high-risk rows written with an alias spelling instead of the
+#: canonical name. This is the rate `_draw_category` always claimed in its
+#: comment; the number was never what the code did, so it is named here where
+#: changing it is a visible edit.
+#:
+#: Why any non-zero value at all: `merchant_category` is free text on the wire
+#: and normalize_category collapses the spellings before features are built. A
+#: corpus of canonical names only never exercises that path, so the artifact is
+#: trained entirely inside a cleaner input distribution than production ever
+#: supplies. Note the limit of what this buys: it changes the CORPUS, and the
+#: shipped artifact predates this change, so nothing about the model's current
+#: behaviour is improved until a retrain runs.
+ALIAS_SPELLING_RATE = 0.15
+
 #: Number of simulated cardholders. Enough transactions each that the
 #: per-user history statistics are meaningful.
 N_USERS = 4000
@@ -370,9 +384,18 @@ def _draw_category(
         p = p / p.sum()
         category = risk_categories[int(rng.choice(len(risk_categories), p=p))]
         # Real feeds carry alias spellings; FeatureEngine normalises them.
-        alias = CATEGORY_ALIASES.get(category)
-        if alias and rng.random() < 0.15:
-            return alias
+        #
+        # This used to read `CATEGORY_ALIASES.get(category)`. CATEGORY_ALIASES is
+        # keyed BY alias spelling, so looking up a CANONICAL name returned `None`
+        # for cryptocurrency / money_transfer / gambling, and returned the
+        # identical string for adult / pharmacy. The branch was dead: the corpus
+        # on disk held no alias spelling at all, while this docstring and the
+        # comment above it both claimed it did. The lookup is an inversion of
+        # that table now — see CATEGORY_ALIAS_SPELLINGS.
+        if rng.random() < ALIAS_SPELLING_RATE:
+            spellings = CATEGORY_ALIAS_SPELLINGS.get(category)
+            if spellings:
+                return spellings[int(rng.randint(len(spellings)))]
         return category
     return str(normal_categories[rng.randint(len(normal_categories))])
 
