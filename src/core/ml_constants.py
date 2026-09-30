@@ -234,3 +234,29 @@ def _build_alias_spellings() -> dict[str, tuple[str, ...]]:
 #: its output passes through the same normalization a live request does, instead
 #: of quietly only ever exercising the canonical names.
 CATEGORY_ALIAS_SPELLINGS: dict[str, tuple[str, ...]] = _build_alias_spellings()
+
+#: Categories deliberately carried no alias spelling, declared rather than
+#: inferred.
+#:
+#: Every category a generator draws should have spellings, because a producer
+#: that can only ever emit the canonical name never exercises the normalization
+#: that every live request depends on — that was the dead branch in
+#: `train_xgboost_aligned._draw_category` (see 15a8eec) and in
+#: `scripts/generate_synthetic_data.py` (7e81876). The guard that keeps that
+#: from coming back derives the generator vocabularies from the generators
+#: themselves, so a new risk category with no aliases goes red on its own.
+#:
+#: This set is the escape hatch for the case that is legitimately
+#: alias-free, and it is EMPTY right now: all five categories the generators
+#: draw have spellings.
+#:
+#:     cryptocurrency  19    money_transfer  10    gambling  10
+#:     pharmacy         2    adult            1
+#:
+#: It exists so that "this category genuinely has no other spelling anyone
+#: uses" is a sentence somebody wrote down and a reviewer can disagree with,
+#: rather than a silent gap. Adding a name here is a DECLARATION, and it is
+#: checked both ways by `tests/test_category_vocabulary.py`: a name here that
+#: does have spellings is an error, and so is a name here that no generator
+#: draws.
+CATEGORIES_WITHOUT_ALIAS_SPELLINGS: frozenset[str] = frozenset()

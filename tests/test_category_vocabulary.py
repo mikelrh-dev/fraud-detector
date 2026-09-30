@@ -29,7 +29,9 @@ accepts. Making the miss loud is reversible; narrowing the accepted input is
 not.
 """
 
+import importlib
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -37,12 +39,18 @@ from src.core.counters import snapshot
 from src.core.ml_constants import (
     CATEGORY_ALIASES,
     KNOWN_MERCHANT_CATEGORIES,
+    MERCHANT_RISK_CATEGORIES,
     normalize_category,
 )
 from src.services.feature_engine import FEATURE_NAMES, FeatureEngine
 from src.services.rule_engine import RuleEngine
 
 CANONICAL_CRYPTO = "cryptocurrency"
+
+#: What "a risk category" means for the derivation below. Alias spellings are
+#: included on purpose: a generator may legitimately list `crypto` rather than
+#: `cryptocurrency`, and the derivation normalizes, so both forms resolve.
+RISK_CATEGORY_UNIVERSE = MERCHANT_RISK_CATEGORIES
 
 #: Spellings that all mean `cryptocurrency`. Drawn from the audit's list plus
 #: the ones a Spanish-language product would actually receive, since the UI and
@@ -281,6 +289,211 @@ class TestRuleEngineSharesTheSameVocabulary:
         assert counters is not None
 
 
+#: The two producers that draw a risk category, and therefore the two whose
+#: alias emission can go dead. `train_xgboost_aligned.generate_synthetic_data`
+#: is the training corpus; `generate_synthetic_data.generate_fraudulent_tx` is
+#: the demo/seed generator. Both build their own risk list inline.
+RISK_VOCABULARY_GENERATORS = (
+    ("trainer", "scripts.train_xgboost_aligned"),
+    ("demo", "scripts.generate_synthetic_data"),
+)
+
+
+def _risk_vocabulary_of(module) -> frozenset[str]:
+    """The risk categories a generator module can draw, read from the module.
+
+    Derived by PARSING, not by hardcoding, because the whole failure this guards
+    is a name being added to a generator and not to a list of names in a test
+    file. The previous version of this guard hardcoded
+    `("cryptocurrency", "gambling", "money_transfer")` while both generators
+    built five categories, so `adult` and `pharmacy` were unguarded and adding
+    a sixth would have restored the silent dead branch with the test still
+    green.
+
+    The selection rule is a list literal all of whose members normalize into
+    `MERCHANT_RISK_CATEGORIES`. Requiring that membership is deliberate rather
+    than incidental: `MERCHANT_RISK_CATEGORIES` is the feature engine's
+    contract, so a generator drawing a category that is not in it is drawing
+    something `merchant_risk_level` scores as 0.0 — a different defect, and one
+    this file's first test already catches.
+
+    It is still a heuristic, so it is checked rather than trusted. A module
+    yielding zero such lists, or more than one, fails loudly — a guard that
+    matches nothing guards nothing, and that is the defect this exercise keeps
+    finding. The message names the members that failed the membership test,
+    because "0 lists found" on its own sends you looking in the wrong place.
+    """
+    import ast
+
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+    lists: list[list[str]] = []
+    near_misses: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.List):
+            continue
+        elements = node.value.elts
+        if not elements or not all(
+            isinstance(e, ast.Constant) and isinstance(e.value, str) for e in elements
+        ):
+            continue
+        values = [e.value for e in elements]  # type: ignore[attr-defined]
+        if all(normalize_category(v) in RISK_CATEGORY_UNIVERSE for v in values):
+            lists.append(values)
+        elif sum(
+            normalize_category(v) in RISK_CATEGORY_UNIVERSE for v in values
+        ) >= len(RISK_CATEGORY_UNIVERSE):
+            # Mostly a risk vocabulary with one outsider in it. Record it so
+            # the failure below can say WHICH member is not registered.
+            near_misses.extend(
+                v for v in values if normalize_category(v) not in RISK_CATEGORY_UNIVERSE
+            )
+
+    assert len(lists) == 1, (
+        f"{module.__name__} yielded {len(lists)} list literals whose members are "
+        f"all known risk categories ({lists}), expected exactly 1."
+        + (
+            f" Members that are not in MERCHANT_RISK_CATEGORIES: "
+            f"{sorted(set(near_misses))}. A generator can only draw a risk "
+            f"category that the feature engine also treats as one — an "
+            f"unregistered name scores merchant_risk_level 0.0."
+            if near_misses
+            else " Either the generator's risk vocabulary moved somewhere this "
+            "does not look, or this derivation has stopped matching the thing "
+            "it is supposed to derive, and a guard that matches nothing guards "
+            "nothing."
+        )
+    )
+    return frozenset(normalize_category(v) for v in lists[0])
+
+
+class TestGeneratorRiskVocabularyIsFullyCovered:
+    """W-4: every risk category a generator can draw must be emittable.
+
+    The corpus generator emits alias spellings so the model is trained on the
+    same normalized vocabulary a live request produces. That emission is a
+    lookup keyed by canonical name, so a canonical name with no spellings is a
+    silently dead branch — the exact defect 15a8eec and 7e81876 fixed, and the
+    exact defect the removed hardcoded-by-name guard could not see coming.
+
+    Derived from the generators, not transcribed from them, so adding a risk
+    category cannot pass unnoticed.
+    """
+
+    def test_each_generator_exposes_exactly_one_risk_vocabulary(self):
+        for label, dotted in RISK_VOCABULARY_GENERATORS:
+            module = importlib.import_module(dotted)
+            vocabulary = _risk_vocabulary_of(module)
+            assert vocabulary, f"{label} generator yielded an empty vocabulary"
+
+    def test_every_category_a_generator_draws_can_emit_a_spelling(self):
+        """The load-bearing one.
+
+        A category drawn by a generator that has no alias spelling cannot be
+        emitted as anything but itself, so the corpus trains on the canonical
+        name only and the normalization every live request depends on is never
+        exercised. Either it has spellings, or it is declared alias-free in
+        `CATEGORIES_WITHOUT_ALIAS_SPELLINGS` — a sentence a human wrote and a
+        reviewer can disagree with.
+        """
+        from src.core.ml_constants import (
+            CATEGORIES_WITHOUT_ALIAS_SPELLINGS,
+            CATEGORY_ALIAS_SPELLINGS,
+        )
+
+        for label, dotted in RISK_VOCABULARY_GENERATORS:
+            module = importlib.import_module(dotted)
+            for canonical in sorted(_risk_vocabulary_of(module)):
+                assert CATEGORY_ALIAS_SPELLINGS.get(canonical) or (
+                    canonical in CATEGORIES_WITHOUT_ALIAS_SPELLINGS
+                ), (
+                    f"{label} generator draws {canonical!r}, which has no alias "
+                    f"spelling, so it cannot emit a variant and the corpus "
+                    f"generator's alias branch is dead for it. Add spellings to "
+                    f"CATEGORY_ALIASES, or declare it in "
+                    f"CATEGORIES_WITHOUT_ALIAS_SPELLINGS if it genuinely has "
+                    f"none."
+                )
+
+    def test_the_derived_vocabulary_covers_more_than_the_old_hardcoded_list(self):
+        """Why the derivation exists, stated as an assertion about the old guard.
+
+        The removed test named three categories; both generators draw five.
+        If this ever fails the other way — the derived vocabulary shrinking to
+        three — something has removed risk categories from the generators and
+        that deserves a look of its own.
+        """
+        trainer, demo = (
+            _risk_vocabulary_of(importlib.import_module(dotted))
+            for _, dotted in RISK_VOCABULARY_GENERATORS
+        )
+        assert len(trainer) == 5, f"trainer risk vocabulary is {sorted(trainer)}"
+        assert trainer == demo, (
+            f"the two generators disagree on their risk vocabulary: "
+            f"{sorted(trainer)} vs {sorted(demo)}. They are separate literals "
+            f"in separate files and nothing keeps them in step."
+        )
+        assert {"adult", "pharmacy"} <= trainer, (
+            "the two categories the old hardcoded guard omitted are gone from "
+            "the generator vocabulary"
+        )
+
+    def test_a_declared_alias_free_category_really_has_no_spellings(self):
+        """The escape hatch cannot be used to silence a category that has them.
+
+        Otherwise adding one name to `CATEGORIES_WITHOUT_ALIAS_SPELLINGS`
+        would switch the coverage guard off for that category forever, which
+        is the same class of defect as the hardcoded list it replaced.
+        """
+        from src.core.ml_constants import (
+            CATEGORIES_WITHOUT_ALIAS_SPELLINGS,
+            CATEGORY_ALIAS_SPELLINGS,
+        )
+
+        for canonical in sorted(CATEGORIES_WITHOUT_ALIAS_SPELLINGS):
+            assert not CATEGORY_ALIAS_SPELLINGS.get(canonical), (
+                f"{canonical!r} is declared alias-free but does have spellings "
+                f"{CATEGORY_ALIAS_SPELLINGS[canonical]}. Remove it from "
+                f"CATEGORIES_WITHOUT_ALIAS_SPELLINGS; declaring it exempts it "
+                f"from the coverage check for no reason."
+            )
+
+    def test_a_declared_alias_free_category_is_actually_drawn_by_a_generator(self):
+        """A declaration about a category nothing draws is a stale comment.
+
+        It is allowed to be wrong in one direction only: a generator may drop a
+        category, but the declaration must not outlive it.
+        """
+        from src.core.ml_constants import CATEGORIES_WITHOUT_ALIAS_SPELLINGS
+
+        drawn = set().union(
+            *(
+                _risk_vocabulary_of(importlib.import_module(dotted))
+                for _, dotted in RISK_VOCABULARY_GENERATORS
+            )
+        )
+        orphans = set(CATEGORIES_WITHOUT_ALIAS_SPELLINGS) - drawn
+        assert not orphans, (
+            f"{sorted(orphans)} declared alias-free but drawn by no generator. "
+            f"The declaration has outlived the thing it describes."
+        )
+
+    def test_the_declaration_is_empty_while_every_category_has_spellings(self):
+        """Currently true, and the reason the set above exists at all.
+
+        Not a style assertion: a non-empty declaration means somebody made a
+        decision, and this test is the reminder that the decision needs
+        reviewing rather than assuming.
+        """
+        from src.core.ml_constants import CATEGORIES_WITHOUT_ALIAS_SPELLINGS
+
+        assert CATEGORIES_WITHOUT_ALIAS_SPELLINGS == frozenset(), (
+            f"CATEGORIES_WITHOUT_ALIAS_SPELLINGS is "
+            f"{sorted(CATEGORIES_WITHOUT_ALIAS_SPELLINGS)}. All five categories "
+            f"the generators draw have spellings, so an entry here is a new "
+            f"claim that needs a human to agree with it."
+        )
+
+
 class TestConstants:
     def test_every_alias_maps_to_a_known_category(self):
         """An alias pointing outside the vocabulary would reintroduce the miss
@@ -325,21 +538,6 @@ class TestConstants:
         for canonical, spellings in CATEGORY_ALIAS_SPELLINGS.items():
             assert canonical not in spellings, (
                 f"{canonical!r} is listed as its own alias spelling"
-            )
-
-    def test_the_three_spellable_risk_categories_are_covered(self):
-        """The categories the corpus generator draws all have real variants.
-
-        Guarding this by name is deliberate: it fails loudly if someone adds a
-        risk category to the generator's vocabulary and forgets it has no
-        aliases, which is the exact shape of the bug being fixed here.
-        """
-        from src.core.ml_constants import CATEGORY_ALIAS_SPELLINGS
-
-        for canonical in ("cryptocurrency", "gambling", "money_transfer"):
-            assert CATEGORY_ALIAS_SPELLINGS.get(canonical), (
-                f"{canonical!r} has no alias spelling, so the corpus generator "
-                f"cannot emit a variant for it"
             )
 
     def test_the_risky_vocabulary_normalizes_into_the_known_vocabulary(self):
