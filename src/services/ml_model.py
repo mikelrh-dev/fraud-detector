@@ -119,8 +119,9 @@ class MLModelService:
         doesn't match the expected count, raises ValueError instead of
         silently returning 0.
 
-        Applies smoothing to synthetic data predictions to simulate real-world
-        uncertainty and avoid binary extremes (0 or 100).
+        The calibrated probability is returned unscaled by any post-processing:
+        there is no smoothing curve, no clipping and no compression. A cubic
+        smoothing transform was removed from this path and is not applied here.
 
         Args:
             features: NumPy array of shape (n_features,) containing the feature vector.
