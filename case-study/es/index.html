@@ -56,9 +56,9 @@
         <a class="link-btn" href="ch-01-arquitectura.html">Empezar a leer &rarr;</a>
       </div>
       <div class="stat-pills">
-        <span class="stat-pill">9 reglas</span>
-        <span class="stat-pill">422 tests de backend</span>
-        <span class="stat-pill">23 endpoints</span>
+        <span class="stat-pill">7 reglas</span>
+        <span class="stat-pill">1210 tests de backend</span>
+        <span class="stat-pill">27 endpoints</span>
         <span class="stat-pill">88% cobertura</span>
       </div>
     </section>
@@ -82,15 +82,15 @@
     <section class="reveal">
       <div class="metric-strip">
         <div class="metric-block">
-          <div class="metric-number">9</div>
+          <div class="metric-number">7</div>
           <div class="metric-label">reglas deterministas</div>
         </div>
         <div class="metric-block">
-          <div class="metric-number">422</div>
+          <div class="metric-number">1210</div>
           <div class="metric-label">tests de backend</div>
         </div>
         <div class="metric-block">
-          <div class="metric-number">23</div>
+          <div class="metric-number">27</div>
           <div class="metric-label">endpoints API</div>
         </div>
         <div class="metric-block">
@@ -117,7 +117,7 @@
           <span class="chapter-card-num">02</span>
           <div class="chapter-card-body">
             <h3>El Motor de Reglas</h3>
-            <p>Nueve reglas deterministas con pesos explícitos: transparentes por construcción, ajustables sin reentrenar.</p>
+            <p>Siete reglas deterministas con pesos explícitos: transparentes por construcción, ajustables sin reentrenar.</p>
           </div>
         </a>
 
@@ -125,7 +125,7 @@
           <span class="chapter-card-num">03</span>
           <div class="chapter-card-body">
             <h3>XGBoost sobre Diez Features</h3>
-            <p>El artefacto entrenado abierto: importancias reales de features, matemática del desbalance y disciplina de entrenamiento.</p>
+            <p>El artefacto entrenado abierto: importancias reales de features, matemática del desbalance, la probabilidad calibrada detrás de cada score y disciplina de entrenamiento.</p>
           </div>
         </a>
 
@@ -133,7 +133,7 @@
           <span class="chapter-card-num">04</span>
           <div class="chapter-card-body">
             <h3>Evaluación del Modelo</h3>
-            <p>Métricas held-out, baselines y una advertencia sobre los puntajes perfectos — los números detrás de los claims.</p>
+            <p>PR-AUC 0,7728 sobre datos held-out, y un desglose de errores por arquetipo que muestra que los fallos restantes del modelo son los casos que el corpus fue construido como difíciles.</p>
           </div>
         </a>
         <a href="ch-05-ensemble.html" class="chapter-card">
@@ -180,7 +180,7 @@
           <span class="chapter-card-num">10</span>
           <div class="chapter-card-body">
             <h3>Seguridad y Auditoría</h3>
-            <p>Ciclo JWT, acceso por roles, rate limits y una cadena SHA-256 que hace la manipulación detectable.</p>
+            <p>Ciclo JWT, acceso por roles, ocho ventanas de rate limit y checksums SHA-256 por fila que detectan un registro de auditoría modificado.</p>
           </div>
         </a>
 

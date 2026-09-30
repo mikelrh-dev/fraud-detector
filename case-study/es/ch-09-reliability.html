@@ -68,7 +68,7 @@
             <tr><th>Stream</th><th>Worker</th><th>Produce</th><th>Política ante fallos</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">fraud:llm</td><td class="mono">llm_worker</td><td>fila LLMReport + entrada de auditoría</td><td>queda PENDING, máx. 3 intentos</td></tr>
+            <tr><td class="mono">fraud:llm</td><td class="mono">llm_worker</td><td>fila LLMReport + entrada de auditoría</td><td>3 reintentos → DLQ (4 intentos en total)</td></tr>
             <tr><td class="mono">fraud:shap</td><td class="mono">shap_worker</td><td>top-5 atribuciones SHAP</td><td>3 reintentos → DLQ</td></tr>
             <tr><td class="mono">fraud:embeddings</td><td class="mono">embedding_worker</td><td>clave Redis con resultado (TTL 1h)</td><td>ack al éxito, log al fallo</td></tr>
           </tbody>
@@ -80,7 +80,7 @@
 
         <svg class="diagram-svg" viewBox="0 0 1200 500" role="img" aria-label="Diagrama de secuencia: un POST /transactions fluye por la API hacia tres Redis Streams, cada una consumida por su worker que persiste resultados en tablas PostgreSQL o claves Redis; un panel de garantías explica XACK, la recuperación de pendientes vía XAUTOCLAIM y la cola de mensajes muertos fraud:dlq." xmlns="http://www.w3.org/2000/svg">
           <title>09 Streams - Caso de Estudio Fraud Detector</title>
-          <desc>De izquierda a derecha: un cliente publica una transacción; la API la puntúa, la persiste y publica en tres streams de Redis (fraud:llm, fraud:shap, fraud:embeddings); tres workers (llm_worker, shap_worker, embedding_worker) consumen cada stream y escriben filas LLMReport, filas ShapAttribution y una clave Redis con TTL de una hora respectivamente. Un panel lateral declara las garantías de entrega: XACK solo tras persistir, mensajes pendientes inactivos más de cinco minutos reclamados por un loop XAUTOCLAIM cada sesenta segundos, y mensajes que fallan tres intentos movidos a la cola de mensajes muertos fraud:dlq.</desc>
+          <desc>De izquierda a derecha: un cliente publica una transacción; la API la puntúa, la persiste y publica en tres streams de Redis (fraud:llm, fraud:shap, fraud:embeddings); tres workers (llm_worker, shap_worker, embedding_worker) consumen cada stream y escriben filas LLMReport, filas ShapAttribution y una clave Redis con TTL de una hora respectivamente. Un panel lateral declara las garantías de entrega: XACK solo tras persistir, mensajes pendientes inactivos más de cinco minutos reclamados por un loop XAUTOCLAIM cada sesenta segundos, y mensajes que siguen fallando tras tres reintentos — cuatro intentos en total — movidos a la cola de mensajes muertos fraud:dlq.</desc>
 
           <!-- Fila 1: Cliente -> API -->
           <g>
@@ -170,7 +170,7 @@
             <text x="74" y="306" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">inactivas &gt; 5 min → loop XAUTOCLAIM cada 60s.</text>
 
             <circle cx="58" cy="350" r="4.5" fill="#ef4444"/>
-            <text x="74" y="346" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">Tras 3 intentos fallidos el mensaje pasa</text>
+            <text x="74" y="346" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">Tras 3 reintentos (4 intentos) el mensaje pasa</text>
             <text x="74" y="364" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">a fraud:dlq (stream · grupo · razón).</text>
           </g>
 
@@ -191,6 +191,41 @@
             </marker>
           </defs>
         </svg>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>El paso de publicación es un problema de base de datos, no de Redis</h2>
+        <p>Los consumer groups y el DLQ solo resuelven la entrega. No dicen nada sobre el instante
+        entre "la transacción está puntuada y commiteada" y "los eventos están en el stream" — y ese
+        instante es donde este pipeline solía perder trabajo.</p>
+        <p>El endpoint de scoring llamaba a <code>publish_event</code> tres veces, fire-and-forget,
+        cada una envuelta en su propio <code>try</code>/<code>except</code>. Un tirón de Redis
+        producía por tanto una transacción commiteada y totalmente puntuada sin informe LLM, sin
+        atribución SHAP y sin embedding de merchant. El fallo <em>sí</em> se logueaba, así que nunca
+        fue realmente silencioso — pero nada podía descubrirlo ni repararlo después: el endpoint de
+        report devolvía <code>pending</code> para siempre y no existía ninguna query de
+        reconciliación en el codebase.</p>
+        <p>La solución es un outbox transaccional. Cada evento se escribe como una fila en la misma
+        transacción de base de datos que la transacción puntuada, así que commitea atómicamente con
+        ella; un relay lo publica a Redis después. De ahí se siguen dos propiedades, y solo la segunda
+        era obvia:</p>
+        <ul>
+          <li><strong>Durabilidad.</strong> Si la API muere entre el commit y la publicación, la fila
+          sigue ahí para que alguien la recoja. El evento no puede perderse por un proceso que ya no
+          existe.</li>
+          <li><strong>Sin carrera pre-commit.</strong> Los eventos se publicaban <em>antes</em> del
+          commit, porque el commit real ocurre en el teardown de <code>get_db</code> después de que
+          el handler devuelve. Las tres tablas consumidoras tienen una foreign key dura a
+          <code>transactions.id</code>, así que un worker que recogía el mensaje dentro de esa ventana
+          de submilisegundos se topaba con una violación de FK y gastaba sus reintentos contra una
+          transacción que estaba a punto de existir. Publicar estrictamente después del commit elimina
+          la ventana por completo.</li>
+        </ul>
+        <p>La lección trasciende a Redis: una vez que un pipeline hace fan-out a tres consumidores
+        independientes, el traspaso es una transacción distribuida, y el único sitio honesto donde
+        hacerla atómica es la base de datos que ya posee la verdad.</p>
       </div>
     </section>
 

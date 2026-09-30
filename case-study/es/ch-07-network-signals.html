@@ -68,6 +68,25 @@
         por-transacción ven, porque la señal vive <em>entre</em> entidades, no dentro de una sola
         transacción.</p>
 
+        <h2>Un trigger que no podía dispararse nunca</h2>
+        <p>El trigger de poda era <code>number_of_nodes() % 1000 == 0</code> — podar cuando el
+        recuento de nodos cae en un múltiplo exacto de mil. Parece una heurística de batching
+        razonable y es casi inusable: solo se dispara cuando el grafo aterriza en un número redondo,
+        lo cual para un grafo orgánico movido por tráfico de transacciones significa más o menos
+        una vez cada mil añadidos, y <strong>nunca por debajo de 1.000 nodos</strong>, donde el
+        módulo es simplemente el propio recuento y no puede ser cero. Un despliegue recién arrancado
+        habría acumulado nodos indefinidamente sin cota superior y sin ninguna línea de log que lo
+        explicara.</p>
+        <p>Ahora es un contador monótono — <code>_adds_since_prune</code> contra un
+        <code>prune_threshold</code> de 1.000 — que se dispara de forma predecible y legible. La
+        segunda mitad del bug estaba en la capa de persistencia en Redis: <code>persist</code> solo
+        emitía únicamente <code>hset</code>/<code>sadd</code>, que son upserts, así que un nodo
+        calculado como podado en memoria nunca se <em>borraba</em> realmente de Redis. Un
+        <code>restore</code> posterior resucitaba entonces todo el historial podado en cada
+        reinicio, y la poda en memoria se deshacía cada vez que el proceso ciclaba. Los nodos
+        podados ahora se encolan y sus borrados sí se emiten, que es la diferencia entre una cota que
+        se sostiene y una que solo lo parece.</p>
+
         <figure class="figure">
           <img loading="lazy" decoding="async" src="../assets/network-graph.png" alt="Grafo dirigido de un anillo de fraude sintético: dos círculos rojos marcan remitentes defraudadores conocidos y dos cuadrados rojos sus tarjetas robadas señaladas, un nodo ámbar marca un usuario legítimo a exactamente dos saltos de un defraudador vía una cuenta mula, círculos pizarra son usuarios legítimos, cuadrados pizarra son nodos de tarjeta limpios, flechas pizarra finas muestran la dirección de las transacciones." width="1440" height="750">
           <figcaption><strong>Anillo sintético, detección real:</strong> cada nodo, arista y

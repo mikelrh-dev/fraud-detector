@@ -66,6 +66,24 @@
         per-transaction ML can see, because the signal lives <em>between</em> entities, not inside
         one transaction.</p>
 
+        <h2>A trigger that could never fire</h2>
+        <p>The prune trigger was <code>number_of_nodes() % 1000 == 0</code> — prune when the node
+        count hits an exact multiple of a thousand. It looks like a reasonable batching heuristic
+        and it is close to unusable: it only fires when the graph lands on a round number, which for
+        an organic graph driven by transaction traffic means roughly once per thousand additions,
+        and <strong>never at all below 1,000 nodes</strong>, where the modulo is simply the node
+        count itself and cannot be zero. A freshly started deployment would have accumulated nodes
+        indefinitely with no upper bound and no log line to explain it.</p>
+        <p>It is now a monotonic counter — <code>_adds_since_prune</code> against a
+        <code>prune_threshold</code> of 1,000 — which fires predictably and is readable. The
+        second half of the bug was in the Redis persistence layer: <code>persist</code> only ever
+        issued <code>hset</code>/<code>sadd</code>, which are upserts, so a node computed as pruned
+        in memory was never actually <em>deleted</em> from Redis. A later <code>restore</code> then
+        resurrected the full pruned history on every restart, and the in-memory prune was undone
+        each time the process cycled. Pruned nodes are now queued and their deletions actually
+        issued, which is the difference between a bound that holds and one that only looks like it
+        holds.</p>
+
         <figure class="figure">
           <img loading="lazy" decoding="async" src="../assets/network-graph.png" alt="Directed network graph of a synthetic fraud ring: two red circles mark known fraudster senders and two red squares their flagged stolen cards, an amber node marks a legitimate user sitting exactly two hops from a fraudster through a mule account, slate circles are legitimate users, slate squares are clean card nodes, thin slate arrows show transaction direction." width="1440" height="750">
           <figcaption><strong>Synthetic ring, real detection:</strong> every node, edge and

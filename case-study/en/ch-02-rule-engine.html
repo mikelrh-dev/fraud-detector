@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>02 Rules - Fraud Detector Case Study</title>
-  <meta name="description" content="Nine deterministic fraud rules with explicit weights: transparent by construction, tunable without retraining, and defensible in front of any analyst.">
+  <meta name="description" content="Seven deterministic fraud rules with explicit weights: transparent by construction, tunable without retraining, and defensible in front of any analyst.">
   <meta property="og:title" content="02 Rules - Fraud Detector Case Study">
-  <meta property="og:description" content="Nine deterministic fraud rules with explicit weights: transparent by construction, tunable without retraining, and defensible in front of any analyst.">
+  <meta property="og:description" content="Seven deterministic fraud rules with explicit weights: transparent by construction, tunable without retraining, and defensible in front of any analyst.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
@@ -51,7 +51,7 @@
 
     <section class="reveal">
       <div class="prose">
-        <p>Before any machine learning runs, nine deterministic rules evaluate the transaction.
+        <p>Before any machine learning runs, seven deterministic rules evaluate the transaction.
         Each rule encodes a known fraud pattern with an explicit weight; fired rule weights are
         summed and capped at 100.</p>
         <p><strong>Why rules at all?</strong> Rules run in microseconds, never fail silently, and
@@ -68,20 +68,61 @@
             <tr><td class="mono">high_amount</td><td class="weight">35</td><td>amount &gt; $1,000</td></tr>
             <tr><td class="mono">velocity_burst</td><td class="weight">30</td><td>&gt; 1 txn in 5 min in a risky category</td></tr>
             <tr><td class="mono">high_velocity</td><td class="weight">25</td><td>&gt; 3 txns in 5 minutes</td></tr>
-            <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>night hours (00–06) + risky category</td></tr>
-            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>blacklisted merchant or risky category</td></tr>
-            <tr><td class="mono">card_mismatch</td><td class="weight">20</td><td>card not among user's known cards</td></tr>
-            <tr><td class="mono">country_mismatch</td><td class="weight">15</td><td>transaction country ≠ home country</td></tr>
-            <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>user ≤ 2 hops from a known fraudster (graph)</td></tr>
+            <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>night hours (00–06) + adversarial category</td></tr>
+            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>blacklisted merchant, adversarial category, or regulated category with corroboration</td></tr>
+            <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>user &le; 2 hops from a known fraudster (graph)</td></tr>
             <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transaction between 00:00–06:00</td></tr>
           </tbody>
         </table>
         </div>
-        <p class="table-caption">Risky categories: btc, crypto, gambling, casino, money_transfer.</p>
+        <p class="table-caption">Adversarial (fire on their own): cryptocurrency, crypto, btc, gambling, casino,
+        adult. Regulated (need a second signal): money_transfer, pharmacy. Risky, for
+        <code>velocity_burst</code>: those eight together.</p>
+        <p>That split is the point. Flagging a transaction purely because it happened at a pharmacy
+        or a remittance provider is a false positive by construction, so a regulated merchant only
+        scores when velocity, a night hour or a blacklist entry corroborates it. A casino is
+        different — the category itself is the claim, so it stands alone. Corroboration for a
+        regulated merchant means velocity (&gt; 1 txn in 5 min), a night hour (00–06) or a blacklisted
+        merchant name.</p>
         <p>Note how the weights encode domain logic: amount alone (35) outweighs odd timing alone
         (10), but night-hour crypto activity (25) jumps near the top because the combination is far
         more suspicious than either factor individually. These numbers are tunable configuration —
         analysts can recalibrate risk policy without touching code or retraining anything.</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>One vocabulary, not three</h2>
+        <p>Every category check in this project — <code>velocity_burst</code>,
+        <code>off_hours_crypto</code>, the adversarial/regulated tiers above, the feature engine's
+        <code>merchant_risk_level</code> and <code>is_crypto</code>, and the training generator —
+        used to consult its own private list of category names. Three disjoint vocabularies in one
+        codebase is not a style problem: it means the rule layer and the feature layer can disagree
+        about whether the same transaction is crypto, and they will both be right about their own
+        table.</p>
+        <p>They now share <code>src/core/ml_constants.py</code>. The interesting part is what happened
+        when they started agreeing. <code>merchant_category</code> is free text on the wire, so real
+        traffic contains <code>cripto</code>, <code>crypto-exchange</code>,
+        <code>Crypto Exchange</code> and forty-odd other spellings of the same idea. The rule engine's
+        two-entry lookup missed them and simply did not fire; the feature engine looked them up in a
+        table whose keys were stored <em>normalized</em>, so any spelling carrying a separator, a
+        space run or a capital missed it entirely and fell through to the default — input unchanged.
+        The result was a crypto exchange transaction that <strong>silently scored
+        <code>is_crypto = 0</code></strong>, and the model trained on that.</p>
+        <p>The shared module resolves all of it through one <code>normalize_category</code> backed by
+        a 46-entry alias table, and the fix is load-bearing rather than cosmetic: an
+        <code>unknown_merchant_category</code> counter increments on every value that matches
+        nothing, so the log names exactly which strings need adding. Unknown values now score the
+        risk features at zero <em>and</em> announce themselves, instead of passing for a category that
+        genuinely is not risky.</p>
+        <p>The training side closes the loop deliberately. <code>ALIAS_SPELLING_RATE = 0.15</code>
+        means 15% of high-risk rows are written with an alias spelling rather than the canonical
+        name, so the artifact is never trained inside a cleaner input distribution than production
+        supplies. The generator also publishes an <em>inversion</em> of the alias table — mapping
+        canonical name to its alternate spellings — because looking up a canonical name in a
+        table keyed by alias returns nothing, which is how an entire emission branch ends up
+        described in a comment and never executed.</p>
       </div>
     </section>
 

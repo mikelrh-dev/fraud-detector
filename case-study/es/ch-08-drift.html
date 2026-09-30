@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>08 Drift - Caso de Estudio Fraud Detector</title>
-  <meta name="description" content="Monitoreo de drift para modelos ML de fraude: dos detectores más triggers automáticos de reentrenamiento que mantienen el scoring honesto ante cambios de patrón.">
-  <meta property="og:title" content="08 Drift - Caso de Estudio Fraud Detector">
-  <meta property="og:description" content="Monitoreo de drift para modelos ML de fraude: dos detectores más triggers automáticos de reentrenamiento que mantienen el scoring honesto ante cambios de patrón.">
+<meta name="description" content="Monitoreo de drift para modelos ML de fraude: un Population Stability Index propio, ventanas de referencia con la huella del artefacto, y triggers automáticos de reentrenamiento que mantienen el scoring honesto ante cambios de patrón.">
+  <meta property="og:title" content="08 Monitoreo y Drift - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="Monitoreo de drift para modelos ML de fraude: un Population Stability Index propio, ventanas de referencia con la huella del artefacto, y triggers automáticos de reentrenamiento que mantienen el scoring honesto ante cambios de patrón.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="es_ES">
   <meta property="og:locale:alternate" content="en_US">
@@ -53,12 +53,21 @@
     <section class="reveal">
       <div class="prose">
         <p>Un modelo deployado no avisa cuando deja de funcionar. La conducta de los usuarios cambia,
-        las tácticas de fraude evolucionan, y el accuracy se sangra mes a mes. Dos detectores
-        complementarios vigilan esto:</p>
-        <ul>
-          <li><strong>Data drift (Evidently):</strong> compara las distribuciones actuales de features contra una ventana de referencia. Si <code>tx_count_last_5min</code> de repente no se parece a los datos de entrenamiento, las predicciones vuelven poco confiables incluso antes de que las etiquetas lo digan.</li>
-          <li><strong>PSI propio:</strong> un Population Stability Index implementado a mano da un chequeo ligero y libre de dependencias sobre las mismas distribuciones.</li>
-        </ul>
+        las tácticas de fraude evolucionan, y el accuracy se sangra mes a mes. El detector es un
+        Population Stability Index implementado a mano: compara cada distribución actual de feature
+        contra una ventana de referencia almacenada y marca cualquier feature cuyo PSI supere 0.25.
+        Si <code>tx_count_last_5min</code> de repente no se parece a la referencia, las predicciones
+        vuelven poco confiables incluso antes de que las etiquetas lo digan.</p>
+        <p>PSI es la medida de manual en este caso, y se implementa deliberadamente en casa en
+        lugar de traerse como dependencia — <code>DataDriftService._compute_psi</code> son unas
+        quince líneas de numpy, y Poseerla significa que el binned, el épsilon que protege
+        <code>log(0)</code> y el umbral son todos legibles en un solo sitio. La figura de abajo es
+        exactamente esa función aplicada a dos ventanas reales del corpus.</p>
+        <p>Dos detalles hacen que el monitor se niegue a reportar insensatez con confianza. No
+        evalúa por debajo de una referencia de 200 filas, y graba el prefijo SHA-256 del artefacto del
+        modelo que produjo esa referencia — porque una referencia solo es válida para el artefacto
+        del que salió, y comparar la distribución de hoy contra el modelo del trimestre pasado no es
+        una señal de drift, son dos variables cambiando a la vez.</p>
 
         <figure class="figure">
           <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Gráfico de barras horizontales del Population Stability Index por feature bajo un escenario de drift simulado: amount se dispara a 0,634, muy por encima de la línea crítica roja en 0,25, mientras velocity_5min muestra una pequeña suba en 0,016 y user_avg_amount, user_std_amount y velocity_1h quedan planos cerca de cero; líneas punteadas ámbar y roja marcan los umbrales convencionales warn 0,10 y critical 0,25." width="1440" height="750">

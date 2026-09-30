@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>04 Evaluación del Modelo - Caso de Estudio Fraud Detector</title>
-  <meta name="description" content="Evaluación held-out del modelo de fraude: F1 perfecto explicado con honestidad — las clases sintéticas separables convierten las métricas perfectas en advertencia.">
+  <meta name="description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
   <meta property="og:title" content="04 Evaluación del Modelo - Caso de Estudio Fraud Detector">
-  <meta property="og:description" content="Evaluación held-out del modelo de fraude: F1 perfecto explicado con honestidad — las clases sintéticas separables convierten las métricas perfectas en advertencia.">
+  <meta property="og:description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="es_ES">
   <meta property="og:locale:alternate" content="en_US">
@@ -43,117 +43,391 @@
 
   <main class="main">
 
-    <header class="chapter-header">
+<header class="chapter-header">
       <span class="chapter-num">Capítulo 04</span>
-      <h1>Evaluación del Modelo — y una Advertencia sobre los Puntajes Perfectos</h1>
-      <p class="chapter-subtitle">Corrimos el protocolo documentado completo sobre un split held-out. Las métricas volvieron perfectas. Esto es por qué eso es una señal de alarma, no una victoria.</p>
+      <h1>Evaluación del Modelo — Errores por Diseño</h1>
+      <p class="chapter-subtitle">PR-AUC 0.7728 en el split held-out, 29 fraudes perdidos de 100 — y un desglose de errores que muestra exactamente qué transacciones el modelo se equivoca.</p>
     </header>
 
     <section class="reveal">
       <div class="prose">
-        <p>Este capítulo publica la primera evaluación del modelo, siguiendo el protocolo exacto
-        del script de entrenamiento: split estratificado 80/20 (seed 42), el paso documentado de
-        ruido en features y SMOTE solo-en-train, y scoring sobre el 20% intacto (10.000
-        transacciones). El artefacto de producción no fue reentrenado ni modificado.</p>
+        <p>Este capítulo publica la evaluación del artefacto desplegado sobre datos que nunca ha
+        visto, siguiendo el protocolo del script de entrenamiento: split estratificado 80/20 (seed
+        42), el paso documentado de ruido en features, y scoring sobre el 20% intacto (10.000
+        transacciones, 100 de ellas fraudulentas). El pipeline no aplica ningún remuestreo en
+        ningún punto, así que ese 20% se puntúa a la prevalencia real del corpus, el 1%, y no a una
+        artificial.</p>
+
+        <p>Procedencia de lo que viene a continuación, expuesta de entrada porque no es uniforme.
+        Toda figura de esta página es un PNG escrito por
+        <code>scripts/generate_case_study_charts.py</code> contra
+        <code>models/xgboost_paysim_v1.joblib</code>. Las dos filas medidas de la tabla de
+        resultados, el desglose de errores por arquetipo, la tabla de calibración y los intervalos
+        de Wilson vienen de <code>scripts/evaluate_model.py</code>; el barrido de costos y la
+        columna de alertas/día vienen de <code>scripts/evaluate_cost.py</code>, que vuelve a
+        derivar el split idéntico y comprueba que las filas casan antes de poner precio a nada.
+        Tres cosas de esta página se enuncian como medición y no como salida de un script, y cada
+        una se etiqueta donde está: la fila dummy de la tabla de resultados, que es una
+        consecuencia definicional de la prevalencia y no algo que un script calcule; la tabla por
+        features de abajo; y el SHA-256 registrado en Reproducibilidad al final del capítulo, que
+        tampoco imprime ni verifica ningún script del repositorio.</p>
 
         <h2>La tabla de resultados</h2>
         <div class="table-scroll">
         <table class="data-table">
           <thead>
-            <tr><th>Modelo</th><th>Precision @0.5</th><th>Recall @0.5</th><th>F1 @0.5</th><th>PR-AUC</th></tr>
+            <tr><th>Split</th><th>PR-AUC</th><th>ROC-AUC</th><th>Precision</th><th>Recall</th><th>F1</th></tr>
           </thead>
           <tbody>
-            <tr><td>Dummy (clase mayoritaria)</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.048</td></tr>
-            <tr><td>Regresión Logística</td><td class="mono">1.000</td><td class="mono">0.998</td><td class="mono">0.999</td><td class="mono">1.000</td></tr>
-            <tr><td>Random Forest (200)</td><td class="mono">1.000</td><td class="mono">1.000</td><td class="mono">1.000</td><td class="mono">1.000</td></tr>
-            <tr><td class="mono">XGBoost (params de producción)</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td></tr>
+            <tr><td>Dummy (clase mayoritaria)</td><td class="mono">0.010</td><td class="mono">0.500</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">Test split (10.000 filas, 100 fraude)</td><td class="weight">0.7728</td><td class="weight">0.9181</td><td class="weight">0.8353</td><td class="weight">0.7100</td><td class="weight">0.7676</td></tr>
+            <tr><td class="mono">Corpus held-out (30.000 filas, seed no visto)</td><td class="weight">0.7569</td><td class="weight">0.9217</td><td class="weight">0.8865</td><td class="weight">0.7049</td><td class="weight">0.7853</td></tr>
           </tbody>
         </table>
         </div>
-        <p class="table-caption">ROC-AUC (XGB): 1.000 · CV 5-fold: F1 = 1.000 ± 0.000, PR-AUC = 1.000 ± 0.000 (SMOTE dentro de cada fold).</p>
+        <p class="table-caption">Medido en el punto operativo de producción: el umbral por monto del
+        Capítulo 5 (70 / 50 / 45 / 40 según el tramo de monto), no un corte plano en 0.50. Matriz de
+        confusión en el test split: TN=9.886 · FP=14 · FN=29 · TP=71. El PR-AUC de 0.010 de la fila
+        dummy no es un número ajustado — <em>es</em> la prevalencia. Un clasificador de clase
+        mayoritaria puntúa PR-AUC igual a la tasa base por definición, así que con 1% de prevalencia
+        todo el rango útil de esa métrica vive entre 0.010 y 1.000, y 0.7728 es unas 76&times; el
+        suelo.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Dos matrices de confusión lado a lado en el umbral 0.50 y en el umbral costo-óptimo: ambas muestran 9.516 verdaderos negativos, cero falsos positivos, cero falsos negativos y 484 verdaderos positivos." width="1440" height="660">
-          <figcaption><strong>Matriz de confusión en el test set:</strong> 9.516 legítimas
-          correctamente liberadas, 484 fraudes capturados, cero errores de ambos lados — tanto en el
-          umbral por defecto como en el costo-óptimo.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Dos matrices de confusión lado a lado. En el umbral 0.50: 9.890 verdaderos negativos, 10 falsos positivos, 29 falsos negativos, 71 verdaderos positivos. En el umbral costo-óptimo 0.15: 9.840 verdaderos negativos, 60 falsos positivos, 23 falsos negativos, 77 verdaderos positivos." width="1440" height="660">
+          <figcaption><strong>Matrices de confusión en dos umbrales planos</strong> sobre el mismo
+          split de 10.000 filas. En 0.50 el modelo libera 9.890 filas legítimas, dispara 10 falsas
+          alarmas y pierde 29 de 100 fraudes por un costo de 300. Bajar a 0.15 compra 6 frauds más
+          capturados (29&rarr;23 perdidos) al precio de 50 falsas alarmas más, por un costo de 290 —
+          seis fallos menos y cincuenta horas-analista más por un ahorro del 3%. Fíjate además en que
+          el corte plano de 0.50 y la política por monto de producción capturan
+          <em>exactamente los mismos 71 fraudes</em> en este split; el escalonado solo cambia el
+          conteo de falsas alarmas (10 &rarr; 14). Ser honesto sobre un mecanismo elegante también
+          es parte del resultado.</figcaption>
         </figure>
       </div>
     </section>
 
     <section class="reveal">
       <div class="prose">
-        <h2>La advertencia: los puntajes perfectos son una bandera roja</h2>
-        <p>Un modelo que nunca se equivoca en test no es un triunfo — es una medición de cuán lejos
-        están los datos sintéticos de la realidad. La fila de baselines lo confirma: <strong>la regresión
-        logística puntúa 0.999</strong>. Cuando un modelo lineal iguala al gradient boosting
-        perfectamente, la elección del modelo nunca fue el cuello de botella. Las clases casi no se
-        solapan:</p>
+        <h2>Primero: ¿alguna feature sola hace todo el trabajo?</h2>
+        <p>La forma clásica en que un corpus sintético te miente es hacer que la etiqueta sea
+        trivialmente recuperable desde una sola columna. Si una feature separa las clases por sí
+        sola, el modelo no ha aprendido nada excepto esa columna, y toda métrica posterior es ruido
+        halagador. Medido a través del <code>FeatureEngine</code> de producción en el test split, cada
+        feature por separado:</p>
 
-        <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-separability.png" alt="Dos histogramas: los montos de transacciones por clase en escala log apenas se solapan entre legítimas y fraude; las distribuciones horarias tampoco se solapan." width="1560" height="690">
-          <figcaption><strong>Por qué el test set es trivialmente separable:</strong> el generador
-          sintético dibuja montos fraudulentos de una log-normal centrada cerca de $36k y las
-          legítimas cerca de $90, con horas noche-vs-día y rangos de velocidad disjuntos. Las clases
-          comparten casi ningún soporte, así que cualquier clasificador —por simple que sea— puede
-          separarlas perfectamente.</figcaption>
-        </figure>
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Feature sola</th><th>ROC-AUC</th><th>Feature sola</th><th>ROC-AUC</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">tx_count_last_1h</td><td class="mono">0.8192</td><td class="mono">hour_of_day</td><td class="mono">0.3766</td></tr>
+            <tr><td class="mono">tx_count_last_5min</td><td class="mono">0.7711</td><td class="mono">is_weekend</td><td class="mono">0.4922</td></tr>
+            <tr><td class="mono">amount</td><td class="mono">0.7265</td><td class="mono">is_crypto</td><td class="mono">0.5854</td></tr>
+            <tr><td class="mono">amount_vs_user_std</td><td class="mono">0.6928</td><td class="mono">merchant_risk_level</td><td class="mono">0.6601</td></tr>
+            <tr><td class="mono">amount_vs_user_avg</td><td class="mono">0.6939</td><td class="mono">amount_round_number</td><td class="mono">0.5948</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split, diez features de ancho fijo, cada una puntuada sola con
+        <code>roc_auc_score(y, x[:, i])</code> sobre la misma matriz de features que construye
+        <code>scripts/evaluate_model.py</code>. Ningún script del repositorio imprime esta tabla:
+        el único <code>roc_auc_score</code> por feature que hay en el repositorio es la aserción
+        dentro de
+        <code>tests/unit/test_training_alignment.py</code>, que corre la misma métrica sobre un corpus
+        recién generado y se detiene en un límite de aprobado/fallado. Estos valores se enuncian por
+        tanto como medición, no como salida reproducible de un script.</p>
+        <p>Nada llega a 1.0000. La feature individual más fuerte es la velocidad de 1 hora en 0.8192
+        — útil, lejos de decisiva. (<code>hour_of_day</code> queda por debajo de 0.5 porque su señal
+        de fraude es la franja nocturna en <em>ambos</em> extremos del día y no una tendencia
+        monótona, algo que un único ROC-AUC sobre un entero de hora no puede expresar.) Esto se
+        impone, no solo se observa: <code>tests/test_model_feature_contract.py</code> verifica que
+        toda feature varía en los datos de entrenamiento, que toda feature mueve la salida del modelo
+        y que ninguna queda un orden de magnitud por debajo de las demás.</p>
+      </div>
+    </section>
 
-        <p>Esta es una de las lecciones más importantes del machine learning aplicado:
-        <strong>la evaluación solo puede ser tan honesta como los datos sobre los que corre</strong>.
-        Estos números validan que el pipeline está bien cableado — splits, resampling,
-        entrenamiento, inferencia — pero no dicen nada sobre performance de producción contra fraude
-        real, que es ruidoso, adaptativo y sutilmente desbalanceado. Ese hueco es exactamente por qué existe el monitoreo de drift del Capítulo 08, y por qué publicar métricas held-out sobre
-        tráfico real etiquetado es el primer item del roadmap.</p>
+    <section class="reveal">
+      <div class="prose">
+        <h2>Dónde falla realmente el modelo — y por qué eso es el punto</h2>
+        <p>Un F1 agregado de 0.7676 dice que el modelo es imperfecto. No dice <em>cómo</em>. La
+        pregunta útil es si los errores son ruido disperso o si se concentran en casos que fueron
+        diseñados para ser difíciles. Este corpus fue construido para responderla: el generador no
+        emite un perfil por clase, sino que extrae cada transacción de un arquetipo conductual con
+        nombre, y cada arquetipo es ciego a una señal distinta. El card testing es alta velocidad con
+        montos pequeños en merchants ordinarios. El account takeover tiene un campo de merchant
+        completamente normal — solo la ráfaga lo delata. Una transferencia de alto valor es singular
+        por naturaleza, así que su velocidad parece legítima. Y un arquetipo de fraude,
+        <code>low_signal</code>, es <em>deliberadamente ordinario en todas sus dimensiones</em>.</p>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Arquetipo</th><th>n</th><th>Perdidos (FN)</th><th>Tasa FN</th><th>Falsas alarmas (FP)</th><th>Tasa FP</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">everyday</td><td class="mono">6.720</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">big_purchase</td><td class="mono">1.680</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">8</td><td class="mono">0.005</td></tr>
+            <tr><td class="mono">burst</td><td class="mono">1.191</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="tone-warn mono">fraud_lookalike</td><td class="mono">309</td><td class="mono">0</td><td class="mono">0.000</td><td class="tone-warn mono">6</td><td class="tone-warn mono">0.019</td></tr>
+            <tr><td class="tone-warn mono">high_value_wire</td><td class="mono">33</td><td class="tone-warn mono">13</td><td class="tone-warn mono">0.394</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">account_takeover</td><td class="mono">25</td><td class="mono">1</td><td class="mono">0.040</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">large_burst</td><td class="mono">19</td><td class="mono">2</td><td class="mono">0.105</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="tone-critical mono">low_signal</td><td class="tone-critical mono">13</td><td class="tone-critical mono">13</td><td class="tone-critical mono">1.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">card_testing</td><td class="mono">10</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split, umbral por monto de producción. Errores por arquetipo,
+        medidos por clase. Total: 14 falsas alarmas y 29 fallos perdidos, que coincide exactamente
+        con la matriz de confusión de arriba — 13 + 13 + 2 + 1 = 29 perdidos, 8 + 6 = 14 falsas
+        alarmas.</p>
+
+        <p>Lee esa tabla y el agregado deja de ser un número del que disculparse. Cada error cae en
+        uno de tres cubos, y cada cubo es el caso difícil previsto:</p>
+        <ul>
+          <li><strong class="tone-critical"><code>low_signal</code> — 100% de tasa de fallo, por
+          construcción.</strong> Sus 13 fraudes puntúan todos por debajo del umbral. Este arquetipo
+          existe para ser indetectable: monto ordinario, merchant ordinario, hora ordinaria, sin
+          ráfaga. Un modelo que los detectara sería evidencia de que algo se está fugando en el
+          pipeline, no de que el modelo sea bueno. Una tasa de fallo del 100% aquí significa que el
+          corpus está funcionando exactamente como fue diseñado.</li>
+          <li><strong class="tone-warn"><code>fraud_lookalike</code> — la tasa de falsa alarma más
+          alta de cualquier arquetipo, 1.9% frente al 0.5% de <code>big_purchase</code>.</strong> Es
+          un segmento <em>legítimo</em>: clientes honestos que compran cripto, compran a las 3am y
+          transaccionan durante una ráfaga. Es el 3% del tráfico legítimo y existe para que el riesgo
+          de merchant y la hora no sean deterministas. Nota la honestidad del conteo: produce 6
+          falsas alarmas, mientras que <code>big_purchase</code> produce 8. Los lookalikes son más
+          raros, así que generan menos errores absolutos — pero son casi cuatro veces más propensos a
+          ser una falsa alarma por transacción.</li>
+          <li><strong class="tone-warn"><code>high_value_wire</code> — 39% perdidos.</strong> Los
+          mayores fraudes del corpus, y los más difíciles: una transferencia es una sola transacción,
+          así que sus señales de velocidad lucen exactamente como las de un cliente legítimo
+          tranquilo, y un monto grande por sí solo también es lo que parece una compra de coche
+          honesta. Este es el arquetipo que obligó a un cambio real del corpus — las distribuciones
+          de monto estaban dispuestas originalmente para que los mayores montos fueran casi siempre
+          legítimos, y el modelo aprendió fielmente la inversión, puntuando una transferencia cripto
+          de 1.000.000 $ con 41.78 frente al 84.25 de una de 5.000 $.</li>
+        </ul>
+        <p>Todo lo demás está limpio: <code>everyday</code>, <code>burst</code> y
+        <code>card_testing</code> no producen ninguna falsa alarma, y solo 3 de 100 frauds se
+        pierden entre los tres arquetipos restantes. En el corpus independiente de 30.000 filas
+        generado con un seed no visto el patrón se mantiene — <code>low_signal</code> 44/44
+        perdidos, <code>high_value_wire</code> 27/76, y <code>fraud_lookalike</code> llevando de
+        nuevo la mayor tasa de falsa alarma.</p>
 
         <div class="callout">
-          <span class="callout-title">Cómo leer esto honestamente</span>
-          <p>Métricas held-out perfectas sobre datos sintéticos prueban corrección de ingeniería, no
-          calidad del modelo. Cualquier portfolio que declare F1 = 1.0 como logro sin esta advertencia
-          te está diciendo que no miró sus propios números de cerca.</p>
+          <span class="callout-title">Por qué esto es una afirmación más fuerte que un buen score</span>
+          <p>Cualquiera puede publicar un F1. Publicar un F1 <em>y</em> el desglose de errores por
+          población que explica de dónde viene exige haber construido el corpus con poblaciones con
+          nombre a propósito, y luego comprobar que los fallos del modelo caen sobre ellas. Un modelo
+          cuyos errores se reparten uniformemente entre poblaciones te está diciendo que los datos
+          son solo ruidosos. Un modelo cuyos errores son <em>exactamente</em> las poblaciones
+          diseñadas para ser difíciles te está diciendo que el techo lo fija que los datos son
+          genuinamente difíciles — y eso es una decisión de diseño, no una carencia que haya que
+          suavizar en un "esto se podría mejorar".</p>
         </div>
       </div>
     </section>
 
     <section class="reveal">
       <div class="prose">
-        <h2>La maquinaria igual tuvo que demostrarse</h2>
-        <p>Aun con clases separables, la capa cost-sensitive se ejercitó de punta a punta: falsos
-        negativos valuados a 10× falsos positivos, umbral barrido de 0.05 a 0.95, costo económico
-        minimizado. Con data fácil el umbral óptimo aterriza bajo (0.05) porque el recall es gratis —
-        con data real esta curva se convierte en la herramienta de decisión.</p>
+        <h2>Precision-recall, y la ratio que lo decide todo</h2>
+        <p>Con 1% de prevalencia el accuracy no significa nada — un modelo que predice "legítima"
+        para todo es 99% accurate y no detecta ni un solo fraude. El PR-AUC es la métrica que
+        sobrevive a ese régimen, y la línea base dummy que debe superar es la propia prevalencia.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-pr.png" alt="Curva precision-recall pegada a la esquina superior derecha con PR-AUC 1.000, comparada contra random forest y la línea de prevalencia del dummy." width="1260" height="780">
-          <figcaption><strong>Curva PR</strong> contra la prevalencia base del dummy (0.048). Con
-          clases separables la curva abraza la esquina; con data real su forma — especialmente la
-          caída de precisión a recall alto — se vuelve la historia operativa.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-pr.png" alt="Curva precision-recall: XGBoost con PR-AUC 0.774 frente a un random forest en 0.744 y una línea discontinua de prevalencia dummy en 0.010, con el punto operativo costo-óptimo marcado en torno a 0.77 de recall y 0.56 de precisión." width="1260" height="780">
+          <figcaption><strong>Curva PR</strong> contra la prevalencia base del dummy, 0.010. La
+          curva mantiene precisión por encima de 0.9 hasta un recall de unos 0.68 y luego cae — y esa
+          rodilla, no el área, es la historia operativa, porque una cola de analistas solo le importa
+          la región donde la precisión todavía justifica el tiempo de una persona.</figcaption>
         </figure>
 
+        <p>El error obvio aquí es tratar la ratio de falsos negativos sobre falsos positivos como
+        una propiedad del modelo. No lo es. <code>evaluate_cost.py</code> valoriza una falsa alarma
+        en una unidad arbitraria de 1.0 y <strong> barre la ratio de 1&times; a 500&times;</strong>,
+        porque la ratio es un hecho de negocio sobre una operación y nadie nos lo ha dado. El óptimo
+        no es una constante; es una función de la creencia que tengas sobre el costo:</p>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>C<sub>fn</sub>/C<sub>fp</sub></th><th>Umbral óptimo</th><th>Precision</th><th>Recall</th><th>Costo por txn</th><th>Alertas/día</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">1&times;</td><td class="mono">74.00</td><td class="mono">1.0000</td><td class="mono">0.7000</td><td class="mono">0.0030</td><td class="mono">350</td></tr>
+            <tr><td class="mono">5&times;</td><td class="mono">74.00</td><td class="mono">1.0000</td><td class="mono">0.7000</td><td class="mono">0.0150</td><td class="mono">350</td></tr>
+            <tr><td class="mono">10&times;</td><td class="mono">31.00</td><td class="mono">0.7766</td><td class="mono">0.7300</td><td class="mono">0.0291</td><td class="mono">470</td></tr>
+            <tr><td class="mono">25&times;</td><td class="mono">11.50</td><td class="mono">0.5132</td><td class="mono">0.7800</td><td class="mono">0.0624</td><td class="mono">760</td></tr>
+            <tr><td class="mono">50&times;</td><td class="mono">11.50</td><td class="mono">0.5132</td><td class="mono">0.7800</td><td class="mono">0.1174</td><td class="mono">760</td></tr>
+            <tr><td class="mono">100&times;</td><td class="mono">0.35</td><td class="mono">0.1732</td><td class="mono">0.8400</td><td class="mono">0.2001</td><td class="mono">2.425</td></tr>
+            <tr><td class="mono">500&times;</td><td class="mono">0.25</td><td class="mono">0.1334</td><td class="mono">0.8500</td><td class="mono">0.8052</td><td class="mono">3.185</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split, umbrales planos barridos sobre 381 puntos, mostrando
+        las siete ratios que barre <code>evaluate_cost.py</code>. Costo por transacción en unidades
+        donde C<sub>fp</sub> = 1.0. Alertas/día asume 50.000 transacciones por día — un supuesto,
+        ya que el corpus no lleva timestamps.</p>
+
+        <p>El umbral óptimo se mueve a lo largo de <strong>dos órdenes de magnitud</strong>, de
+        74.00 a 0.25, y cada creencia sobre el costo produce un punto operativo distinto. En la ratio
+        de 10&times; que este capítulo ha usado históricamente como ilustración el óptimo es 31.00; a
+        100&times; es 0.35, y la cola es más de cinco veces más grande (470 alertas/día frente a
+        2.425). Publicar un único "umbral óptimo"
+        sería publicar un supuesto con un punto decimal.</p>
+
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-cost.png" alt="Costo económico versus umbral de decisión: plano en cero más allá del umbral 0.05, mostrando que cualquier umbral arriba de 0.05 produce cero errores en este dataset." width="1260" height="750">
-          <figcaption><strong>Costo vs umbral</strong> (FN × $10 + FP × $1): plano en cero después
-          de 0.05 acá. Lo que importa es la maquinaria — con data de producción esta curva suele
-          tener un mínimo claro lejos de ambos extremos, y elegir ese punto es una decisión de
-          negocio, no un default.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-cost.png" alt="Costo económico versus umbral de decisión con una ratio fija de 10 a 1: el costo cae desde unos 435 en el umbral 0.02 hasta un mínimo amplio de unos 290 entre 0.15 y 0.78, marcado como óptimo en 0.15, y luego sube bruscamente por encima de 0.85 hasta alcanzar 1000." width="1260" height="750">
+          <figcaption><strong>Costo vs umbral</strong> con una ratio fija (FN &times; 10 + FP &times;
+          1). La rejilla plana encuentra su óptimo en 0.15 con un costo de 290, pero la curva es una
+          meseta amplia hasta más o menos 0.78 — y ese es el hallazgo real. Casi cualquier umbral en
+          ese rango es igual de bueno, así que la elección no es un instrumento de precisión. Lo que
+          la curva sí muestra con nitidez es el acantilado por encima de 0.85, donde el modelo deja
+          de capturar los wires de puntaje alto y el costo se cuadruplica hasta 1.000. La ratio fija
+          de 10:1 es un ejemplo didáctico; la tabla barrida de arriba es el análisis.</figcaption>
         </figure>
+
+        <p>También hay un suelo que merece nombrarse: por debajo de una ratio de
+        <strong>99.0&times;</strong> la política más barata que no involucra ningún modelo es no
+        revisar nada, así que el modelo solo tiene que superar un suelo de 0.0100 por transacción.
+        Por encima de 99.0&times; ese suelo salta a 0.9900 — el costo de revisar cada transacción —
+        que es unas 99&times; más difícil de superar. Ese punto de equilibrio es una propiedad
+        únicamente de la tasa base: es el mismo número tanto si el modelo es excelente como si
+        estuviera invertido, y por eso mismo no puede usarse como evidencia en ninguna dirección.</p>
       </div>
     </section>
 
     <section class="reveal">
       <div class="prose">
-        <h2>¿El score es honesto? Chequeo de calibración</h2>
-        <p>El camino de serving aplica un suavizado cúbico a las probabilidades crudas (Capítulo 3).
-        Un diagrama de confiabilidad prueba si las probabilidades predichas coinciden con las tasas
-        observadas de fraude — para la salida cruda y para la salida suavizada de serving:</p>
+        <h2>¿El score es honesto? Calibración</h2>
+        <p>El score de serving es la probabilidad calibrada del modelo escalada por 100 (Capítulo
+        3), así que no hay nada que deshacer antes de medirlo. En el test split el error de
+        calibración esperado es <strong>0.0026</strong> con una brecha con signo de &minus;0.0003 —
+        pero ese titular se favorece a sí mismo por una razón estructural: el 98.4% del split cae
+        dentro del bin de probabilidad más bajo, así que el promedio ponderado está dominado por un
+        bin que está trivialmente bien calibrado.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-calibration.png" alt="Diagrama de confiabilidad con las curvas de predict_proba cruda y suavizada cúbicamente siguiendo de cerca la diagonal a través de los bins por cuantiles." width="1080" height="840">
-          <figcaption><strong>Diagrama de confiabilidad:</strong> ambas curvas siguen la diagonal a
-          través de los deciles — el suavizado comprime extremos pero no distorsiona sistemáticamente
-          el ordenamiento. Con data más difícil este gráfico es como decides si un paso de
-          calibración (<code>CalibratedClassifierCV</code>) pertenece al pipeline.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-calibration.png" alt="Diagrama de confiabilidad con la diagonal de calibración perfecta y una única curva de servicio de diez puntos: nueve apretados dentro de 0.0016 del origen y uno muy lejos, en 0.09, así que la curva se lee como un racimo contra el origen más un único marcador alejado." width="1080" height="840">
+          <figcaption><strong>Diagrama de confiabilidad</strong>, y una nota honesta sobre lo que
+          puede y lo que no puede mostrar. El test split se corta en <strong>diez bins por cuantil
+          de igual tamaño, 1.000 filas cada uno</strong>, y los bins no colapsan — pero como casi
+          toda predicción se sitúa cerca de cero, nueve de los diez marcadores caen entre 0.0012 y
+          0.0016 del origen y solo el décimo queda lejos de él, en 0.0913. Esa concentración es el
+          mismo hecho que el párrafo anterior reporta como 98.4% en el bin más bajo, medido sobre
+          otro esquema: el 98.4% es la ocupación del bin de ancho fijo <code>[0.0, 0.1)</code> de
+          la tabla, no la de ningún decil, ya que un decil contiene el 10% por construcción. Un
+          diagrama de confiabilidad al 1% de prevalencia habla sobre todo del cuadrante vacío — por
+          eso la tabla por bins, y no el agregado, es la medición que merece leerse.</figcaption>
         </figure>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Bin predicho</th><th>n</th><th>Predicho medio</th><th>Tasa de fraude observada</th><th>Brecha</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">[0.0, 0.1)</td><td class="mono">9.840</td><td class="mono">0.0020</td><td class="mono">0.0022</td><td class="mono">+0.0002</td></tr>
+            <tr><td class="mono">[0.1, 0.2)</td><td class="mono">48</td><td class="mono">0.1497</td><td class="mono">0.0833</td><td class="mono">&minus;0.0663</td></tr>
+            <tr><td class="mono">[0.2, 0.3)</td><td class="mono">17</td><td class="mono">0.2459</td><td class="mono">0.0588</td><td class="mono">&minus;0.1871</td></tr>
+            <tr><td class="mono">[0.3, 0.4)</td><td class="mono">8</td><td class="mono">0.3378</td><td class="mono">0.1250</td><td class="mono">&minus;0.2128</td></tr>
+            <tr><td class="mono">[0.4, 0.5)</td><td class="mono">6</td><td class="mono">0.4519</td><td class="mono">0.1667</td><td class="mono">&minus;0.2853</td></tr>
+            <tr><td class="mono">[0.5, 0.6)</td><td class="mono">6</td><td class="mono">0.5248</td><td class="mono">0.1667</td><td class="mono">&minus;0.3581</td></tr>
+            <tr><td class="mono">[0.6, 0.7)</td><td class="mono">4</td><td class="mono">0.6609</td><td class="mono">0.0000</td><td class="mono tone-warn">&minus;0.6609</td></tr>
+            <tr><td class="mono">[0.7, 0.8)</td><td class="mono">3</td><td class="mono">0.7384</td><td class="mono">0.6667</td><td class="mono">&minus;0.0717</td></tr>
+            <tr><td class="mono">[0.8, 0.9)</td><td class="mono">68</td><td class="mono">0.8692</td><td class="mono">1.0000</td><td class="mono">+0.1308</td></tr>
+            <tr><td class="mono">[0.9, 1.0)</td><td class="mono">0</td><td class="mono">n/a</td><td class="mono">n/a</td><td class="mono">n/a</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split. Se muestran los diez bins de ancho fijo sobre [0, 1], así
+        que la columna <code>n</code> suma las 10.000 filas completas; el bin superior está
+        genuinamente vacío y se deja visible en lugar de ocultarse. El modelo
+        es sistemáticamente <em>sobreconfiante en el medio</em> — todos los bins entre 0.1 y 0.8
+        quedan por debajo de la diagonal, y un score de 0.66 correspondió a una
+        tasa de fraude observada de 0.00 — y autoconfidente en la parte alta. Sobre un score plano
+        esto molesta poco, porque los umbrales de producción se sitúan entre 40 y 70. Aun así es lo
+        primero que habría que arreglar, y el arreglo es un paso de calibración ajustado contra la
+        tasa base real y no contra una remuestreada (Capítulo 3).</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>Las estimaciones puntuales esconden el tamaño de muestra</h2>
+        <p>Una precisión de 0,8353 suena decisiva hasta que uno nota que se midió sobre
+        <strong>85 transacciones marcadas</strong>. Esa misma precisión sobre 8.500 transacciones
+        marcadas sería una afirmación completamente distinta. Por eso cada tasa sobre la que se toma
+        una decisión se reporta con su intervalo de score de Wilson al 95%:</p>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Tasa</th><th>Estimación</th><th>IC Wilson 95%</th><th>Anchura</th><th>n</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Precision (test split)</td><td class="mono">0,8353</td><td class="mono">[0,742, 0,899]</td><td class="mono">15,7 pts</td><td class="mono">85</td></tr>
+            <tr><td>Recall (test split)</td><td class="mono">0,7100</td><td class="mono">[0,615, 0,790]</td><td class="mono">17,5 pts</td><td class="mono">100</td></tr>
+            <tr><td>Precision (corpus held-out)</td><td class="mono">0,8865</td><td class="mono">[0,839, 0,921]</td><td class="mono">8,2 pts</td><td class="mono">229</td></tr>
+            <tr><td>Recall (corpus held-out)</td><td class="mono">0,7049</td><td class="mono">[0,650, 0,755]</td><td class="mono">10,5 pts</td><td class="mono">288</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <p>Las estimaciones puntuales coinciden de cerca entre los dos splits — que es en sí mismo el
+        resultado útil. Pero los intervalos son el encuadre honesto: el recall en el test split
+        arrastra una banda de <strong>17,5 puntos</strong>, así que cualquier afirmación del tipo "el
+        recall es del 71%" es en realidad "el recall está entre el 62% y el 79% sobre 100 fraudes".
+        Un proveedor que cita la estimación puntual sin la anchura está eligiendo el extremo
+        favorable de esa banda sin decirlo. La implementación es aritmética deliberadamente libre de
+        dependencias y está fijada contra la versión independiente de statsmodels por un test unitario,
+        porque un intervalo que se degrada en silencio es peor que no tener intervalo.</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>Reproducibilidad</h2>
+        <p>Los resultados de una evaluación solo sirven si se pueden volver a derivar. El pipeline de
+        entrenamiento está completamente sembrado — seed fijo del generador, seed fijo del split,
+        seed fijo del modelo — y ejecutar
+        <code>scripts/train_xgboost_aligned.py</code> tres veces consecutivas produce un
+        <strong>artefacto byte a byte idéntico</strong>: SHA-256
+        <code class="mono">3efa00d8…5de75</code> en las tres corridas, coincidiendo exactamente con
+        el <code>models/xgboost_paysim_v1.joblib</code> versionado. Por tanto, cada número de este
+        capítulo trazable a un fichero concreto, no a una ejecución que ocurrió una sola vez.</p>
+        <p>El artefacto también graba la tasa base contra la que se ajustó su calibrador
+        (<code>calibration_prior = 0.010050</code>, el 1.0050% de fraude del split de entrenamiento de
+        40.000 filas). Ese sello existe para que una regresión futura — alguien reintroduciendo un
+        paso de remuestreo antes de la calibración — sea detectable leyendo el fichero desplegado y
+        no solo leyendo una transcripción de entrenamiento.</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <div class="callout">
+          <span class="callout-title">Lo que estos números establecen y lo que no</span>
+          <p><strong>Establecen</strong> que el pipeline está bien cableado de punta a punta; que
+          ninguna feature individual hace el trabajo del modelo por él; que el perfil de error se
+          concentra en las tres poblaciones que el corpus fue construido como difíciles; y que el
+          artefacto es reproducible byte a byte.</p>
+          <p><strong>No establecen</strong> que el sistema detecte fraude. Este corpus lo escribió la
+          misma persona que escribió las features, así que contiene las suposiciones del propio
+          modelo reformuladas como datos — sus errores no son independientes de su señal de
+          entrenamiento, y los números de arriba miden autocoherencia, no detección. El card testing,
+          el account takeover, el fraude amigo y las redes de mule no están ausentes aquí solo en
+          cantidad, sino ausentes como conceptos; la prevalencia, la mezcla de merchants y el costo
+          de una falsa alarma son hechos de negocio que este corpus inventa. Contra etiquetas reales
+          los umbrales deben recalcularse y la curva de calibración se moverá. La afirmación honesta
+          es que el performance del modelo en el mundo real es <strong>desconocido</strong>, y que
+          una evaluación reproducible sobre tráfico real etiquetado es el primer item del roadmap.</p>
+        </div>
       </div>
     </section>
 

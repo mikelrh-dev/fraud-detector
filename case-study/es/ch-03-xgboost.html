@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>03 ML - Caso de Estudio Fraud Detector</title>
-  <meta name="description" content="El artefacto XGBoost entrenado al descubierto: diez features de ingeniería, ensamble calibrado, suavizado cúbico y la disciplina del reentrenamiento alineado.">
+  <meta name="description" content="El artefacto XGBoost entrenado al descubierto: diez features de ingeniería, ensamble calibrado, la probabilidad calibrada detrás de cada score y la disciplina del reentrenamiento alineado.">
   <meta property="og:title" content="03 ML - Caso de Estudio Fraud Detector">
-  <meta property="og:description" content="El artefacto XGBoost entrenado al descubierto: diez features de ingeniería, ensamble calibrado, suavizado cúbico y la disciplina del reentrenamiento alineado.">
+  <meta property="og:description" content="El artefacto XGBoost entrenado al descubierto: diez features de ingeniería, ensamble calibrado, la probabilidad calibrada detrás de cada score y la disciplina del reentrenamiento alineado.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="es_ES">
   <meta property="og:locale:alternate" content="en_US">
@@ -90,15 +90,20 @@
           <li><strong>Rey de datos tabulares:</strong> en datos tabulares pequeños/medianos, los gradient-boosted trees siguen siendo estado del arte frente al deep learning.</li>
         </ul>
 
-        <h2>Domando la curva de probabilidad</h2>
-        <p>La probabilidad cruda de XGBoost queda comprimida hacia 0.5 bajo desbalance de clases.
-        El sistema aplica un suavizado cúbico antes de escalar a 0–100, de modo que solo las
-        predicciones confiadas puntúan alto mientras la incertidumbre media se queda en el medio,
-        sin generar falsas alarmas:</p>
+        <h2>De la probabilidad al score</h2>
+        <p>No pasa nada entre el modelo y el score. <code>MLModelService.predict</code> toma la
+        probabilidad de fraude calibrada y la escala directamente a 0–100:</p>
         <div class="formula">
-          smoothed = 0.5 + 0.7 × (p − 0.5)³ + 0.3 × (p − 0.5)<br>
-          ml_score = clip(smoothed, 0, 1) × 100
+          ml_score = p × 100 &nbsp;&nbsp;(p = predict_proba(features)[0, 1])
         </div>
+        <p>Eso solo es defendible porque <code>predict_proba</code> devuelve una probabilidad
+        calibrada y no un margen crudo — el artefacto es un wrapper de
+        <code>CalibratedClassifierCV</code> (abajo), así que <code>p</code> significa lo que dice y
+        es comparable entre transacciones. El artefacto además guarda la tasa de clase sobre la que
+        se calibró su calibrador, y el servicio registra ese sello al cargar: una probabilidad solo es
+        tan fiable como la tasa base para la que se calibró, así que registrar la previa hace que
+        una calibración obsoleta sea observable en lugar de silenciosa. El ranking no se ve afectado
+        por un cambio de previa; el thresholding sí.</p>
         <p>Si falta el archivo del modelo, la capa devuelve <code>ml_score = 0</code> y el sistema
         sigue puntuando con reglas + contexto. La degradación es explícita, jamás un crash.</p>
 
@@ -120,41 +125,58 @@
             <tr><td class="mono">reg_alpha</td><td class="weight">1.0</td><td>regularización L1 que empuja a cero las ganancias de split poco informativas</td></tr>
             <tr><td class="mono">reg_lambda</td><td class="weight">2.0</td><td>regularización L2 que suaviza los pesos de las hojas</td></tr>
             <tr><td class="mono">calibration</td><td class="weight">sigmoide, cv=5</td><td>las probabilidades de cada fold se remapean para que <code>predict_proba</code> diga lo que dice</td></tr>
-            <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 19.7</td><td>ajustado a la tasa real de fraude del dataset (4,84%) — no a un ~1% supuesto</td></tr>
+            <tr><td class="mono">scale_pos_weight</td><td class="weight">98,50</td><td>calculado sobre el split de entrenamiento sin remuestrear: 39.598 legítimas &divide; 402 fraudes. Re pondera la loss sin tocar la tasa base de clases, que es lo que permite ajustar el calibrador contra la tasa real</td></tr>
           </tbody>
         </table>
         </div>
+        <p class="table-caption">El corpus son 50.000 transacciones con una tasa de fraude del
+        <strong>1,0040%</strong> — 502 fraudes frente a 49.498 legítimas. El artefacto también graba
+        <code>calibration_prior = 0.010050</code>, la tasa contra la que realmente se ajustó su
+        calibrador, de modo que una futura reintroducción de un paso de remuestreo antes de la
+        calibración sea detectable leyendo el fichero desplegado y no solo leyendo una transcripción
+        de entrenamiento.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/feature-importance.png" alt="Gráfico de barras horizontales de las importancias de features del ensamble XGBoost calibrado entrenado: el conteo de transacciones de 1 hora lidera con 0.428, seguido por la velocidad de 5 minutos con 0.374 y el importe frente a la desviación estándar del usuario con 0.179; las demás features aportan casi cero." width="1440" height="810">
+          <img loading="lazy" decoding="async" src="../assets/feature-importance.png" alt="Gráfico de barras horizontales de las importancias de features del ensamble XGBoost calibrado entrenado: merchant_risk_level lidera con 0.199, seguido del conteo de transacciones de 1 hora con 0.193, la velocidad de 5 minutos con 0.165 y el importe con 0.110; las seis features restantes aportan cada una entre 0.043 y 0.071." width="1440" height="810">
           <figcaption><strong>Figura 1 — Importancias reales de features</strong>, extraídas
           directamente del artefacto entrenado <code>xgboost_paysim_v1.joblib</code> (ganancia media
-          entre los cinco folds calibrados; regenerada a partir del artefacto actual tras el
-          reentrenamiento alineado). Tres features concentran prácticamente toda la señal: velocidad
-          sostenida de 1 hora (42,8%), velocidad de ráfaga a 5 minutos (37,4%) e importe relativo al
-          propio historial del usuario (17,9%). Las features casi-cero no son un error: su
-          información se solapa en gran parte con lo que la capa de reglas ya expresa, así que
-          gradient boosting encontró poca ganancia marginal restante que extraer.</figcaption>
+          entre los cinco folds calibrados). <strong>El riesgo de merchant es el mayor contribuidor
+         individual, con 0.199</strong>, por delante de la velocidad sostenida de 1 hora (0.193), la
+          velocidad de ráfaga a 5 minutos (0.165) y el importe bruto (0.110). Las tres primeras
+          concentran el <strong>55,7%</strong> de la ganancia total — una mayoría, pero no el
+          cuasi-monopolio que suele sugerir un gráfico de ganancia, y las siete features restantes se
+          sitúan todas entre 0.043 y 0.110, que es una contribución real y no un error de redondeo.
+          Que la cola siga viva es justamente el punto: son las mismas diez features que ve la capa
+          de reglas, pero un árbol está encontrando interacciones que las reglas no pueden expresar
+          — una categoría de merchant que solo es peligrosa <em>con</em> una velocidad y una hora
+          concretas, en lugar del sesgo de clase plano que cobraría una regla por categoría.</figcaption>
         </figure>
 
         <h2>Disciplina de entrenamiento</h2>
         <ul>
-          <li><strong>Sin leakage:</strong> el oversampling SMOTE se aplica estrictamente sobre el split de entrenamiento, nunca antes.</li>
-          <li><strong>Inyección de ruido realista:</strong> los importes fraudulentos reciben ±15% de varianza, 3% de merchants fraudulentos reciben typos en el nombre, los timestamps fluctúan ±30 min — enseñando deliberadamente que los defraudadores no repiten patrones exactos.</li>
-          <li><strong>Splits estratificados:</strong> el ratio de fraude (~1–5%) se preserva entre train/test.</li>
-          <li><strong>Evaluación cost-sensitive:</strong> un fraude no detectado (falso negativo) se pondera a 10× una falsa alarma, y el umbral de decisión se elige para minimizar el costo económico esperado, no el accuracy crudo.</li>
+          <li><strong>Sin remuestreo, y por tanto sin leakage:</strong> el pipeline no tiene ningún paso de remuestreo. El desbalance de 1-en-100 lo carga solo <code>scale_pos_weight</code>, y el calibrador se ajusta contra la tasa de clase real y sin remuestrear. El trainer graba esa tasa en el artefacto como un sello <code>calibration_prior</code>, y <code>scripts/evaluate_model.py</code> y <code>tests/test_model_feature_contract.py</code> leen cada uno ese sello del archivo desplegado y lo contrastan con la tasa del propio split de entrenamiento. Vale la pena ser exacto sobre lo que esa comprobación compra, porque es una garantía más débil de lo que parece: detecta un artefacto cuyo sello no cuadra con el split que dice representar, pero los dos lados de la comparación se derivan de ese mismo split, así que no puede detectar un split mal calculado — y ninguno de los dos lados es la prevalencia del corpus (0.010050 para el split de entrenamiento frente a 0.010040 para el corpus).</li>
+          <li><strong>Inyección de ruido realista:</strong> los importes fraudulentos reciben &plusmn;40% de varianza (<code>FRAUD_NOISE_INTENSITY = 0.40</code>), 3% de merchants fraudulentos reciben typos en el nombre, los timestamps fluctúan &plusmn;30 min — enseñando deliberadamente que los defraudadores no repiten patrones exactos. El &plusmn;15% que aparece como valor por defecto del argumento de <code>add_realistic_noise</code> está muerto: todos los puntos de llamada importan la constante del corpus desde el trainer en lugar de repetir el literal.</li>
+          <li><strong>Splits estratificados:</strong> el ratio de fraude del 1,0040% se preserva entre train/test.</li>
+          <li><strong>Evaluación cost-sensitive:</strong> un fraude no detectado (falso negativo) se pondera a 10&times; una falsa alarma en la gráfica de selección de umbral, y el Capítulo 4 barre esa ratio de 1&times; a 500&times; para mostrar qué hace realmente esa elección.</li>
         </ul>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/score-distribution.png" alt="Dos histogramas superpuestos de valores ml_score: las transacciones legítimas se agrupan alrededor de una mediana de 26 mientras que las fraudulentas lo hacen alrededor de 74, con una línea punteada marcando el umbral de fraude del tier bajo en 70." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/score-distribution.png" alt="Dos histogramas superpuestos de valores ml_score: las transacciones legítimas se apilan contra el borde izquierdo con una mediana de 0,13 mientras que las fraudulentas se apilan a la derecha con una mediana de 87,25, con una línea punteada marcando el umbral de fraude del tier bajo en 70." width="1440" height="750">
           <figcaption><strong>Figura 2 — Separación real de scores.</strong> Producida corriendo el
           <code>FeatureEngine</code> de producción más el artefacto entrenado sobre las 50k
-          transacciones sintéticas, aplicando después la fórmula exacta de suavizado cúbico usada en
-          serving. Medianas: <span class="tone-info">26,3 legítimas</span> vs
-          <span class="tone-critical">73,7 fraude</span> — una brecha de 47,5 puntos. Advertencia
-          honesta: estos scores provienen del propio dataset de entrenamiento del modelo, así que la
-          separación aquí es optimista respecto de tráfico genuinamente no visto; el monitoreo de
-          drift (Capítulo 8) existe precisamente para cazar esa brecha en producción.</figcaption>
+          transacciones sintéticas y llamando al <code>MLModelService.predict</code> real en cada
+          fila, así que son números de serving y no una reimplementación. Medianas:
+          <span class="tone-info">0,1327 legítimas</span> vs
+          <span class="tone-critical">87,2499 fraude</span> — una brecha de 87,1 puntos. La
+          distribución es casi bimodal, que es la consecuencia honesta de no post-procesar el score:
+          solo el <strong>0,4101%</strong> del tráfico legítimo cae en [20, 80], y el rango legítimo
+          todavía llega hasta 74,68 mientras que el fraude arranca en 0,12. Ese solapamiento es real y
+          medible — 24 de los 30 bins de 2 puntos en [20, 80] contienen <em>ambas</em> clases — y por
+          eso el Capítulo 4 reporta una tasa de fallos del 29% en lugar de una separación limpia.
+          Advertencia honesta: estos scores provienen del propio dataset de
+          entrenamiento del modelo, así que la separación aquí es optimista respecto de tráfico
+          genuinamente no visto; el monitoreo de drift (Capítulo 8) existe precisamente para cazar
+          esa brecha en producción.</figcaption>
         </figure>
       </div>
     </section>
@@ -165,23 +187,37 @@
       <div class="prose">
         <h2>Procedencia del dataset e hiperparámetros honestos</h2>
         <p><strong>De dónde vienen los datos.</strong> El artefacto actual entrena sobre el generador
-        sintético del repositorio (50k transacciones, ~5% de fraude) con una ruta documentada de mapeo a
-        PaySim cuando ese archivo está presente. Todavía no hay versionado de datasets (sin pinning tipo
-        DVC); el CSV en <code>data/</code> actúa como snapshot de facto. Una data card formal está en el
-        roadmap.</p>
+        sintético del repositorio: 50.000 transacciones con una tasa de fraude del
+        <strong>1,0040%</strong> (502 fraudes, 49.498 legítimas), extraídas de nueve arquetipos
+        conductuales con nombre en lugar de un perfil por clase, con una ruta documentada de mapeo a
+        PaySim cuando ese archivo está presente. Cada fila del corpus lleva un sello de procedencia
+        <code>corpus_schema</code> contra el que el trainer se niega a entrenar si no coincide — un
+        corpus generado por una versión anterior del generador es un error duro, no un aviso, porque
+        un corpus obsoleto que entrena en silencio es exactamente el modo de fallo que produjo la
+        inversión de montos descrita en el Capítulo 4. Todavía no hay versionado de datasets (sin
+        pinning tipo DVC); el CSV en <code>data/</code> actúa como snapshot de facto. Una data card
+        formal está en el roadmap.</p>
         <p><strong>Cómo se eligieron los hiperparámetros.</strong> Honestidad radical: el artefacto
-        original se ajustó a mano <em>y estaba mal configurado</em> — su <code>scale_pos_weight</code>
-        cercano a 100 asumía una tasa de fraude de ~1% cuando la real de
-        este dataset es 4,84%, así que un ejemplo de fraude pesaba como ~100 legítimos cuando debía
-        pesar como ~20. Ese artefacto fue reemplazado por un reentrenamiento reproducible mediante
-        <code>scripts/train_xgboost_aligned.py</code>, que dirige el entrenamiento por el
-        <code>FeatureEngine</code> exacto de producción para que las features de entrenamiento y de
-        serving no puedan diverger; el script está versionado junto al artefacto. Lo que sigue siendo
-        cierto: ningún grid search ni estudio de Optuna eligió estos valores — una búsqueda aleatoria
-        sigue en cola como trabajo del roadmap, y el próximo capítulo muestra por qué hasta los
-        parámetros perfectos no rescatan datos poco realistas.</p>
-        <p><strong>Cómo reproducirlo:</strong> <code>scripts/train_xgboost_aligned.py</code> (pipeline completo
-        documentado), <code>notebooks/01-paysim-fraud-detection.ipynb</code> (exploración).</p>
+        original se ajustó a mano <em>y estaba mal configurado</em>. Su pipeline de entrenamiento
+        remuestreaba hasta una tasa de fraude del 33% y luego ajustaba el calibrador sobre esa matriz
+        remuestreada, así que toda probabilidad absoluta quedaba inflada aproximadamente por el
+        factor que el remuestreador había introducido — medido en su momento como un bin superior que
+        predecía 0.98 frente a una tasa observada de 0.69. El reentrenamiento alineado eliminó el paso
+        de remuestreo por completo y carga el desbalance solo con
+        <code>scale_pos_weight</code>. El trainer sella en el artefacto la tasa que realmente vio, y
+        <code>scripts/evaluate_model.py</code> lee ese sello de vuelta desde el archivo desplegado
+        para confirmar que el artefacto y la partición que declara siguen coincidiendo — una
+        comprobación real contra un artefacto desajustado, aunque más débil de lo que parece a primera
+        vista, porque ambos lados de la comparación derivan de esa misma partición. Lo que sigue
+        siendo cierto: ningún grid
+        search ni estudio de Optuna eligió estos valores — una búsqueda aleatoria sigue en cola como
+        trabajo del roadmap, y el próximo capítulo muestra por qué hasta los parámetros perfectos no
+        rescatan datos poco realistas.</p>
+        <p><strong>Cómo reproducirlo:</strong> <code>scripts/train_xgboost_aligned.py</code>
+        (pipeline completo documentado — tres ejecuciones consecutivas producen un artefacto byte a
+        byte idéntico, SHA-256 <code class="mono">3efa00d8…5de75</code>, coincidiendo con el modelo
+        versionado), y <code>scripts/evaluate_model.py</code> /
+        <code>scripts/evaluate_cost.py</code> (las mediciones del Capítulo 4).</p>
       </div>
     </section>
     <nav class="pager" aria-label="Paginación de capítulos">

@@ -67,7 +67,7 @@
             <tr><th>Stream</th><th>Worker</th><th>Produces</th><th>Failure policy</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">fraud:llm</td><td class="mono">llm_worker</td><td>LLM report row + audit entry</td><td>stays PENDING, max 3 attempts</td></tr>
+            <tr><td class="mono">fraud:llm</td><td class="mono">llm_worker</td><td>LLM report row + audit entry</td><td>3 retries → DLQ (4 attempts total)</td></tr>
             <tr><td class="mono">fraud:shap</td><td class="mono">shap_worker</td><td>top-5 SHAP attributions</td><td>3 retries → DLQ</td></tr>
             <tr><td class="mono">fraud:embeddings</td><td class="mono">embedding_worker</td><td>Redis result key (TTL 1h)</td><td>ack on success, log on failure</td></tr>
           </tbody>
@@ -78,7 +78,7 @@
 
         <svg class="diagram-svg" viewBox="0 0 1200 500" role="img" aria-label="Sequence diagram: a POST /transactions request flows through the API into three Redis Streams, each consumed by its own worker which persists results to PostgreSQL tables or Redis keys; a guarantees panel explains XACK, pending recovery via XAUTOCLAIM and the fraud:dlq dead-letter queue." xmlns="http://www.w3.org/2000/svg">
           <title>09 Streams - Fraud Detector Case Study</title>
-          <desc>From left to right: a client posts a transaction; the API scores it, persists it and publishes to three Redis streams (fraud:llm, fraud:shap, fraud:embeddings); three workers (llm_worker, shap_worker, embedding_worker) consume each stream and write LLMReport rows, ShapAttribution rows and a Redis result key with one-hour TTL respectively. A side panel states the delivery guarantees: XACK only after persistence, pending messages idle over five minutes reclaimed by an XAUTOCLAIM loop every sixty seconds, and messages failing three attempts moved to the fraud:dlq dead-letter queue.</desc>
+          <desc>From left to right: a client posts a transaction; the API scores it, persists it and publishes to three Redis streams (fraud:llm, fraud:shap, fraud:embeddings); three workers (llm_worker, shap_worker, embedding_worker) consume each stream and write LLMReport rows, ShapAttribution rows and a Redis result key with one-hour TTL respectively. A side panel states the delivery guarantees: XACK only after persistence, pending messages idle over five minutes reclaimed by an XAUTOCLAIM loop every sixty seconds, and messages still failing after three retries — four attempts in total — moved to the fraud:dlq dead-letter queue.</desc>
 
           <!-- Row 1: Client -> API -->
           <g>
@@ -168,7 +168,7 @@
             <text x="74" y="306" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">idle &gt; 5 min → XAUTOCLAIM loop every 60s.</text>
 
             <circle cx="58" cy="350" r="4.5" fill="#ef4444"/>
-            <text x="74" y="346" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">After 3 failed attempts the message is</text>
+            <text x="74" y="346" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">After 3 retries (4 attempts) the message is</text>
             <text x="74" y="364" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#cbd5e1">moved to fraud:dlq (stream · group · reason).</text>
           </g>
 
@@ -189,6 +189,38 @@
             </marker>
           </defs>
         </svg>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>The publish step is a database problem, not a Redis problem</h2>
+        <p>Consumer groups and DLQs only solve delivery. They say nothing about the moment between
+        "the transaction is scored and committed" and "the events are on the stream" — and that
+        moment is where this pipeline used to lose work.</p>
+        <p>The scoring endpoint called <code>publish_event</code> three times, fire-and-forget, each
+        wrapped in its own <code>try</code>/<code>except</code>. A Redis blip therefore produced a
+        committed, fully-scored transaction with no LLM report, no SHAP attribution and no merchant
+        embedding. The failure <em>was</em> logged, so it was never truly silent — but nothing could
+        discover or repair it afterwards: the report endpoint returned <code>pending</code> forever
+        and no reconciliation query existed anywhere in the codebase.</p>
+        <p>The fix is a transactional outbox. Each event is written as a row in the same database
+        transaction as the scored transaction, so it commits atomically with it; a relay publishes it
+        to Redis afterwards. Two properties follow, and only the second was obvious:</p>
+        <ul>
+          <li><strong>Durability.</strong> If the API dies between commit and publish, the row is
+          still there to be picked up. The event cannot be lost by a process that no longer
+          exists.</li>
+          <li><strong>No pre-commit race.</strong> The events used to be published <em>before</em> the
+          commit, because the real commit happens in the <code>get_db</code> teardown after the handler
+          returns. All three consumer tables carry a hard foreign key to
+          <code>transactions.id</code>, so a worker that picked the message up inside that
+          sub-millisecond window hit an FK violation and burned its retries against a transaction that
+          was about to exist. Publishing strictly after the commit removes the window entirely.</li>
+        </ul>
+        <p>The lesson generalises past Redis: once a pipeline fans out to three independent consumers,
+        the hand-off is a distributed transaction, and the only honest place to make it atomic is the
+        database that already owns the truth.</p>
       </div>
     </section>
 

@@ -69,8 +69,10 @@
           by the 5-minute burst (+3.12) and the amount's deviation from this user's own history
           (+0.49); retraining inverted the ranking — merchant risk, previously a leading attribution,
           now contributes exactly zero. Note the exact-zero bars: tree ensembles only
-          credit features actually used in a decision-path split — silence is information too. After
-          the production smoothing curve, this prediction surfaces as <span class="tone-critical">ml_score ≈ 74/100</span>.</figcaption>
+          credit features actually used in a decision-path split — silence is information too. With
+          no post-processing between the model and the score, this transaction's calibrated
+          probability of 0.746 is the score the system acts on:
+          <span class="tone-critical">ml_score ≈ 74.6/100</span>.</figcaption>
         </figure>
         <p>This closes the loop between layers: rules give named triggers, SHAP gives feature-level
         causes, and together they turn a black-box score into a defensible narrative. Attributions

@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>08 Drift - Fraud Detector Case Study</title>
-  <meta name="description" content="Drift monitoring for ML fraud models: two detectors plus automatic retraining triggers that keep scoring honest as transaction patterns shift.">
-  <meta property="og:title" content="08 Drift - Fraud Detector Case Study">
-  <meta property="og:description" content="Drift monitoring for ML fraud models: two detectors plus automatic retraining triggers that keep scoring honest as transaction patterns shift.">
+<meta name="description" content="Drift monitoring for ML fraud models: a hand-rolled Population Stability Index, artifact-fingerprinted reference windows, and automatic retraining triggers that keep scoring honest as transaction patterns shift.">
+  <meta property="og:title" content="08 Monitoring and Drift - Fraud Detector Case Study">
+  <meta property="og:description" content="Drift monitoring for ML fraud models: a hand-rolled Population Stability Index, artifact-fingerprinted reference windows, and automatic retraining triggers that keep scoring honest as transaction patterns shift.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
@@ -52,12 +52,21 @@
     <section class="reveal">
       <div class="prose">
         <p>A deployed model doesn't announce when it stops working. User behavior shifts, fraud
-        tactics evolve, and accuracy bleeds out month by month. Two complementary detectors watch
-        for this:</p>
-        <ul>
-          <li><strong>Data drift (Evidently):</strong> compares current feature distributions against a reference window. If <code>tx_count_last_5min</code> suddenly looks nothing like training data, predictions become unreliable even before labels say so.</li>
-          <li><strong>Custom PSI:</strong> a hand-rolled Population Stability Index provides a lightweight, dependency-free sanity check on the same distributions.</li>
-        </ul>
+        tactics evolve, and accuracy bleeds out month by month. The detector is a hand-rolled
+        Population Stability Index: it compares each current feature distribution against a stored
+        reference window and flags any feature whose PSI exceeds 0.25. If
+        <code>tx_count_last_5min</code> suddenly looks nothing like the reference, predictions
+        become unreliable even before labels say so.</p>
+        <p>PSI is the textbook measure here, and it is deliberately implemented directly rather than
+        pulled in as a dependency — <code>DataDriftService._compute_psi</code> is about fifteen
+        lines of numpy, and owning it means the binning, the epsilon guarding <code>log(0)</code>
+        and the threshold are all readable in one place. The figure below is that exact function
+        applied to two real windows of the corpus.</p>
+        <p>Two details make the monitor refuse to report confident nonsense. It will not evaluate at
+        all below a reference of 200 rows, and it records the SHA-256 prefix of the model artifact
+        that produced the reference — because a reference is only valid for the artifact it came
+        from, and comparing today's distribution against last quarter's model is not a drift signal,
+        it is two variables changing at once.</p>
 
         <figure class="figure">
           <img loading="lazy" decoding="async" src="../assets/feature-drift.png" alt="Horizontal bar chart of Population Stability Index per feature under a simulated drift scenario: amount towers at 0.634, far past the red critical line at 0.25, while velocity_5min shows a small bump at 0.016 and user_avg_amount, user_std_amount and velocity_1h stay flat near zero; dashed amber and red lines mark the conventional warn 0.10 and critical 0.25 thresholds." width="1440" height="750">

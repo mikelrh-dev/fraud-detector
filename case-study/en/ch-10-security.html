@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>10 Security - Fraud Detector Case Study</title>
-  <meta name="description" content="Security and audit for a fraud system: JWT lifecycle, role-based access, rate limits and an SHA-256 hash chain that makes tampering detectable.">
-  <meta property="og:title" content="10 Security - Fraud Detector Case Study">
-  <meta property="og:description" content="Security and audit for a fraud system: JWT lifecycle, role-based access, rate limits and an SHA-256 hash chain that makes tampering detectable.">
+<meta name="description" content="Security and audit for a fraud system: JWT lifecycle, role-based access, eight Redis rate-limit windows and per-row SHA-256 checksums that detect a modified audit record.">
+  <meta property="og:title" content="10 Security and Audit - Fraud Detector Case Study">
+  <meta property="og:description" content="Security and audit for a fraud system: JWT lifecycle, role-based access, eight Redis rate-limit windows and per-row SHA-256 checksums that detect a modified audit record.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
@@ -55,8 +55,9 @@
         <ul>
           <li><strong>JWT lifecycle:</strong> short-lived access tokens (15 min), refresh tokens, and server-side blacklist on logout — stolen tokens expire fast and die explicitly.</li>
           <li><strong>Role-based access:</strong> analysts query and review; only admins soft-delete transactions, export audit logs, or inspect analyst activity.</li>
-          <li><strong>Rate limiting:</strong> login/register 10/min, transactions 100/min, alerts 60/min — credential-stuffing gets expensive.</li>
-          <li><strong>SHA-256 audit chain:</strong> every score, analyst review and LLM report lands in an append-only log with checksums, making tampering detectable.</li>
+          <li><strong>Rate limiting:</strong> eight Redis fixed-window counters keyed by client IP and path prefix, matched most-specific-first so the <code>/auth/*</code> entries are not shadowed by the broader ones. Per 60 seconds: login 10 · register 10 · refresh 5 · logout 20 · transactions 100 · alerts 60 · audit 60 · monitoring 30. Credential stuffing gets expensive, and so does an audit-export or monitoring-poll loop — both of which are read-heavy enough to be worth metering on their own. The limiter fails <em>open</em> if Redis is unreachable, which is a deliberate availability-over-strictness trade and is logged when it happens.</li>
+          <li><strong>Per-row SHA-256 checksums:</strong> every score, analyst review and LLM report lands in an append-only <code>audit_entries</code> log, and each row carries a SHA-256 checksum over its own canonicalised content, with keys sorted so the digest is deterministic. This detects <em>modification of a logged row</em> — an edited decision, a doctored review outcome. It is not a hash chain: there is no <code>prev_hash</code> column, so a row that is deleted or reordered leaves no trace, and the guarantee stops at "this row has not been altered since it was written". Pair it with the database's own append-only privileges and retention policy for the deletion case.</li>
+          <li><strong>Untrusted input at the rule layer:</strong> <code>amount</code> and <code>merchant_name</code> arrive as raw values, so <code>amount &gt; 1000</code> raises <code>TypeError</code> on a string and <code>.lower()</code> raises <code>AttributeError</code> on a non-string. Pydantic protects the HTTP path, which is exactly why this stayed invisible — every other consumer (batch import, replay tool, future queue worker) inherited a crash. Absent and present-but-malformed are now distinguished on purpose: a value that is present and unusable is treated as untrusted input and fires <code>high_amount</code>, because coercing it to zero would let anyone who can make the amount unparseable dodge every rule; a field that is simply absent keeps the old meaning of zero, so partial batch records do not flood the queue with false positives.</li>
           <li><strong>Soft delete:</strong> transactions are flagged, never physically erased — financial history stays queryable for audit and future retraining.</li>
         </ul>
       </div>

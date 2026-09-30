@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>03 ML - Fraud Detector Case Study</title>
-  <meta name="description" content="The trained XGBoost artifact opened up: ten engineered features, a calibrated ensemble, cubic smoothing and the discipline behind the aligned retrain.">
+  <meta name="description" content="The trained XGBoost artifact opened up: ten engineered features, a calibrated ensemble, the calibrated probability behind every score and the discipline behind the aligned retrain.">
   <meta property="og:title" content="03 ML - Fraud Detector Case Study">
-  <meta property="og:description" content="The trained XGBoost artifact opened up: ten engineered features, a calibrated ensemble, cubic smoothing and the discipline behind the aligned retrain.">
+  <meta property="og:description" content="The trained XGBoost artifact opened up: ten engineered features, a calibrated ensemble, the calibrated probability behind every score and the discipline behind the aligned retrain.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
@@ -89,14 +89,19 @@
           <li><strong>Tabular king:</strong> on small-to-medium tabular data, gradient-boosted trees remain the state of the art versus deep learning.</li>
         </ul>
 
-        <h2>Taming the probability curve</h2>
-        <p>XGBoost's raw probability is compressed toward 0.5 under class imbalance. The system
-        applies a cubic smoothing before scaling to 0–100, so only confident predictions score high
-        while mid-range uncertainty stays mid-range instead of producing false alarms:</p>
+        <h2>From probability to score</h2>
+        <p>Nothing happens between the model and the score. <code>MLModelService.predict</code> takes
+        the calibrated fraud probability and scales it straight onto 0–100:</p>
         <div class="formula">
-          smoothed = 0.5 + 0.7 × (p − 0.5)³ + 0.3 × (p − 0.5)<br>
-          ml_score = clip(smoothed, 0, 1) × 100
+          ml_score = p × 100 &nbsp;&nbsp;(p = predict_proba(features)[0, 1])
         </div>
+        <p>That is only defensible because <code>predict_proba</code> returns a calibrated
+        probability rather than a raw margin — the artifact is a <code>CalibratedClassifierCV</code>
+        wrapper (below), so <code>p</code> means what it says and is comparable across transactions.
+        The artifact also stores the class prior its calibrator was fit against, and the service logs
+        that stamp at load time: a probability is only as trustworthy as the base rate it was
+        calibrated for, so recording the prior makes a stale calibration observable instead of
+        silent. Ranking is unaffected by a prior shift; thresholding is not.</p>
         <p>If the model file is missing, the layer returns <code>ml_score = 0</code> and the system
         keeps scoring with rules + context. Degradation is explicit, never a crash.</p>
 
@@ -117,41 +122,54 @@
             <tr><td class="mono">reg_alpha</td><td class="weight">1.0</td><td>L1 regularization pushing uninformative split gains to zero</td></tr>
             <tr><td class="mono">reg_lambda</td><td class="weight">2.0</td><td>L2 regularization smoothing leaf weights</td></tr>
             <tr><td class="mono">calibration</td><td class="weight">sigmoid, cv=5</td><td>each fold&rsquo;s probabilities are remapped so <code>predict_proba</code> means what it says</td></tr>
-            <tr><td class="mono">scale_pos_weight</td><td class="weight">≈ 19.7</td><td>matched to this dataset&rsquo;s real 4.84% fraud rate — not an assumed ~1%</td></tr>
+            <tr><td class="mono">scale_pos_weight</td><td class="weight">98.50</td><td>computed from the un-resampled training split: 39,598 legitimate &divide; 402 fraud. Reweights the loss without touching the class prior, which is what lets the calibrator be fit against the real base rate.</td></tr>
           </tbody>
         </table>
         </div>
+        <p class="table-caption">The corpus is 50,000 transactions at a <strong>1.0040%</strong> fraud
+        rate — 502 frauds against 49,498 legitimate. The artifact also stamps
+        <code>calibration_prior = 0.010050</code>, the prior its calibrator was actually fit against,
+        so a future reintroduction of a resampling step before calibration is detectable by reading the
+        deployed file rather than only by reading a training transcript.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/feature-importance.png" alt="Horizontal bar chart of feature importances from the trained calibrated XGBoost ensemble: 1-hour transaction count leads at 0.428, followed by 5-minute velocity at 0.374 and amount-versus-user-standard-deviation at 0.179; remaining features contribute near zero." width="1440" height="810">
+          <img loading="lazy" decoding="async" src="../assets/feature-importance.png" alt="Horizontal bar chart of feature importances from the trained calibrated XGBoost ensemble: merchant_risk_level leads at 0.199, followed by 1-hour transaction count at 0.193, 5-minute velocity at 0.165 and amount at 0.110; the remaining six features each contribute between 0.043 and 0.071." width="1440" height="810">
           <figcaption><strong>Figure 1 — Real feature importances</strong>, extracted directly from
           the trained <code>xgboost_paysim_v1.joblib</code> (mean gain across the five calibrated
-          folds; regenerated from the current artifact after the aligned retrain). Three features
-          carry essentially all the signal: sustained 1-hour velocity (42.8%), 5-minute burst
-          velocity (37.4%) and amount relative to the user&rsquo;s own history (17.9%). The
-          near-zero features are not mistakes: their information largely overlaps with what the
-          rule layer already expresses, so gradient boosting found little marginal gain left to
-          extract.</figcaption>
+          folds). <strong>Merchant risk is the single largest contributor at 0.199</strong>, ahead of
+          sustained 1-hour velocity (0.193), 5-minute burst velocity (0.165) and raw amount (0.110).
+          The top three carry <strong>55.7%</strong> of the total gain — a majority, but not the
+          near-monopoly a gain chart often suggests, and the remaining seven features all sit between
+          0.043 and 0.110, which is a real contribution rather than a rounding error. That the tail is
+          alive is the point: these are the same ten features the rule layer sees, but a tree is
+          finding interactions the rules cannot express — a merchant category that is only dangerous
+          <em>at</em> a particular velocity and hour, rather than the flat class bias a per-category
+          rule would charge.</figcaption>
         </figure>
 
         <h2>Training discipline</h2>
         <ul>
-          <li><strong>No leakage:</strong> SMOTE oversampling is applied strictly on the training split, never before it.</li>
-          <li><strong>Realistic noise injection:</strong> fraud amounts get ±15% variance, 3% of fraud merchants receive name typos, timestamps jitter ±30 min — deliberately teaching the model that fraudsters don't repeat exact patterns.</li>
-          <li><strong>Stratified splits:</strong> the ~1–5% fraud ratio is preserved across train/test.</li>
-          <li><strong>Cost-sensitive evaluation:</strong> a missed fraud (false negative) is priced at 10× a false alarm, and the decision threshold is chosen to minimize expected economic cost rather than raw accuracy.</li>
+          <li><strong>No resampling, therefore no leakage:</strong> the pipeline has no resampling step at all. The 1-in-100 class imbalance is carried by <code>scale_pos_weight</code> alone, and the calibrator is fit against the real, un-resampled class prior. The trainer records that prior into the artifact as a <code>calibration_prior</code> stamp, and <code>scripts/evaluate_model.py</code> and <code>tests/test_model_feature_contract.py</code> each read the stamp back off the deployed file and check it against the training split's own prior. It is worth being exact about what that check buys, because it is a weaker guarantee than it looks: it catches an artifact whose stamp disagrees with the split it claims, but both sides of the comparison are derived from that same split, so it cannot catch a wrongly-computed split — and neither side is the corpus prevalence (0.010050 for the training split against 0.010040 for the corpus).</li>
+          <li><strong>Realistic noise injection:</strong> fraud amounts get &plusmn;40% variance (<code>FRAUD_NOISE_INTENSITY = 0.40</code>), 3% of fraud merchants receive name typos, timestamps jitter &plusmn;30 min — deliberately teaching the model that fraudsters don't repeat exact patterns. The &plusmn;15% that appears as the default argument of <code>add_realistic_noise</code> is dead: every call site imports the corpus constant from the trainer rather than repeating the literal.</li>
+          <li><strong>Stratified splits:</strong> the 1.0040% fraud ratio is preserved across train/test.</li>
+          <li><strong>Cost-sensitive evaluation:</strong> a missed fraud (false negative) is priced at 10&times; a false alarm in the threshold-selection chart, and Chapter 4 sweeps that ratio from 1&times; to 500&times; to show what the choice of ratio actually does.</li>
         </ul>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/score-distribution.png" alt="Two overlaid histograms of ml_score values: legitimate transactions cluster around a median of 26 while fraud transactions cluster around a median of 74, with a dashed line marking the low-tier fraud threshold at 70." width="1440" height="750">
+          <img loading="lazy" decoding="async" src="../assets/score-distribution.png" alt="Two overlaid histograms of ml_score values: legitimate transactions pile up against the left edge at a median of 0.13 while fraud transactions pile up on the right at a median of 87.25, with a dashed line marking the low-tier fraud threshold at 70." width="1440" height="750">
           <figcaption><strong>Figure 2 — Real score separation.</strong> Produced by running the
           production <code>FeatureEngine</code> plus the trained artifact over all 50k synthetic
-          transactions, then applying the exact cubic-smoothing formula used in serving. Medians:
-          <span class="tone-info">26.3 legitimate</span> vs
-          <span class="tone-critical">73.7 fraud</span> — a 47.5-point gap. Honest caveat: these
-          scores come from the model's own training dataset, so separation here is optimistic
-          relative to truly unseen traffic; drift monitoring (Chapter 8) exists precisely to catch
-          that gap in production.</figcaption>
+          transactions and calling the real <code>MLModelService.predict</code> on every row, so
+          these are serving numbers and not a re-implementation. Medians:
+          <span class="tone-info">0.1327 legitimate</span> vs
+          <span class="tone-critical">87.2499 fraud</span> — an 87.1-point gap. The distribution is
+          close to bimodal, which is the honest consequence of not post-processing the score: only
+          <strong>0.4101%</strong> of legitimate traffic lands in [20, 80], and the legitimate range
+          still reaches 74.68 while fraud starts at 0.12. That overlap is real and measurable — 24 of
+          the 30 two-point bins in [20, 80] contain <em>both</em> classes — which is why Chapter 4
+          reports a 29% miss rate instead of a clean split. Honest caveat: these scores come from the
+          model's own training dataset, so separation here is optimistic relative to truly unseen
+          traffic; drift monitoring (Chapter 8) exists precisely to catch that gap in production.</figcaption>
         </figure>
       </div>
     </section>
@@ -162,21 +180,33 @@
       <div class="prose">
         <h2>Dataset provenance &amp; honest hyperparameters</h2>
         <p><strong>Where the data comes from.</strong> The current artifact trains on the repository&rsquo;s
-        synthetic generator (50k transactions, ~5% fraud rate) with a documented mapping path to PaySim
-        when that file is present. There is no dataset versioning yet (no DVC-style pinning); the CSV in
-        <code>data/</code> acts as the de-facto snapshot. A proper data card is on the roadmap.</p>
+        synthetic generator: 50,000 transactions at a <strong>1.0040%</strong> fraud rate (502 frauds,
+        49,498 legitimate), drawn from nine named behavioural archetypes rather than one profile per
+        class, with a documented mapping path to PaySim when that file is present. Every corpus row
+        carries a <code>corpus_schema</code> provenance stamp that the trainer refuses to run against
+        if it does not match — a corpus generated by an older version of the generator is a hard
+        error, not a warning, because a stale corpus that trains silently is the failure mode that
+        produced the amount inversion described in Chapter 4. There is no dataset versioning yet (no
+        DVC-style pinning); the CSV in <code>data/</code> acts as the de-facto snapshot. A proper data
+        card is on the roadmap.</p>
         <p><strong>How the hyperparameters were chosen.</strong> Radical honesty: the original
-        artifact was tuned by hand <em>and misconfigured</em> — its <code>scale_pos_weight</code>
-        near 100 assumed a ~1% fraud rate while this dataset&rsquo;s real rate is 4.84%, so a fraud
-        example was weighted like ~100 legitimate ones when it should weigh like ~20. That artifact
-        has been replaced by a reproducible retrain through <code>scripts/train_xgboost_aligned.py</code>,
-        which routes training through the exact production <code>FeatureEngine</code> so train-time
-        and serving-time features cannot diverge; the script is committed next to the artifact.
-        What is still true: no grid search or Optuna study picked these values — a randomized
-        search remains queued as roadmap work, and the next chapter shows why even perfect
-        parameters cannot rescue unrealistic data.</p>
+        artifact was tuned by hand <em>and misconfigured</em>. Its training pipeline resampled to a 33%
+        fraud prior and then fit the calibrator on that resampled matrix, so every absolute
+        probability was inflated by roughly the factor the resampler had introduced — measured at the
+        time as a top bin predicting 0.98 against an observed 0.69 fraud rate. The aligned retrain
+        removed the resampling step entirely and carries the imbalance in <code>scale_pos_weight</code>
+        alone. The trainer stamps the prior it actually saw into the artifact, and
+        <code>scripts/evaluate_model.py</code> reads that stamp back off the deployed file to confirm
+        the artifact and the split it claims still agree — a real check against a mismatched artifact,
+        though a weaker one than it first appears, since both sides of the comparison derive from that
+        same split. What is still true: no grid search or Optuna study picked these
+        values — a randomized search remains queued as roadmap work, and the next chapter shows why
+        even perfect parameters cannot rescue unrealistic data.</p>
         <p><strong>Reproduce it:</strong> <code>scripts/train_xgboost_aligned.py</code> (full documented
-        pipeline), <code>notebooks/01-paysim-fraud-detection.ipynb</code> (exploration).</p>
+        pipeline — three consecutive runs produce a byte-identical artifact, SHA-256
+        <code class="mono">3efa00d8…5de75</code>, matching the committed model), and
+        <code>scripts/evaluate_model.py</code> / <code>scripts/evaluate_cost.py</code> (the
+        measurements in Chapter 4).</p>
       </div>
     </section>
     <nav class="pager" aria-label="Chapter pagination">

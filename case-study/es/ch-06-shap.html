@@ -74,8 +74,9 @@
           invirtió el orden — el nivel de riesgo del merchant, antes una atribución líder, ahora
           aporta exactamente cero. Las barras en exactamente cero también dicen algo: los ensambles de árboles solo acreditan
           features realmente usadas en algún split del camino de decisión — el silencio también es
-          información. Tras la curva de suavizado de producción, esta predicción emerge como
-          <span class="tone-critical">ml_score ≈ 74/100</span>.</figcaption>
+          información. Sin post-procesamiento entre el modelo y el score, la probabilidad calibrada
+          de 0,746 de esta transacción es el score sobre el que actúa el sistema:
+          <span class="tone-critical">ml_score ≈ 74,6/100</span>.</figcaption>
         </figure>
         <p>Esto cierra el círculo entre capas: las reglas dan disparadores nombrados, SHAP da causas
         a nivel feature, y juntos convierten un score caja-negra en una narrativa defendible. Las

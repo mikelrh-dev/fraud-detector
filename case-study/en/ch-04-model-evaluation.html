@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>04 Model Evaluation - Fraud Detector Case Study</title>
-  <meta name="description" content="Held-out evaluation of the fraud model: perfect F1 explained honestly — why separable synthetic classes make perfect metrics a warning, not a win.">
+  <meta name="description" content="Held-out evaluation of the fraud model: PR-AUC 0.7728 at the production threshold, and an error breakdown by behavioural archetype showing the model's remaining mistakes are the cases the corpus was built to be hard on.">
   <meta property="og:title" content="04 Model Evaluation - Fraud Detector Case Study">
-  <meta property="og:description" content="Held-out evaluation of the fraud model: perfect F1 explained honestly — why separable synthetic classes make perfect metrics a warning, not a win.">
+  <meta property="og:description" content="Held-out evaluation of the fraud model: PR-AUC 0.7728 at the production threshold, and an error breakdown by behavioural archetype showing the model's remaining mistakes are the cases the corpus was built to be hard on.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
@@ -45,114 +45,374 @@
 
     <header class="chapter-header">
       <span class="chapter-num">Chapter 04</span>
-      <h1>Model Evaluation — and a Warning About Perfect Scores</h1>
-      <p class="chapter-subtitle">We ran the full documented protocol on a held-out split. The metrics came back perfect. Here is why that is a warning sign, not a victory.</p>
+      <h1>Model Evaluation — Errors by Design</h1>
+      <p class="chapter-subtitle">PR-AUC 0.7728 on the held-out split, 29 frauds missed out of 100 — and an error breakdown showing exactly which transactions the model gets wrong.</p>
     </header>
 
     <section class="reveal">
       <div class="prose">
-        <p>This chapter reports the first published evaluation of the model, following the exact
-        protocol from the training script: stratified 80/20 split (seed 42), the documented
-        feature-noise step and train-only SMOTE, then scoring on the untouched 20% (10,000
-        transactions). The production artifact was not retrained or modified.</p>
+        <p>This chapter reports the evaluation of the shipped artifact on data it has never seen,
+        following the protocol from the training script: stratified 80/20 split (seed 42), the
+        documented feature-noise pass, then scoring on the untouched 20% (10,000
+        transactions, 100 of them fraudulent). The pipeline applies no resampling at any point, so
+        the 20% is scored at the corpus's real 1% prevalence rather than an         artificial one.</p>
+
+        <p>Provenance of what follows, stated up front because it is not uniform. Every figure on
+        this page is a PNG written by <code>scripts/generate_case_study_charts.py</code> against
+        <code>models/xgboost_paysim_v1.joblib</code>. The two measured rows of the results table, the
+        per-archetype error breakdown, the calibration table and the Wilson intervals come from
+        <code>scripts/evaluate_model.py</code>; the cost sweep and the alerts-per-day column come from
+        <code>scripts/evaluate_cost.py</code>, which re-derives the identical split and asserts the
+        rows line up before it prices anything. Three things on this page are stated as measurements
+        rather than as script output, and each is labelled where it stands: the dummy row of the
+        results table, which is a definitional consequence of prevalence rather than something a
+        script computes; the per-feature table below; and the SHA-256 recorded in Reproducibility
+        at the end of the chapter, which no committed script prints or verifies either.</p>
 
         <h2>The results table</h2>
         <div class="table-scroll">
         <table class="data-table">
           <thead>
-            <tr><th>Model</th><th>Precision @0.5</th><th>Recall @0.5</th><th>F1 @0.5</th><th>PR-AUC</th></tr>
+            <tr><th>Split</th><th>PR-AUC</th><th>ROC-AUC</th><th>Precision</th><th>Recall</th><th>F1</th></tr>
           </thead>
           <tbody>
-            <tr><td>Dummy (majority class)</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.048</td></tr>
-            <tr><td>Logistic Regression</td><td class="mono">1.000</td><td class="mono">0.998</td><td class="mono">0.999</td><td class="mono">1.000</td></tr>
-            <tr><td>Random Forest (200)</td><td class="mono">1.000</td><td class="mono">1.000</td><td class="mono">1.000</td><td class="mono">1.000</td></tr>
-            <tr><td class="mono">XGBoost (production params)</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td><td class="weight">1.000</td></tr>
+            <tr><td>Dummy (majority class)</td><td class="mono">0.010</td><td class="mono">0.500</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">Test split (10,000 rows, 100 fraud)</td><td class="weight">0.7728</td><td class="weight">0.9181</td><td class="weight">0.8353</td><td class="weight">0.7100</td><td class="weight">0.7676</td></tr>
+            <tr><td class="mono">Held-out corpus (30,000 rows, unseen seed)</td><td class="weight">0.7569</td><td class="weight">0.9217</td><td class="weight">0.8865</td><td class="weight">0.7049</td><td class="weight">0.7853</td></tr>
           </tbody>
         </table>
         </div>
-        <p class="table-caption">ROC-AUC (XGBoost): 1.000 · 5-fold CV: F1 = 1.000 ± 0.000, PR-AUC = 1.000 ± 0.000 (SMOTE inside every fold).</p>
+        <p class="table-caption">Measured at the production operating point: the amount-tiered
+        threshold of Chapter 5 (70 / 50 / 45 / 40 by amount tier), not a flat 0.50 cut. Confusion
+        matrix on the test split: TN=9,886 · FP=14 · FN=29 · TP=71. The dummy row's PR-AUC of 0.010
+        is not a tuned number — it <em>is</em> the prevalence. A majority-class classifier scores
+        PR-AUC equal to the base rate by definition, so at 1% prevalence the entire useful range of
+        that metric lives between 0.010 and 1.000, and 0.7728 is roughly 76&times; the floor.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Two confusion matrices side by side at threshold 0.50 and at the cost-optimal threshold: both show 9,516 true negatives, zero false positives, zero false negatives and 484 true positives." width="1440" height="660">
-          <figcaption><strong>Confusion matrix on the held-out test set:</strong> 9,516 legitimate
-          correctly cleared, 484 frauds caught, zero errors on either side — at both the default and
-          the cost-optimal threshold.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Two confusion matrices side by side. At threshold 0.50: 9,890 true negatives, 10 false positives, 29 false negatives, 71 true positives. At the cost-optimal threshold 0.15: 9,840 true negatives, 60 false positives, 23 false negatives, 77 true positives." width="1440" height="660">
+          <figcaption><strong>Confusion matrices at two flat thresholds</strong> on the same 10,000-row
+          split. At 0.50 the model clears 9,890 legitimate rows, false-alarms on 10, and misses 29 of
+          100 frauds for a cost of 300. Dropping to 0.15 buys 6 more frauds caught (29&rarr;23 missed)
+          at the price of 50 more false alarms, for a cost of 290 — six fewer misses and fifty more
+          analyst-hours for a 3% cost saving. Note also that the flat 0.50 cut and the production
+          amount-tiered policy catch <em>exactly the same 71 frauds</em> on this split; the tiering
+          changes only the false-alarm count (10 &rarr; 14). Honesty about a clever mechanism is
+          part of the result.</figcaption>
         </figure>
       </div>
     </section>
 
     <section class="reveal">
       <div class="prose">
-        <h2>The warning: perfect scores are a red flag</h2>
-        <p>A model that never errs on test data is not a triumph — it is a measurement of how far
-        the synthetic data is from reality. Look at the baselines row: <strong>logistic regression
-        scores 0.999</strong>. When a linear model matches gradient boosting perfectly, model choice
-        was never the bottleneck. The classes themselves are almost non-overlapping:</p>
+        <h2>First: is any single feature doing all the work?</h2>
+        <p>The classic way a synthetic corpus lies to you is by making the label trivially
+        recoverable from one column. If a single feature separates the classes on its own, the model
+        has learned nothing except that column, and every metric downstream is flattering noise.
+        Measured through the production <code>FeatureEngine</code> on the test split, each feature in
+        isolation:</p>
 
-        <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-separability.png" alt="Two histograms: transaction amounts by class on a log scale barely overlap between legitimate and fraud; hour-of-day distributions also barely overlap." width="1560" height="690">
-          <figcaption><strong>Why the test set is trivially separable:</strong> the synthetic
-          generator draws fraud amounts from a log-normal centered near $36k and legitimate ones
-          near $90, with night-vs-day hours and disjoint velocity ranges. The classes share almost
-          no support, so any classifier — however simple — can separate them perfectly.</figcaption>
-        </figure>
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Feature alone</th><th>ROC-AUC</th><th>Feature alone</th><th>ROC-AUC</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">tx_count_last_1h</td><td class="mono">0.8192</td><td class="mono">hour_of_day</td><td class="mono">0.3766</td></tr>
+            <tr><td class="mono">tx_count_last_5min</td><td class="mono">0.7711</td><td class="mono">is_weekend</td><td class="mono">0.4922</td></tr>
+            <tr><td class="mono">amount</td><td class="mono">0.7265</td><td class="mono">is_crypto</td><td class="mono">0.5854</td></tr>
+            <tr><td class="mono">amount_vs_user_std</td><td class="mono">0.6928</td><td class="mono">merchant_risk_level</td><td class="mono">0.6601</td></tr>
+            <tr><td class="mono">amount_vs_user_avg</td><td class="mono">0.6939</td><td class="mono">amount_round_number</td><td class="mono">0.5948</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split, ten fixed-width features, each scored alone with
+        <code>roc_auc_score(y, x[:, i])</code> over the same feature matrix
+        <code>scripts/evaluate_model.py</code> builds. No committed script prints this table: the
+        only per-feature <code>roc_auc_score</code> in the repository is the assertion inside
+        <code>tests/unit/test_training_alignment.py</code>, which runs the same metric on a
+        freshly generated corpus and stops at a pass/fail bound. These values are therefore stated
+        as a measurement rather than as reproducible script output.</p>
+        <p>Nothing reaches 1.0000. The strongest single feature is 1-hour velocity at 0.8192 — useful,
+        far from decisive. (<code>hour_of_day</code> reads below 0.5 because its fraud signal is the
+        night band at <em>both</em> ends of the day rather than a monotone trend, which a single
+        ROC-AUC on a raw hour integer cannot express.) This is enforced, not merely observed:
+        <code>tests/test_model_feature_contract.py</code> asserts that every feature varies in the
+        training data, that every feature moves the model's output, and that no feature sits an order
+        of magnitude below the others.</p>
+      </div>
+    </section>
 
-        <p>This is one of the most important lessons in applied machine learning:
-        <strong>evaluation can only be as honest as the data it runs on</strong>. These numbers
-        validate that the pipeline is wired correctly — splits, resampling, training, inference —
-        but they say nothing about production performance against real fraud, which is noisy,
-        adaptive and subtly imbalanced. That gap is exactly why the drift monitoring in Chapter 08
-        exists, and why publishing held-out metrics on real labeled traffic is the top item on the
-        roadmap.</p>
+    <section class="reveal">
+      <div class="prose">
+        <h2>Where the model actually fails — and why that is the point</h2>
+        <p>An aggregate F1 of 0.7676 says the model is imperfect. It does not say <em>how</em>. The
+        useful question is whether the errors are scattered noise or concentrated in cases that were
+        designed to be hard. This corpus was built to answer it: the generator does not emit one
+        profile per class, it draws each transaction from a named behavioural archetype, and each
+        archetype is blind to a different signal. Card testing is high-velocity with small amounts at
+        ordinary merchants. Account takeover has an entirely normal merchant field — only the burst
+        betrays it. A high-value wire is singular by nature, so its velocity looks legitimate. And one
+        fraud archetype, <code>low_signal</code>, is <em>deliberately ordinary in every
+        dimension</em>.</p>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Archetype</th><th>n</th><th>Missed (FN)</th><th>FN rate</th><th>False alarms (FP)</th><th>FP rate</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">everyday</td><td class="mono">6,720</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">big_purchase</td><td class="mono">1,680</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">8</td><td class="mono">0.005</td></tr>
+            <tr><td class="mono">burst</td><td class="mono">1,191</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="tone-warn mono">fraud_lookalike</td><td class="mono">309</td><td class="mono">0</td><td class="mono">0.000</td><td class="tone-warn mono">6</td><td class="tone-warn mono">0.019</td></tr>
+            <tr><td class="tone-warn mono">high_value_wire</td><td class="mono">33</td><td class="tone-warn mono">13</td><td class="tone-warn mono">0.394</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">account_takeover</td><td class="mono">25</td><td class="mono">1</td><td class="mono">0.040</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">large_burst</td><td class="mono">19</td><td class="mono">2</td><td class="mono">0.105</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="tone-critical mono">low_signal</td><td class="tone-critical mono">13</td><td class="tone-critical mono">13</td><td class="tone-critical mono">1.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+            <tr><td class="mono">card_testing</td><td class="mono">10</td><td class="mono">0</td><td class="mono">0.000</td><td class="mono">0</td><td class="mono">0.000</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split, production amount-tiered threshold. Errors by archetype,
+        measured per class. Total: 14 false alarms and 29 misses, which matches the confusion matrix
+        above exactly — 13 + 13 + 2 + 1 = 29 misses, 8 + 6 = 14 false alarms.</p>
+
+        <p>Read that table and the aggregate stops being a number to apologise for. Every single
+        error falls into one of three buckets, and each bucket is the intended hard case:</p>
+        <ul>
+          <li><strong class="tone-critical"><code>low_signal</code> — 100% missed rate, by
+          construction.</strong> All 13 of its frauds are scored below threshold. This archetype
+          exists to be undetectable: ordinary amount, ordinary merchant, ordinary hour, no burst. A
+          model that caught them would be evidence that something in the pipeline is leaking, not
+          that the model is good. A 100% miss rate here is the corpus working exactly as designed.</li>
+          <li><strong class="tone-warn"><code>fraud_lookalike</code> — the highest false-alarm rate of
+          any archetype, at 1.9% against 0.5% for <code>big_purchase</code>.</strong> This is a
+          <em>legitimate</em> segment: honest customers who buy crypto, shop at 3am, and transact
+          during a burst. It is 3% of legitimate traffic and it exists to stop merchant risk and hour
+          from being deterministic. Note the honesty in the count: it produces 6 false alarms, while
+          <code>big_purchase</code> produces 8. Lookalikes are rarer, so they yield fewer absolute
+          errors — but they are nearly four times as likely to be a false alarm per transaction.</li>
+          <li><strong class="tone-warn"><code>high_value_wire</code> — 39% missed.</strong> The largest
+          frauds in the corpus, and the hardest: a wire is one transaction, so its velocity signals
+          look exactly like a calm legitimate customer, and a large amount alone is also what an
+          honest car purchase looks like. This is the archetype that forced a real corpus change —
+          the amount distributions were originally arranged so that the biggest amounts were mostly
+          legitimate, and the model faithfully learned the inversion, scoring a $1,000,000 crypto
+          transfer at 41.78 against a $5,000 one's 84.25.</li>
+        </ul>
+        <p>Everything else is clean: <code>everyday</code>, <code>burst</code> and
+        <code>card_testing</code> produce no false alarms at all, and only 3 of 100 frauds across the
+        three remaining archetypes are missed. On the independent 30,000-row corpus generated from an
+        unseen seed the pattern holds — <code>low_signal</code> 44/44 missed,
+        <code>high_value_wire</code> 27/76, <code>fraud_lookalike</code> carrying every false alarm
+        rate again.</p>
 
         <div class="callout">
-          <span class="callout-title">How to read this honestly</span>
-          <p>Perfect held-out metrics on synthetic data prove engineering correctness, not model
-          quality. Any portfolio claiming F1 = 1.0 as an achievement without this caveat is telling
-          you they did not look closely at their own numbers.</p>
+          <span class="callout-title">Why this is a stronger claim than a good score</span>
+          <p>Anyone can publish an F1. Publishing an F1 <em>and</em> the per-population error
+          breakdown that explains where it comes from requires having built the corpus with named
+          populations on purpose, and then checking that the model's failures land on them. A model
+          whose errors are scattered evenly across populations is telling you the data is merely noisy.
+          A model whose errors are <em>exactly</em> the populations designed to be hard is telling you
+          the ceiling is set by the data being honestly difficult — and that is a design decision, not
+          a shortfall to be softened into "this could be improved".</p>
         </div>
       </div>
     </section>
 
     <section class="reveal">
       <div class="prose">
-        <h2>The machinery still had to earn it</h2>
-        <p>Even with separable classes, the cost-sensitive layer was exercised end to end: false
-        negatives priced at 10× false positives, threshold swept from 0.05 to 0.95, economic cost
-        minimized. On easy data the optimal threshold lands low (0.05) because recall is free — on
-        real data this curve becomes the decision-making tool.</p>
+        <h2>Precision-recall, and the ratio that decides everything</h2>
+        <p>At 1% prevalence accuracy is meaningless — a model that predicts "legitimate" for
+        everything is 99% accurate and catches zero fraud. PR-AUC is the metric that survives that
+        regime, and the dummy baseline it must beat is the prevalence itself.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-pr.png" alt="Precision-recall curve hugging the top-right corner with PR-AUC 1.000, compared against random forest and the dummy prevalence baseline." width="1260" height="780">
-          <figcaption><strong>PR curve</strong> against the dummy prevalence baseline (0.048).
-          With separable classes the curve hugs the corner; on real data its shape — especially the
-          precision drop-off at high recall — becomes the operational story.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-pr.png" alt="Precision-recall curve: XGBoost at PR-AUC 0.774 against a random forest at 0.744 and a dashed dummy prevalence baseline at 0.010, with the cost-optimal operating point marked at about 0.77 recall and 0.56 precision." width="1260" height="780">
+          <figcaption><strong>PR curve</strong> against the dummy prevalence baseline of 0.010. The
+          curve holds precision above 0.9 until roughly 0.68 recall, then falls away — and that
+          knee, not the area, is the operational story, because an analyst queue only cares about the
+          region where precision is still worth a human's time.</figcaption>
         </figure>
 
+        <p>The obvious mistake here is to treat the false-negative/false-positive cost ratio as a
+        property of the model. It is not. <code>evaluate_cost.py</code> prices a false alarm at an
+        arbitrary 1.0 unit and <strong>sweeps the ratio across 1&times; to 500&times;</strong>, because
+        the ratio is a business fact about an operation and nobody has supplied it. The optimum is not
+        a constant; it is a function of the belief you hold about cost:</p>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>C<sub>fn</sub>/C<sub>fp</sub></th><th>Optimal threshold</th><th>Precision</th><th>Recall</th><th>Cost per txn</th><th>Alerts/day</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">1&times;</td><td class="mono">74.00</td><td class="mono">1.0000</td><td class="mono">0.7000</td><td class="mono">0.0030</td><td class="mono">350</td></tr>
+            <tr><td class="mono">5&times;</td><td class="mono">74.00</td><td class="mono">1.0000</td><td class="mono">0.7000</td><td class="mono">0.0150</td><td class="mono">350</td></tr>
+            <tr><td class="mono">10&times;</td><td class="mono">31.00</td><td class="mono">0.7766</td><td class="mono">0.7300</td><td class="mono">0.0291</td><td class="mono">470</td></tr>
+            <tr><td class="mono">25&times;</td><td class="mono">11.50</td><td class="mono">0.5132</td><td class="mono">0.7800</td><td class="mono">0.0624</td><td class="mono">760</td></tr>
+            <tr><td class="mono">50&times;</td><td class="mono">11.50</td><td class="mono">0.5132</td><td class="mono">0.7800</td><td class="mono">0.1174</td><td class="mono">760</td></tr>
+            <tr><td class="mono">100&times;</td><td class="mono">0.35</td><td class="mono">0.1732</td><td class="mono">0.8400</td><td class="mono">0.2001</td><td class="mono">2,425</td></tr>
+            <tr><td class="mono">500&times;</td><td class="mono">0.25</td><td class="mono">0.1334</td><td class="mono">0.8500</td><td class="mono">0.8052</td><td class="mono">3,185</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split, flat thresholds swept over 381 points, showing all seven
+        ratios <code>evaluate_cost.py</code> sweeps. Cost per transaction in units where
+        C<sub>fp</sub> = 1.0. Alerts/day assumes 50,000 transactions/day — an assumption, since the
+        corpus carries no timestamps.</p>
+
+        <p>The optimal threshold moves across <strong>two orders of magnitude</strong>, from 74.00 to
+        0.25, and every belief about cost produces a different operating point. At the 10&times; ratio
+        this chapter has historically used for illustration the optimum is 31.00; at 100&times; it is
+        0.35, and the queue is more than five times larger (470 alerts/day against 2,425). Publishing a
+        single "optimal threshold" would be publishing an assumption with a decimal point on it.</p>
+
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-cost.png" alt="Economic cost versus decision threshold: flat at zero beyond threshold 0.05, showing any threshold above 0.05 yields zero misclassifications on this dataset." width="1260" height="750">
-          <figcaption><strong>Cost vs threshold</strong> (FN × $10 + FP × $1): flat zero beyond
-          0.05 here. The machinery is what matters — on production data this curve typically has a
-          clear minimum away from both extremes, and picking that point is a business decision, not
-          a default.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-cost.png" alt="Economic cost versus decision threshold at a fixed 10:1 ratio: cost falls from about 435 at threshold 0.02 to a broad minimum of about 290 between 0.15 and 0.78, marked optimal at 0.15, then rises sharply above 0.85 to reach 1000." width="1260" height="750">
+          <figcaption><strong>Cost vs threshold</strong> at one fixed ratio (FN &times; 10 + FP &times; 1).
+          The flat grid finds its optimum at 0.15 for a cost of 290, but the curve is a broad plateau
+          out to roughly 0.78 — which is the real finding. Almost any threshold in that range is
+          nearly equally good, so the choice is not a precision instrument. What the curve does show
+          sharply is the cliff above 0.85, where the model stops catching the high-scoring wires and
+          cost quadruples to 1,000. The fixed 10:1 ratio is a teaching example; the swept table above
+          is the analysis.</figcaption>
         </figure>
+
+        <p>There is also a floor worth naming: below a ratio of <strong>99.0&times;</strong> the
+        cheapest policy that involves no model at all is to review nothing, so the model only has to
+        beat a floor of 0.0100 per transaction. Above 99.0&times; that floor flips to 0.9900 — the cost
+        of reviewing every transaction — which is roughly 99&times; harder to clear. That breakeven is
+        a property of the base rate alone: it is the same number whether the model is excellent or
+        inverted, which is exactly why it cannot be used as evidence in either direction.</p>
       </div>
     </section>
 
     <section class="reveal">
       <div class="prose">
-        <h2>Is the score honest? Calibration check</h2>
-        <p>The serving path applies a cubic smoothing to raw probabilities (Chapter 3). A
-        reliability diagram tests whether predicted probabilities match observed fraud rates — for
-        both the raw output and the smoothed serving output:</p>
+        <h2>Is the score honest? Calibration</h2>
+        <p>The serving score is the model's calibrated probability scaled by 100 (Chapter 3), so
+        there is nothing to undo before testing it. On the test split the expected calibration error is
+        <strong>0.0026</strong> with a signed gap of &minus;0.0003 — but that headline number is
+        flattering and it flatters itself for a structural reason: 98.4% of the split falls inside the
+        bottom probability bin, so the weighted average is dominated by a bin that is trivially
+        well-calibrated.</p>
 
         <figure class="figure">
-          <img loading="lazy" decoding="async" src="../assets/fig-eval-calibration.png" alt="Reliability diagram with both raw predict_proba and cubic-smoothed curves tracking close to the diagonal across quantile bins." width="1080" height="840">
-          <figcaption><strong>Reliability diagram:</strong> both curves track the diagonal across
-          deciles — the smoothing compresses extremes but does not systematically distort ordering.
-          On harder data this chart is how you decide whether a calibration step
-          (<code>CalibratedClassifierCV</code>) belongs in the pipeline.</figcaption>
+          <img loading="lazy" decoding="async" src="../assets/fig-eval-calibration.png" alt="Reliability diagram with the perfectly-calibrated diagonal and a single serving curve of ten points: nine bunched within 0.0016 of the origin and one far out at 0.09, so the curve reads as a tight cluster against the origin plus a single distant marker." width="1080" height="840">
+          <figcaption><strong>Reliability diagram</strong>, and an honest note about what it can and
+          cannot show. The test split is cut into <strong>ten equal-count quantile bins of 1,000 rows
+          each</strong>, and the bins do not collapse — but because almost every prediction sits near
+          zero, nine of the ten markers land between 0.0012 and 0.0016 of the origin and only the
+          tenth sits far from it, at 0.0913. That crowding is the same fact the paragraph above
+          reports as 98.4% sitting in the bottom bin, measured on a different scheme: the 98.4% is
+          the occupancy of the table's fixed-width <code>[0.0, 0.1)</code> bin, not of any decile,
+          since a decile holds 10% by construction. A reliability diagram at 1% prevalence mostly
+          tells you about the empty quadrant — which is why the per-bin table, not the aggregate,
+          is the measurement worth reading.</figcaption>
         </figure>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Predicted bin</th><th>n</th><th>Mean predicted</th><th>Observed fraud rate</th><th>Gap</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">[0.0, 0.1)</td><td class="mono">9,840</td><td class="mono">0.0020</td><td class="mono">0.0022</td><td class="mono">+0.0002</td></tr>
+            <tr><td class="mono">[0.1, 0.2)</td><td class="mono">48</td><td class="mono">0.1497</td><td class="mono">0.0833</td><td class="mono">&minus;0.0663</td></tr>
+            <tr><td class="mono">[0.2, 0.3)</td><td class="mono">17</td><td class="mono">0.2459</td><td class="mono">0.0588</td><td class="mono">&minus;0.1871</td></tr>
+            <tr><td class="mono">[0.3, 0.4)</td><td class="mono">8</td><td class="mono">0.3378</td><td class="mono">0.1250</td><td class="mono">&minus;0.2128</td></tr>
+            <tr><td class="mono">[0.4, 0.5)</td><td class="mono">6</td><td class="mono">0.4519</td><td class="mono">0.1667</td><td class="mono">&minus;0.2853</td></tr>
+            <tr><td class="mono">[0.5, 0.6)</td><td class="mono">6</td><td class="mono">0.5248</td><td class="mono">0.1667</td><td class="mono">&minus;0.3581</td></tr>
+            <tr><td class="mono">[0.6, 0.7)</td><td class="mono">4</td><td class="mono">0.6609</td><td class="mono">0.0000</td><td class="mono tone-warn">&minus;0.6609</td></tr>
+            <tr><td class="mono">[0.7, 0.8)</td><td class="mono">3</td><td class="mono">0.7384</td><td class="mono">0.6667</td><td class="mono">&minus;0.0717</td></tr>
+            <tr><td class="mono">[0.8, 0.9)</td><td class="mono">68</td><td class="mono">0.8692</td><td class="mono">1.0000</td><td class="mono">+0.1308</td></tr>
+            <tr><td class="mono">[0.9, 1.0)</td><td class="mono">0</td><td class="mono">n/a</td><td class="mono">n/a</td><td class="mono">n/a</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="table-caption">Test split. All ten fixed-width bins over [0, 1] are shown, so the
+        <code>n</code> column sums to the full 10,000; the top bin is genuinely empty and is left in
+        rather than hidden. The model is systematically <em>over-confident in the middle</em> — every
+        bin from 0.1 to 0.8 sits below the diagonal, and a score of 0.66 corresponded to a 0.00
+        observed fraud rate — and under-confident at the top. On a flat score this does not hurt
+        much, because the production thresholds sit at 40&ndash;70. It is still the thing to fix
+        first, and the fix is a calibration step fit against the real class prior rather than a
+        resampled one (Chapter 3).</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>Point estimates hide the sample size</h2>
+        <p>A precision of 0.8353 sounds decisive until you notice it was measured on
+        <strong>85 flagged transactions</strong>. The same precision on 8,500 flagged transactions
+        would be a different claim entirely. Every rate a decision turns on is therefore reported
+        with a 95% Wilson score interval:</p>
+
+        <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Rate</th><th>Estimate</th><th>95% Wilson CI</th><th>Width</th><th>n</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Precision (test split)</td><td class="mono">0.8353</td><td class="mono">[0.742, 0.899]</td><td class="mono">15.7 pts</td><td class="mono">85</td></tr>
+            <tr><td>Recall (test split)</td><td class="mono">0.7100</td><td class="mono">[0.615, 0.790]</td><td class="mono">17.5 pts</td><td class="mono">100</td></tr>
+            <tr><td>Precision (held-out corpus)</td><td class="mono">0.8865</td><td class="mono">[0.839, 0.921]</td><td class="mono">8.2 pts</td><td class="mono">229</td></tr>
+            <tr><td>Recall (held-out corpus)</td><td class="mono">0.7049</td><td class="mono">[0.650, 0.755]</td><td class="mono">10.5 pts</td><td class="mono">288</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <p>The point estimates agree closely across the two splits — which is itself the useful
+        result. But the intervals are the honest framing: recall on the test split carries a
+        <strong>17.5-point</strong> band, so any claim of the form "recall is 71%" is really
+        "recall is somewhere between 62% and 79% on 100 frauds". A vendor quoting the point estimate
+        without the width is choosing the flattering end of that band without saying so. The
+        implementation is deliberately dependency-free arithmetic and is pinned against
+        statsmodels' independent version by a unit test, because an interval that silently drifts is
+        worse than no interval at all.</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>Reproducibility</h2>
+        <p>Evaluation results are only useful if they can be re-derived. The training pipeline is
+        fully seeded — fixed generator seed, fixed split seed, fixed model seed — and running
+        <code>scripts/train_xgboost_aligned.py</code> three consecutive times produces a
+        <strong>byte-identical artifact</strong>: SHA-256
+        <code class="mono">3efa00d8…5de75</code> on all three runs, matching the committed
+        <code>models/xgboost_paysim_v1.joblib</code> exactly. Every number in this chapter therefore
+        traces to a specific file, not to a run that happened once.</p>
+        <p>The artifact also stamps the class prior its calibrator was fit against
+        (<code>calibration_prior = 0.010050</code>, the 1.0050% fraud rate of the 40,000-row training
+        split). That stamp exists so that a future regression — someone reintroducing a resampling step
+        before calibration — is detectable by reading the deployed file rather than only by reading a
+        training transcript.</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <div class="callout">
+          <span class="callout-title">What these numbers do and do not establish</span>
+          <p><strong>They establish</strong> that the pipeline is wired correctly end to end; that no
+          single feature is doing the model's work for it; that the error profile is concentrated in
+          the three populations the corpus was built to be hard on; and that the artifact is
+          reproducible byte-for-byte.</p>
+          <p><strong>They do not establish</strong> that the system detects fraud. This corpus was
+          written by the same person who wrote the features, so it contains the model's own
+          assumptions restated as data — its errors are not independent of its training signal, and
+          the numbers above measure self-consistency, not detection. Card testing, account takeover,
+          friendly fraud and money-mule networks are absent as concepts here rather than merely
+          absent in quantity; prevalence, merchant mix and the cost of a false alarm are business facts
+          this corpus invents. Against real labels the thresholds must be re-derived and the
+          calibration curve will move. The honest statement is that the model's real-world
+          performance is <strong>unknown</strong>, and that a reproducible evaluation on real labelled
+          traffic is the top item on the roadmap.</p>
+        </div>
       </div>
     </section>
 

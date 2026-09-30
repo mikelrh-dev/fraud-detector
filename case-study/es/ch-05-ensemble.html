@@ -81,6 +81,32 @@
           ponderada — lógica auditable — reforzada por evidencia del modelo. Los bloqueos puro-ML son
           más difíciles de defender e imposibles de ajustar quirúrgicamente.</p>
         </div>
+
+        <h2>Qué pasa cuando una capa se calla</h2>
+        <p>Los tres pesos suman 1.00, lo que crea un modo de fallo silencioso. Si el modelo ML no está
+        cargado, <code>MLModelService.predict</code> devuelve <code>0.0</code> — y <code>0.0</code>
+        es indistinguible de "el modelo corrió y no encontró nada". La implementación obvia multiplica
+        ese cero por su peso de 0.25 y promedia el resto, lo que significa que
+        <strong>cada score pierde silenciosamente 25 puntos</strong>, sin línea de log y sin estado
+        degradado. Lo peor es el momento: la pérdida es mayor exactamente cuando el sistema ya está en
+        problemas.</p>
+        <p>Así que a las capas se les dio una forma de decir "no tengo nada que decir" que sea distinta
+        de "corrí y la respuesta es cero". Una capa devuelve ahora <code>None</code>, y el ensemble
+        redistribuye ese peso entre las capas que <em>sí</em> produjeron valor, normalizado para
+        sumar 1.0 — de modo que una capa superviviente carga el peso completo en lugar de una porción
+        encogida. Una capa que realmente puntuó 0.0 conserva su peso, porque eso es evidencia real de
+        riesgo bajo.</p>
+        <p>Dos consecuencias hacen visible el estado degradado en lugar de dejarlo hipotético. Un
+        contador <code>degraded_ml_layer</code> se incrementa en cada transacción de ese tipo y se
+        expone en el bloque <code>counters</code> de <code>GET /health/workers</code> — una señal
+        propia, separada del <code>status</code> por stream que va al lado, que solo puede ser
+        <code>ok</code>, <code>backed_up</code> o <code>error</code>. Esa separación es el punto: la
+        profundidad pendiente del consumer group no puede expresar este fallo, ya que el camino de
+        código en cuestión drena precisamente esa cola. Y un
+        score no finito desde cualquier capa falla <em>en cerrado</em> hacia 100.0 en lugar de en
+        abierto: <code>min</code>/<code>max</code> propagan <code>NaN</code> sin alterarlo, toda
+        comparación <code>NaN &gt; threshold</code> da <code>False</code>, y el camino ingenuo
+        clasificaría la transacción en silencio como legítima.</p>
       </div>
     </section>
 
@@ -89,7 +115,7 @@
     <section class="reveal">
       <h2>Prueba la política</h2>
       <div class="playground" id="threshold-playground">
-        <p class="pg-hint">No es un mockup: las barras son la distribución real de scores producida por el artefacto entrenado sobre 50k transacciones (Capítulo 3). El modelo calibrado actual separa las clases con tanta claridad que los scores caen en dos grupos compactos (~26 legítimas vs ~74 fraude) sin solape — exactamente la advertencia del Capítulo 4. Mueve el slider y mira reaccionar la política de decisión.</p>
+        <p class="pg-hint">No es un mockup: las barras son la distribución real de scores producida por el artefacto entrenado sobre 50k transacciones (Capítulo 3), precalculada en el fichero de datos de esta página. La separación es fuerte pero no limpia — la mediana legítima es 0,13 y la de fraude 87,25, y ambas clases comparten territorio de verdad: 24 de los 30 bins en [20, 80] contienen las dos, que es exactamente de donde sale la tasa de fallos del 29% del Capítulo 4. Mueve el slider y mira reaccionar la política de decisión.</p>
         <div class="pg-controls">
           <label for="pg-slider">Monto</label>
           <input type="range" id="pg-slider" class="pg-slider" min="50" max="60000" step="50" value="2500">

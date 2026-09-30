@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>10 Seguridad - Caso de Estudio Fraud Detector</title>
-  <meta name="description" content="Seguridad y auditoría para un sistema antifraude: ciclo JWT, acceso por roles, rate limits y una cadena SHA-256 que hace detectable la manipulación.">
-  <meta property="og:title" content="10 Seguridad - Caso de Estudio Fraud Detector">
-  <meta property="og:description" content="Seguridad y auditoría para un sistema antifraude: ciclo JWT, acceso por roles, rate limits y una cadena SHA-256 que hace detectable la manipulación.">
+<meta name="description" content="Seguridad y auditoría para un sistema antifraude: ciclo JWT, acceso por roles, ocho ventanas de rate limit en Redis y checksums SHA-256 por fila que detectan un registro de auditoría modificado.">
+  <meta property="og:title" content="10 Seguridad y Auditoría - Caso de Estudio Fraud Detector">
+  <meta property="og:description" content="Seguridad y auditoría para un sistema antifraude: ciclo JWT, acceso por roles, ocho ventanas de rate limit en Redis y checksums SHA-256 por fila que detectan un registro de auditoría modificado.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="es_ES">
   <meta property="og:locale:alternate" content="en_US">
@@ -56,8 +56,9 @@
         <ul>
           <li><strong>Ciclo JWT:</strong> access tokens de vida corta (15 min), refresh tokens, y blacklist server-side al hacer logout — los tokens robados expiran rápido y mueren explícitamente.</li>
           <li><strong>Acceso por roles:</strong> los analistas consultan y revisan; solo los admins hacen soft-delete de transacciones, exportan logs de auditoría o inspeccionan actividad de analistas.</li>
-          <li><strong>Rate limiting:</strong> login/registro 10/min, transacciones 100/min, alertas 60/min — el credential-stuffing se vuelve caro.</li>
-          <li><strong>Cadena de auditoría SHA-256:</strong> cada score, revisión de analista e informe LLM cae en un log append-only con checksums, haciendo la manipulación detectable.</li>
+          <li><strong>Rate limiting:</strong> ocho contadores de ventana fija en Redis, indexados por IP de cliente y prefijo de ruta, evaluados del más específico al más general para que las entradas de <code>/auth/*</code> no queden ensombrecidas por las más amplias. Por 60 segundos: login 10 · registro 10 · refresh 5 · logout 20 · transacciones 100 · alertas 60 · auditoría 60 · monitoring 30. El credential-stuffing se vuelve caro, y también un bucle de export de auditoría o de polling de monitoring — ambos lo bastante pesados en lectura como para merecer su propia métrica. El limitador falla <em>abierto</em> si Redis no es alcanzable, que es un intercambio deliberado de disponibilidad frente a rigidez, y queda logueado cuando ocurre.</li>
+          <li><strong>Checksums SHA-256 por fila:</strong> cada score, revisión de analista e informe LLM cae en un log append-only de <code>audit_entries</code>, y cada fila lleva un checksum SHA-256 de su propio contenido canonicalizado, con las claves ordenadas para que el digest sea determinista. Esto detecta la <em>modificación de una fila registrada</em> — una decisión editada, un resultado de revisión amañado. No es una cadena de hashes: no existe columna <code>prev_hash</code>, así que una fila que se borra o se reordena no deja rastro, y la garantía se detiene en "esta fila no ha sido alterada desde que se escribió". Combínalo con los privilegios append-only y la política de retención de la propia base de datos para el caso del borrado.</li>
+          <li><strong>Entrada no confiable en la capa de reglas:</strong> <code>amount</code> y <code>merchant_name</code> llegan como valores crudos, así que <code>amount &gt; 1000</code> lanza <code>TypeError</code> con un string y <code>.lower()</code> lanza <code>AttributeError</code> con un no-string. Pydantic protege el camino HTTP, y por eso esto pasó inadvertido — cualquier otro consumidor (importación por lotes, herramienta de replay, futuro worker de cola) heredaba un crash. Ahora ausente y presente-pero-malformado se distinguen a propósito: un valor presente e inservible se trata como entrada no confiable y dispara <code>high_amount</code>, porque convertirlo a cero dejaría que cualquiera que pudiera volver el importe imposible de parsear esquivara todas las reglas; un campo simplemente ausente conserva el significado antiguo de cero, para que los registros parciales de un lote no inunden la cola de falsos positivos.</li>
           <li><strong>Soft delete:</strong> las transacciones se marcan, jamás se borran físicamente — el historial financiero queda consultable para auditoría y futuro reentrenamiento.</li>
         </ul>
       </div>

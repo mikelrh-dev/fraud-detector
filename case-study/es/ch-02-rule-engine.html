@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>02 Reglas - Caso de Estudio Fraud Detector</title>
-  <meta name="description" content="Nueve reglas deterministas de fraude con pesos explícitos: transparentes por construcción, ajustables sin reentrenar y defendibles ante cualquier analista.">
+  <meta name="description" content="Siete reglas deterministas de fraude con pesos explícitos: transparentes por construcción, ajustables sin reentrenar y defendibles ante cualquier analista.">
   <meta property="og:title" content="02 Reglas - Caso de Estudio Fraud Detector">
-  <meta property="og:description" content="Nueve reglas deterministas de fraude con pesos explícitos: transparentes por construcción, ajustables sin reentrenar y defendibles ante cualquier analista.">
+  <meta property="og:description" content="Siete reglas deterministas de fraude con pesos explícitos: transparentes por construcción, ajustables sin reentrenar y defendibles ante cualquier analista.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="es_ES">
   <meta property="og:locale:alternate" content="en_US">
@@ -52,7 +52,7 @@
 
     <section class="reveal">
       <div class="prose">
-        <p>Antes de que corra cualquier machine learning, nueve reglas deterministas evalúan la
+        <p>Antes de que corra cualquier machine learning, siete reglas deterministas evalúan la
         transacción. Cada regla codifica un patrón de fraude conocido con un peso explícito; los
         pesos de las reglas activadas se suman con tope de 100.</p>
         <p><strong>¿Por qué reglas?</strong> Las reglas corren en microsegundos, nunca fallan en
@@ -69,21 +69,65 @@
             <tr><td class="mono">high_amount</td><td class="weight">35</td><td>importe &gt; $1,000</td></tr>
             <tr><td class="mono">velocity_burst</td><td class="weight">30</td><td>&gt; 1 txn en 5 min en categoría de riesgo</td></tr>
             <tr><td class="mono">high_velocity</td><td class="weight">25</td><td>&gt; 3 txns en 5 minutos</td></tr>
-            <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>horario nocturno (00–06) + categoría de riesgo</td></tr>
-            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>merchant en blacklist o categoría de riesgo</td></tr>
-            <tr><td class="mono">card_mismatch</td><td class="weight">20</td><td>tarjeta fuera de las conocidas del usuario</td></tr>
-            <tr><td class="mono">country_mismatch</td><td class="weight">15</td><td>país de la txn ≠ país de origen</td></tr>
-            <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>usuario a ≤ 2 saltos de un defraudador (grafo)</td></tr>
-            <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transacción entre 00:00–06:00</td></tr>
+            <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>horario nocturno (00-06) + categoría adversarial</td></tr>
+            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>merchant en blacklist, categoría adversarial, o categoría regulada con corroboración</td></tr>
+            <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>usuario ≤ 2 saltos de un defraudador (grafo)</td></tr>
+            <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transacción entre 00:00-06:00</td></tr>
           </tbody>
         </table>
         </div>
-        <p class="table-caption">Categorías de riesgo: btc, crypto, gambling, casino, money_transfer.</p>
+        <p class="table-caption">Adversariales (disparan solas): cryptocurrency, crypto, btc, gambling,
+        casino, adult. Reguladas (necesitan una segunda señal): money_transfer, pharmacy. De riesgo,
+        para <code>velocity_burst</code>: esas ocho juntas.</p>
+        <p>Esa división es el punto. Marcar una transacción solo porque ocurrió en una farmacia o en
+        un proveedor de remesas es un falso positivo por construcción, así que un merchant regulado
+        solo puntúa cuando la velocidad, una hora nocturna o una entrada de blacklist lo corroboran.
+        Un casino es distinto — la categoría misma es la evidencia, así que se sostiene sola. La
+        corroboración para un merchant regulado es velocidad (&gt; 1 txn en 5 min), hora nocturna
+        (00-06) o nombre de merchant en blacklist.</p>
         <p>Los pesos codifican lógica de dominio a propósito: el importe por sí solo (35) pesa más que el
         horario sospechoso por sí solo (10), pero crypto de madrugada (25) salta casi al tope porque la
         combinación es mucho más sospechosa que cualquiera de los factores por separado. Estos
         números son configuración ajustable — los analistas pueden recalibrar la política de riesgo
         sin tocar código ni reentrenar nada.</p>
+      </div>
+    </section>
+
+    <section class="reveal">
+      <div class="prose">
+        <h2>Un vocabulario, no tres</h2>
+        <p>Cada comprobación de categoría del proyecto — <code>velocity_burst</code>,
+        <code>off_hours_crypto</code>, los tiers adversarial/regulado de arriba, el
+        <code>merchant_risk_level</code> y el <code>is_crypto</code> del feature engine, y el
+        generador de entrenamiento — consultaba su propia lista privada de nombres de categoría.
+        Tres vocabularios disjuntos en un mismo codebase no son un problema de estilo: significan
+        que la capa de reglas y la capa de features pueden discrepar sobre si una misma transacción
+        es cripto, y ambas tendrán razón sobre su propia tabla.</p>
+        <p>Ahora comparten <code>src/core/ml_constants.py</code>. Lo interesante es lo que pasó
+        cuando empezaron a coincidir. <code>merchant_category</code> es texto libre en el cable, así
+        que el tráfico real contiene <code>cripto</code>, <code>crypto-exchange</code>,
+        <code>Crypto Exchange</code> y otras cuarenta y pico grafías de la misma idea. El lookup de
+        dos entradas de la capa de reglas las perdía y sencillamente no disparaba; el feature engine
+        las buscaba en una tabla cuyas claves estaban guardadas <em>normalizadas</em>, así que
+        cualquier grafía con un separador, con doble espacio o con mayúscula se escapaba por
+        completo y caía en el valor por defecto — la entrada sin modificar. El resultado era una
+        transacción en un exchange de cripto que <strong>puntuaba en silencio
+        <code>is_crypto = 0</code></strong>, y el modelo se entrenaba con eso.</p>
+        <p>El módulo compartido resuelve todo ello mediante un único
+        <code>normalize_category</code> respaldado por una tabla de 46 alias, y la corrección es
+        realmente portante y no cosmética: un contador <code>unknown_merchant_category</code> se
+        incrementa con cada valor que no coincide con nada, así que el log nombra exactamente qué
+        cadenas hay que añadir. Los valores desconocidos ahora puntúan las features de riesgo a
+        cero <em>y</em> se anuncian, en lugar de pasar por categorías que de verdad no son de
+        riesgo.</p>
+        <p>El lado de entrenamiento cierra el círculo deliberadamente.
+        <code>ALIAS_SPELLING_RATE = 0.15</code> significa que el 15% de las filas de alto riesgo se
+        escriben con una grafía de alias en lugar del nombre canónico, así que el artefacto nunca se
+        entrena dentro de una distribución de entrada más limpia que la que producción realmente
+        entrega. El generador además publica una <em>inversión</em> de la tabla de alias — de nombre
+        canónico a sus grafías alternativas — porque buscar un nombre canónico en una tabla indexada
+        por alias no devuelve nada, que es exactamente como una rama de emisión entera acaba
+        descrita en un comentario y sin ejecutarse nunca.</p>
       </div>
     </section>
 

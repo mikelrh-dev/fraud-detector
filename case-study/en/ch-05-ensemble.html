@@ -80,6 +80,31 @@
           logic — reinforced by model evidence. Pure-ML blocks are harder to defend and impossible
           to tune surgically.</p>
         </div>
+
+        <h2>What happens when a layer goes silent</h2>
+        <p>The three weights sum to 1.00, which creates a quiet failure mode. If the ML model is
+        not loaded, <code>MLModelService.predict</code> returns <code>0.0</code> — and
+        <code>0.0</code> is indistinguishable from "the model ran and found nothing". The obvious
+        implementation multiplies that zero by its 0.25 weight and averages the rest, which means
+        <strong>every single score silently loses 25 points</strong>, with no log line and no
+        degraded status. The worst part is the timing: the loss is largest exactly when the system is
+        already in trouble.</p>
+        <p>So the layers were given a way to say "I have nothing to say" that is distinct from "I
+        ran and the answer is zero". A layer now returns <code>None</code>, and the ensemble
+        redistributes that weight across the layers that <em>did</em> produce a value, normalised to
+        sum to 1.0 — so a surviving layer carries the full weight rather than a shrunken share. A
+        layer that genuinely scored 0.0 keeps its weight, because that is real evidence of low risk.</p>
+        <p>Two consequences make the degraded state visible instead of hypothetical. A
+        <code>degraded_ml_layer</code> counter increments on every such transaction and is served in
+        the <code>counters</code> block of <code>GET /health/workers</code> — a signal of its own,
+        separate from the per-stream <code>status</code> beside it, which can only ever be
+        <code>ok</code>, <code>backed_up</code> or <code>error</code>. That separation is the point:
+        consumer-group pending depth cannot express this failure, because the code path in question
+        drains that very queue. And a non-finite score from any layer fails
+        <em>closed</em> to 100.0 rather than open: <code>min</code>/<code>max</code> propagate
+        <code>NaN</code> unchanged, every <code>NaN &gt; threshold</code> comparison is
+        <code>False</code>, and the naive path would quietly classify the transaction as
+        legitimate.</p>
       </div>
     </section>
 
@@ -88,7 +113,7 @@
     <section class="reveal">
       <h2>Try the policy</h2>
       <div class="playground" id="threshold-playground">
-        <p class="pg-hint">Not a mockup: the bars are the real score distribution produced by the trained artifact over 50k transactions (Chapter 3). The current calibrated model separates classes so cleanly that scores land in two tight clusters (~26 legitimate vs ~74 fraud) with zero overlap — exactly the Chapter 4 warning. Drag the slider and watch the decision policy react.</p>
+        <p class="pg-hint">Not a mockup: the bars are the real score distribution produced by the trained artifact over 50k transactions (Chapter 3), precomputed into this page's data file. The separation is strong but not clean — the legitimate median is 0.13 and the fraud median 87.25, and the two classes genuinely share territory: 24 of the 30 bins in [20, 80] contain both, which is exactly where the 29% miss rate in Chapter 4 comes from. Drag the slider and watch the decision policy react.</p>
         <div class="pg-controls">
           <label for="pg-slider">Amount</label>
           <input type="range" id="pg-slider" class="pg-slider" min="50" max="60000" step="50" value="2500">
