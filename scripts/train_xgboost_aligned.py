@@ -96,13 +96,11 @@ logger = logging.getLogger(__name__)
 
 #: Shipped model artifact.
 #:
-#: STALE AS OF trainer_v4. This file was fit on the trainer_v3 corpus, which no
-#: longer exists on disk or in git history: the corpus was regenerated to carry
-#: the alias spellings 7e81876 added. The retrain needs a container and has not
-#: run, so nothing has measured this artifact against the corpus it now sits
-#: beside.
+#: Fit against the trainer_v4 corpus. The retrain ran on 2026-09-30 and three
+#: consecutive runs produced a byte-identical artifact,
+#: SHA-256 3efa00d8c62537bcaa61f1c9...5de75, which is the committed file.
 #:
-#: Two measured facts about what changed, and they are not the same claim.
+#: Two measured facts drove that retrain, and they are not the same claim.
 #:
 #: The aliases are INVISIBLE to the feature vector, exactly. Rewriting all
 #: 781 alias-bearing rows (1.56% of the corpus) to their canonical names and
@@ -112,11 +110,11 @@ logger = logging.getLogger(__name__)
 #: measurement, not an argument.
 #:
 #: The REGENERATED CORPUS IS A DIFFERENT SAMPLE, because alias emission draws
-#: from the generator's RNG stream and shifts every later draw. The corpus is
-#: the same size and the same archetypes, but per-feature ROC-AUC moved against
-#: the shipped model by up to 0.0406 (`amount` 0.6737 -> 0.7143), and the fraud
-#: rate moved 0.96% -> 1.00%. That is ordinary resampling noise, not a
-#: regression, and it is also enough to mean the retrain is NOT a no-op.
+#: from the generator's RNG stream and shifts every later draw. Measured against
+#: the previous artifact, per-feature ROC-AUC moved by up to 0.0406 (`amount`
+#: 0.6737 -> 0.7143) and the fraud rate moved 0.96% -> 1.00%. That was ordinary
+#: resampling noise, not a regression — but it is why regenerating the corpus
+#: meant retraining rather than shipping the old bytes.
 #:
 #: So: emitting aliases cannot corrupt the model, and regenerating the corpus
 #: can still move it. Do not read the first as a licence to skip the second.
@@ -157,8 +155,8 @@ DATA_PAYSIM = "../transaccion/PS_20174392719_1491204439457_log.csv"
 #: corpus unloadable, and `tests/test_model_feature_contract.py` builds its
 #: feature matrix through `load_synthetic_data` — so the corpus had to be
 #: regenerated at the same time or that guard would have stopped running.
-#: The model artifact was NOT retrained; see the staleness note on
-#: :data:`MODEL_PATH`.
+#: The model artifact was retrained against the regenerated corpus in the same
+#: change; see the note on :data:`MODEL_PATH`.
 CORPUS_SCHEMA = "trainer_v4"
 
 #: Column carrying :data:`CORPUS_SCHEMA`.
