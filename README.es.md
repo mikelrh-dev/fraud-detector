@@ -270,7 +270,7 @@ que no es un archivo que el trainer lea.
 Si el artefacto falta o no se puede leer, la API igualmente arranca y puntúa, aportando
 `ml_score = 0`: las capas de reglas y de contexto llevan la decisión por sí solas.
 
-`train_xgboost_aligned.py` entrena sobre exactamente las features de `FeatureEngine` que usa producción. (`scripts/train_model.py` entrena una Isolation Forest legada — se mantiene por referencia, no se usa en el camino de scoring.)
+`train_xgboost_aligned.py` entrena sobre exactamente las features de `FeatureEngine` que usa producción. (`scripts/train_model.py` entrena una baseline XGBoost sin calibrar para comparar; escribe en su propio `models/xgboost_reference_v1.joblib` y no es el modelo que se sirve.)
 
 ## Endpoints de la API
 

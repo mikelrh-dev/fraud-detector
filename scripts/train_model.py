@@ -1,11 +1,26 @@
-"""Train an IsolationForest model on synthetic transaction data.
+"""Train a REFERENCE XGBoost model. This is not the production model.
 
-This script:
+What it actually trains: an XGBClassifier(n_estimators=100, max_depth=6) fitted
+straight on the CSV labels, with no calibration wrapper and no prior stamp.
+
+What it is NOT: an IsolationForest, and not the model the API serves. The
+production model is trained by scripts/train_xgboost_aligned.py and is what
+MLModelService loads. Do not point this script at that path — an artifact with
+no calibration_prior stamp loads with a warning saying the absolute
+probabilities may be calibrated to the wrong class prior, and that ranking is
+unaffected but thresholding is not.
+
+The value here is as a plain baseline to diff a tuned model against. Its metrics
+are computed on the data it trained on (see evaluate_model below), so they are
+in-sample and not comparable to any held-out figure in the README.
+
+Steps:
 1. Loads the synthetic dataset from CSV
 2. Extracts features using FeatureEngine
-3. Trains an IsolationForest model
-4. Saves the model to models/isolation_forest_v1.joblib
-5. Reports metrics
+3. Trains an XGBClassifier with scale_pos_weight from the label counts
+4. Saves to MODEL_PATH, which is a separate reference path, not the served one
+5. Also saves a fitted FeatureEngine to FEATURE_PIPELINE_PATH — nothing loads
+   that file; the API builds its FeatureEngine from source.
 
 Usage:
     python scripts/train_model.py
@@ -33,7 +48,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = "models/xgboost_paysim_v1.joblib"
+#: Deliberately NOT models/xgboost_paysim_v1.joblib. That path is the served
+#: artifact and belongs to scripts/train_xgboost_aligned.py. This script writes
+#: an uncalibrated baseline, and an uncalibrated artifact silently degrades the
+#: ML layer's thresholding rather than failing loudly.
+MODEL_PATH = "models/xgboost_reference_v1.joblib"
 FEATURE_PIPELINE_PATH = "models/feature_pipeline_v1.joblib"
 DATA_PATH = "data/synthetic_transactions.csv"
 

@@ -267,7 +267,7 @@ is not a file the trainer reads.
 If the artifact is missing or unreadable the API still starts and scores, contributing
 `ml_score = 0` — the rules and context layers carry the decision on their own.
 
-`train_xgboost_aligned.py` trains on the exact `FeatureEngine` features used in production. (`scripts/train_model.py` trains a legacy Isolation Forest — kept for reference, not used in the scoring path.)
+`train_xgboost_aligned.py` trains on the exact `FeatureEngine` features used in production. (`scripts/train_model.py` trains a plain uncalibrated XGBoost baseline to diff against; it writes to its own `models/xgboost_reference_v1.joblib` and is not the served model.)
 
 ## API Endpoints
 
