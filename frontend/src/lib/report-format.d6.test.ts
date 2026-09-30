@@ -78,15 +78,42 @@ describe("parseReportLines — the format the prompt requests", () => {
     }
   });
 
-  it("does not treat the '2.' of a decimal or a list number as a heading", () => {
-    // '1.5' must not parse as heading '1' with a stray '.5'.
-    const blocks = parseReportLines("El score fue de 1.5 sobre 100.");
+  it("does not treat the '2.' of a decimal as a list marker", () => {
+    // Reachable now. The previous version of this test used
+    // "El score fue de 1.5 sobre 100." — where the `1.5` sits MID-LINE. Both
+    // patterns in the parser are `^`-anchored, so a line beginning with "El"
+    // cannot match either one whatever they contain. The test passed because
+    // the input was unreachable, not because the parser handled a decimal.
+    //
+    // This input starts with the number, so the anchors are satisfied and the
+    // lookahead is what has to reject it: `1` then `.` then `5`, not a space.
+    const blocks = parseReportLines("1.5 puntos sobre 100.");
     expect(blocks[0].type).toBe("paragraph");
+    expect(blocks).toHaveLength(1);
   });
 
-  it("requires a space after the number so '2024.' is not a heading", () => {
-    const blocks = parseReportLines("Facturado en 2024. Sin incidencias.");
-    expect(blocks.every((b) => b.type === "paragraph")).toBe(true);
+  it("requires a space after the number, so '2024.Sin' is not a list item", () => {
+    // The reachable half of the original "Facturado en 2024. Sin incidencias."
+    // case. A marker is digits, a dot, a SPACE. Drop the space requirement and
+    // this becomes a list item whose text is "Sin incidencias." — the digit
+    // swallowing the next token, which is the failure the test exists to catch.
+    const blocks = parseReportLines("2024.Sin incidencias.");
+    expect(blocks[0].type).toBe("paragraph");
+    expect(blocks).toHaveLength(1);
+  });
+
+  it("never reads a bare year at the start of a line as a section heading", () => {
+    // Reachable, and a real limit rather than an oversight: at the start of a
+    // line `2024. Sin incidencias.` IS an ordered-list marker, and no amount of
+    // regex distinguishes it from one. The parser reads it as a list item.
+    //
+    // What must hold, and is asserted here, is the narrower claim both original
+    // tests were reaching for: it never becomes a HEADING. Headings additionally
+    // require `**Label**:`, so a year cannot satisfy that however the marker
+    // rules are tuned. If this starts producing a heading, the section structure
+    // is being invented out of prose.
+    const blocks = parseReportLines("2024. Sin incidencias.");
+    expect(blocks.some((b) => b.type === "heading")).toBe(false);
   });
 });
 
