@@ -18,7 +18,7 @@ Every transaction gets a 0–100 risk score, a classification (`legitimate | rev
 
 - **3-layer ensemble scoring**: rules 60% + ML 25% + context 15%, with dynamic fraud thresholds by amount tier
 - **9 deterministic rules** covering amount, velocity, merchant risk, card mismatch, off-hours patterns, country mismatch and fraud-ring proximity
-- **XGBoost** with 10 engineered features (5 of which carry measurable signal — see the ablation), graceful degradation (system works with `ml_score = 0` if no model is loaded)
+- **XGBoost** with 10 engineered features, graceful degradation (system works with `ml_score = 0` if no model is loaded)
 - **SHAP explainability**: top-5 feature contributions persisted per transaction
 - **Fraud ring detection**: directed graph (NetworkX), flags users within 2 hops of a known fraudster
 - **Merchant spoofing detection**: sentence-transformers embeddings + cosine similarity (catches `AMAZ0N_STORE` → `Amazon`)
@@ -93,7 +93,7 @@ Risky categories: `btc`, `crypto`, `gambling`, `casino`, `money_transfer`.
 
 10 features: `amount`, `amount_vs_user_avg`, `amount_vs_user_std`, `tx_count_last_5min`, `tx_count_last_1h`, `hour_of_day`, `is_weekend`, `merchant_risk_level`, `is_crypto`, `amount_round_number`.
 
-`predict_proba` is scaled straight to 0–100 (`probability * 100.0`) and calibrated with `CalibratedClassifierCV(method="sigmoid", cv=5)` against the corpus's real 0.96% prior — so a score is a probability against that base rate, not a raw margin. If no model file is present, the API keeps working with `ml_score = 0`.
+`predict_proba` is scaled straight to 0–100 (`probability * 100.0`) and calibrated with `CalibratedClassifierCV(method="sigmoid", cv=5)` against the corpus's real 1.00% prior — 502 frauds in 50,000 transactions, which the calibrator records as `calibration_prior=0.010050` — so a score is a probability against that base rate, not a raw margin. If no model file is present, the API keeps working with `ml_score = 0`.
 
 ### Layer 3 — Context
 
@@ -101,33 +101,32 @@ User-level signals (recent transaction velocity) contribute the remaining 15%, c
 
 ### What the model does and does not do
 
-Measured, not asserted. Reproduce with `python scripts/evaluate_model.py`.
+Every figure below is printed by `python scripts/evaluate_model.py`, on the 10,000-row test split that is held out of both training and SMOTE. The rows come from that split's own output block, not from a hand-kept total.
 
 | | |
 |---|---|
-| Held-out ROC-AUC / PR-AUC | 0.9312 / 0.7576 |
-| At the production threshold | precision 0.817 · recall 0.698 |
-| False positives | 15 in 9,904 legitimate |
-| Calibration error (ECE) | 0.0045 |
-| vs. a random-forest baseline | 0.9312 vs 0.9250 — **not distinguishable** |
+| Held-out ROC-AUC / PR-AUC | 0.9181 / 0.7728 |
+| At the production threshold | precision 0.8353 · recall 0.7100 · F1 0.7676 |
+| Confusion at that threshold | TP=71 · FP=14 · FN=29 · TN=9886 |
+| False positives | 14 in 9,900 legitimate |
+| Missed frauds | 29 of 100 |
+| Calibration error (ECE) | 0.0026 |
 
-**Every rate here carries an interval, because the test split holds 96 frauds.** A point estimate without one is a claim, not a measurement:
+**Every rate here carries an interval, because the test split holds 100 frauds.** A point estimate without one is a claim, not a measurement. `evaluate_model.py` prints these alongside the point estimates:
 
 | | Point | 95% CI (Wilson) | Width |
 |---|---|---|---|
-| Precision | 0.817 | 0.720 – 0.886 | 16.6 pts |
-| Recall | 0.698 | 0.600 – 0.781 | 18.1 pts |
+| Precision | 0.8353 | 0.742 – 0.899 | 15.7 pts |
+| Recall | 0.7100 | 0.615 – 0.790 | 17.5 pts |
 
-The XGBoost lead over a random forest on the same features is **+0.0062 ROC-AUC, 95% bootstrap CI [−0.0149, +0.0305]** — it crosses zero, and XGBoost wins only 70% of resamples. The honest reading is *comparable to a random forest*, not *better than one*. Choosing XGBoost over the forest is a decision about calibration and inference cost, not about accuracy.
+Tightening the recall interval is a data problem, not a modelling one: at ~1% prevalence, a ±3-point interval needs roughly 3,600 frauds in the test split, **36× what this corpus contains**. Any project claiming a precise recall at this prevalence is either measuring something else or showing you a number it cannot support.
 
-Tightening the recall interval is a data problem, not a modelling one: at 0.96% prevalence, a ±3-point interval needs ~3,600 frauds in the test split, 38× what this corpus contains. Any project claiming a precise recall at this prevalence is either measuring something else or showing you a number it cannot support.
+It is a real classifier with real discriminative power, and it is bounded. Four limits, stated as what they are:
 
-It is a real classifier with real discriminative power, and it is bounded. Four limits we measured rather than hid:
-
-1. **The training data is synthetic.** No bank data was ever available, so the corpus is generated from fraud archetypes (`everyday`, `burst`, `high_value_wire`, `card_testing`, …) designed to be hard on purpose.
-2. **It does not transfer to PaySim.** Scored against that independent published benchmark through the same `FeatureEngine`, it reaches ROC-AUC 0.7561 — *below* the 0.7894 of a raw-amount baseline. PaySim has one user per transaction, which degenerates 4 of the 10 features, and an amount range 92× wider than the training corpus.
-3. **Two features carry most of it.** Leave-one-out ROC-AUC drop: `tx_count_last_1h` +0.059, `tx_count_last_5min` +0.029, `merchant_risk_level` +0.021, `amount` +0.020 — while `is_weekend` (+0.0004) and `is_crypto` (−0.0005) contribute nothing.
-4. **Recall is 0.698 at the shipped threshold.** Roughly 3 in 10 frauds are not flagged at that operating point; the threshold is a cost trade-off, not a free parameter.
+1. **The training data is synthetic.** No bank data was ever available, so the corpus is generated from fraud archetypes (`everyday`, `burst`, `high_value_wire`, `card_testing`, …) designed to be hard on purpose. The corpus and the features were written by the same person, so the numbers above measure self-consistency, not detection.
+2. **Transfer to an independent benchmark is unmeasured here.** Public fraud corpora such as PaySim give one user per transaction, which degenerates the four user-history features (`amount_vs_user_avg`, `amount_vs_user_std`, `tx_count_last_5min`, `tx_count_last_1h`) — 4 of the 10 inputs stop carrying per-user signal. This repository makes **no claim** about how the model scores on such a corpus, because nothing in it computes that.
+3. **Both headline rates rest on 100 frauds.** A 17.5-point-wide recall interval is not a rounding detail; it is the resolution of this measurement. The per-archetype error breakdown the script prints is the more informative cut — `low_signal` is missed 100% of the time, `high_value_wire` 39% — and both are classes the generator writes deliberately.
+4. **Recall is 0.7100 at the shipped threshold.** 29 of 100 frauds are not flagged at that operating point; the threshold is a cost trade-off, not a free parameter.
 
 ### What It Costs — and Who Decides
 
@@ -139,20 +138,20 @@ python scripts/evaluate_cost.py
 
 **Neither cost figure is measured, and the script will not pretend otherwise.** What a false alarm costs is the analyst time to clear it; what a missed fraud costs is your realised loss. Both are business facts about *your* operation. So the script prices a false alarm at an arbitrary 1.0 and sweeps the ratio `C_fn/C_fp`, because only the ratio moves a decision.
 
-At the production operating point, on the held-out split, in units where a false alarm costs 1.0:
+On the same held-out split (TP=71 · FP=14 · FN=29 · TN=9886), in units where a false alarm costs 1.0:
 
 | Policy | Expected cost per transaction @ `C_fn/C_fp = 10` |
 |---|---|
-| Flag nothing (no model) | 0.0960 |
-| Flag everything (no model) | 0.9904 |
-| **This model** | **0.0305** |
-| The pre-audit model, same split | 0.1730 |
+| Flag nothing (no model) | 0.1000 |
+| Flag everything (no model) | 0.9900 |
+| **This model at today's tiered point** | **0.0304** |
+| This model at the best flat threshold (31.00) | 0.0291 |
 
-Two things fall out of that table. First, **the cost-optimal threshold is not a constant of the model** — across ratios from 1 to 500 it moves from 76.00 down to 0.40, two orders of magnitude, so every belief about cost gets a different operating point. That is why the script prints a sweep instead of a recommendation.
+Two things fall out of that table. First, **the cost-optimal threshold is not a constant of the model** — across ratios from 1 to 500 it moves from 74.00 down to 0.25, two orders of magnitude, so every belief about cost gets a different operating point. That is why the script prints a sweep instead of a recommendation. The tiered production point is within 0.0013 of the swept optimum at this ratio, and the sweep is cheaper at every ratio tested.
 
-Second, and more useful: the pre-audit model is **not worse at catching fraud**. It catches exactly the same share (TP=67, FN=29, recall 0.6979 — identical) and differs only in what it costs to do so: **1,440 false positives against 15**, precision 0.0445 against 0.8171. It loses to flagging nothing. No AUC told us that; the cost arithmetic did.
+Second, the model has to beat *both* no-model policies, and on this corpus it does at every ratio the script tests — 0.0291 against a floor of 0.1000 at ratio 10, and still 0.8052 against the 0.9900 flag-everything bar at 500×. No AUC tells you that; the cost arithmetic does.
 
-`breakeven_cost_ratio` is **103.2** — above that, flagging every transaction becomes as cheap as flagging none, because at 1% prevalence a miss has to be that much more expensive than wasted analyst time. The model still clears the flag-everything bar at 500×, and the report says so rather than implying the opposite.
+`breakeven_cost_ratio` is **99.0** — above that, flagging every transaction becomes as cheap as flagging none, because at ~1% prevalence a miss has to be that much more expensive than wasted analyst time. It is a property of the base rate alone: the same number whether the model is excellent or inverted, which is exactly why it cannot be used as evidence either way. The model still clears the flag-everything bar at 500×, and the report says so rather than implying the opposite.
 
 **Known simplification, printed in the report:** the swept optimum is a flat threshold while production uses an amount-tiered one, so the comparison is approximate. The volume of 50,000 transactions/day is an assumption that scales every per-day number. And the counts come from a synthetic corpus — so this is arithmetic, not evidence. The model's real-world cost per transaction is **unknown**, and this is the arithmetic to have ready the day a labelled corpus exists.
 
@@ -227,13 +226,27 @@ cd frontend && npm install && npm run dev
 
 ## Training the ML Model
 
-The system runs without a model (`ml_score = 0`). To enable full detection:
+`models/xgboost_paysim_v1.joblib` is committed, so a fresh clone already scores with the
+full ML layer — nothing to train before using the system. Retraining is optional; you need
+it to change the corpus, to reproduce the metrics above, or to work on the model itself:
 
 ```bash
-python scripts/generate_synthetic_data.py     # 50k synthetic transactions (~5% fraud)
 python scripts/train_xgboost_aligned.py       # → models/xgboost_paysim_v1.joblib
 # restart the API to load the model
 ```
+
+There is no separate data-generation step. The trainer generates its own corpus at
+50,000 transactions and ~1% fraud if `data/synthetic_transactions.csv` is missing, then
+refuses to train on any corpus it did not write itself — it checks a `corpus_schema`
+stamp, so a corpus produced by another generator fails loudly instead of silently
+training a corrupted model.
+
+`scripts/generate_synthetic_data.py` is a **separate** generator for notebooks and
+demo dashboards: it writes a 5%-fraud seed to `data/demo_seed_transactions.csv`, which
+is not a file the trainer reads.
+
+If the artifact is missing or unreadable the API still starts and scores, contributing
+`ml_score = 0` — the rules and context layers carry the decision on their own.
 
 `train_xgboost_aligned.py` trains on the exact `FeatureEngine` features used in production. (`scripts/train_model.py` trains a legacy Isolation Forest — kept for reference, not used in the scoring path.)
 

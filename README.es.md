@@ -18,7 +18,7 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 
 - **Scoring ensemble de 3 capas**: reglas 60% + ML 25% + contexto 15%, con umbrales de fraude dinámicos por tier de monto
 - **9 reglas deterministas**: importe, velocidad, riesgo de merchant, card mismatch, patrones nocturnos, country mismatch y proximidad a redes de fraude
-- **XGBoost** con 10 features engineered (5 de las cuales aportan señal medible — ver la ablación), degradación elegante (el sistema funciona con `ml_score = 0` si no hay modelo)
+- **XGBoost** con 10 features engineered, degradación elegante (el sistema funciona con `ml_score = 0` si no hay modelo)
 - **Explicabilidad SHAP**: top-5 contribuciones de features persistidas por transacción
 - **Detección de redes de fraude**: grafo dirigido (NetworkX), marca usuarios a ≤ 2 saltos de un defraudador conocido
 - **Detección de suplantación de merchant**: embeddings sentence-transformers + similitud coseno (detecta `AMAZ0N_STORE` → `Amazon`)
@@ -93,7 +93,7 @@ Categorías de riesgo: `btc`, `crypto`, `gambling`, `casino`, `money_transfer`.
 
 10 features: `amount`, `amount_vs_user_avg`, `amount_vs_user_std`, `tx_count_last_5min`, `tx_count_last_1h`, `hour_of_day`, `is_weekend`, `merchant_risk_level`, `is_crypto`, `amount_round_number`.
 
-La salida de `predict_proba` se escala directamente a 0–100 (`probability * 100.0`) y se calibra con `CalibratedClassifierCV(method="sigmoid", cv=5)` contra la prevalencia real del 0,96% del corpus — de modo que la puntuación es una probabilidad contra esa tasa base, no un margen bruto. Si no hay archivo de modelo, la API sigue funcionando con `ml_score = 0`.
+La salida de `predict_proba` se escala directamente a 0–100 (`probability * 100.0`) y se calibra con `CalibratedClassifierCV(method="sigmoid", cv=5)` contra la prevalencia real del 1,00% del corpus — 502 fraudes en 50.000 transacciones, que el calibrador registra como `calibration_prior=0.010050` — de modo que la puntuación es una probabilidad contra esa tasa base, no un margen bruto. Si no hay archivo de modelo, la API sigue funcionando con `ml_score = 0`.
 
 ### Capa 3 — Contexto
 
@@ -101,33 +101,32 @@ Señales a nivel de usuario (velocidad de transacciones recientes) aportan el 15
 
 ### Qué hace el modelo y qué no
 
-Medido, no afirmado. Reproducible con `python scripts/evaluate_model.py`.
+Todas las cifras de esta sección las imprime `python scripts/evaluate_model.py`, sobre el split de test de 10.000 filas que queda retenido tanto del entrenamiento como de SMOTE. Las filas provienen del bloque de salida de ese split, no de un total mantenido a mano.
 
 | | |
 |---|---|
-| ROC-AUC / PR-AUC en test retenido | 0,9312 / 0,7576 |
-| En el umbral de producción | precisión 0,817 · recall 0,698 |
-| Falsos positivos | 15 de 9.904 legítimos |
-| Error de calibración (ECE) | 0,0045 |
-| Frente a una línea base de random forest | 0,9312 vs 0,9250 — **no distinguible** |
+| ROC-AUC / PR-AUC en test retenido | 0,9181 / 0,7728 |
+| En el umbral de producción | precisión 0,8353 · recall 0,7100 · F1 0,7676 |
+| Matriz de confusión en ese umbral | TP=71 · FP=14 · FN=29 · TN=9886 |
+| Falsos positivos | 14 de 9.900 legítimos |
+| Fraudes no detectados | 29 de 100 |
+| Error de calibración (ECE) | 0,0026 |
 
-**Toda tasa aquí lleva intervalo, porque el split retenido contiene 96 fraudes.** Una estimación puntual sin intervalo es una afirmación, no una medición:
+**Toda tasa aquí lleva intervalo, porque el split de test contiene 100 fraudes.** Una estimación puntual sin intervalo es una afirmación, no una medición. `evaluate_model.py` los imprime junto a las estimaciones puntuales:
 
 | | Puntual | IC 95% (Wilson) | Amplitud |
 |---|---|---|---|
-| Precisión | 0,817 | 0,720 – 0,886 | 16,6 pts |
-| Recall | 0,698 | 0,600 – 0,781 | 18,1 pts |
+| Precisión | 0,8353 | 0,742 – 0,899 | 15,7 pts |
+| Recall | 0,7100 | 0,615 – 0,790 | 17,5 pts |
 
-La ventaja de XGBoost sobre un random forest con las mismas features es de **+0,0062 ROC-AUC, IC 95% bootstrap [−0,0149, +0,0305]** — cruza el cero, y XGBoost gana solo el 70% de las remuestreos. La lectura honesta es *comparable a un random forest*, no *mejor que uno*. Elegir XGBoost sobre el bosque es una decisión sobre calibración y coste de inferencia, no sobre precisión.
+Estrechar el intervalo del recall es un problema de datos, no de modelado: con una prevalencia de alrededor del 1%, un intervalo de ±3 puntos necesita unos 3.600 fraudes en el split de test, **36× lo que contiene este corpus**. Cualquier proyecto que afirme un recall preciso a esta prevalencia o está midiendo otra cosa o te está enseñando un número que no puede sostener.
 
-Estrechar el intervalo del recall es un problema de datos, no de modelado: con una prevalencia del 0,96%, un intervalo de ±3 puntos necesita ~3.600 fraudes en el split de test, 38× lo que contiene este corpus. Cualquier proyecto que afirme un recall preciso a esta prevalencia o está midiendo otra cosa o te está enseñando un número que no puede sostener.
+Es un clasificador real con poder discriminativo real, y está acotado. Cuatro límites, enunciados como lo que son:
 
-Es un clasificador real con poder discriminativo real, y está acotado. Cuatro límites que medimos en lugar de ocultar:
-
-1. **Los datos de entrenamiento son sintéticos.** Nunca hubo datos bancarios disponibles, así que el corpus se genera a partir de arquetipos de fraude (`everyday`, `burst`, `high_value_wire`, `card_testing`, …) diseñados para ser difíciles a propósito.
-2. **No transfiere a PaySim.** Evaluado contra ese benchmark publicado e independiente a través del mismo `FeatureEngine`, alcanza un ROC-AUC de 0,7561 — *por debajo* del 0,7894 de una línea base de importe bruto. PaySim tiene un usuario por transacción, lo que degenera 4 de las 10 features, y un rango de importes 92× más amplio que el del corpus de entrenamiento.
-3. **Dos features soportan casi todo.** Caída de ROC-AUC leave-one-out: `tx_count_last_1h` +0,059, `tx_count_last_5min` +0,029, `merchant_risk_level` +0,021, `amount` +0,020 — mientras que `is_weekend` (+0,0004) e `is_crypto` (−0,0005) no aportan nada.
-4. **El recall es 0,698 en el umbral actual.** Aproximadamente 3 de cada 10 fraudes no se marcan en ese punto de operación; el umbral es una compensación de costes, no un parámetro libre.
+1. **Los datos de entrenamiento son sintéticos.** Nunca hubo datos bancarios disponibles, así que el corpus se genera a partir de arquetipos de fraude (`everyday`, `burst`, `high_value_wire`, `card_testing`, …) diseñados para ser difíciles a propósito. El corpus y las features los escribió la misma persona, así que las cifras de arriba miden autoconsistencia, no detección.
+2. **La transferencia a un benchmark independiente no está medida aquí.** Los corpora públicos de fraude como PaySim dan un usuario por transacción, lo que degenera las cuatro features de historial por usuario (`amount_vs_user_avg`, `amount_vs_user_std`, `tx_count_last_5min`, `tx_count_last_1h`): 4 de las 10 entradas dejan de aportar señal por usuario. Este repositorio **no afirma** cómo puntúa el modelo sobre un corpus de ese tipo, porque nada en él calcula eso.
+3. **Ambas tasas principales descansan sobre 100 fraudes.** Un intervalo de recall de 17,5 puntos de amplitud no es un detalle de redondeo: es la resolución de esta medición. El desglose de errores por arquetipo que imprime el script es el corte más informativo: `low_signal` se pierde el 100% de las veces y `high_value_wire` el 39%, y ambas son clases que el generador escribe a propósito.
+4. **El recall es 0,7100 en el umbral actual.** 29 de 100 fraudes no se marcan en ese punto de operación; el umbral es una compensación de costes, no un parámetro libre.
 
 ### Cuánto cuesta — y quién decide
 
@@ -137,22 +136,22 @@ Una cifra de precisión no es una decisión. Es un número al que se le ha quita
 python scripts/evaluate_cost.py
 ```
 
-**Ninguna de las dos cifras de coste está medida, y el script no finge lo contrario.** Lo que cuesta una falsa alarma es el tiempo de analista para descartarla; lo que cuesta un fraude no detectado es tu pérdida real. Ambas son hechos de negocio sobre *tu* operación. Por eso el script precio una falsa alarma en 1.0 arbitrario y barreja la razón `C_fn/C_fp`, porque solo la razón mueve una decisión.
+**Ninguna de las dos cifras de coste está medida, y el script no finge lo contrario.** Lo que cuesta una falsa alarma es el tiempo de analista para descartarla; lo que cuesta un fraude no detectado es tu pérdida real. Ambas son hechos de negocio sobre *tu* operación. Por eso el script le asigna un precio arbitrario de 1.0 a una falsa alarma y barre el ratio `C_fn/C_fp`, porque solo el ratio mueve una decisión.
 
-En el punto de operación de producción, sobre el split retenido, en unidades donde una falsa alarma cuesta 1.0:
+Sobre el mismo split retenido (TP=71 · FP=14 · FN=29 · TN=9886), en unidades donde una falsa alarma cuesta 1.0:
 
 | Política | Coste esperado por transacción @ `C_fn/C_fp = 10` |
 |---|---|
-| No marcar nada (sin modelo) | 0,0960 |
-| Marcar todo (sin modelo) | 0,9904 |
-| **Este modelo** | **0,0305** |
-| El modelo previo a la auditoría, mismo split | 0,1730 |
+| No marcar nada (sin modelo) | 0,1000 |
+| Marcar todo (sin modelo) | 0,9900 |
+| **Este modelo en el punto por tramos actual** | **0,0304** |
+| Este modelo en el mejor umbral plano (31,00) | 0,0291 |
 
-De esa tabla salen dos cosas. Primera: **el umbral óptimo en coste no es una constante del modelo** — entre razones de 1 a 500 se mueve de 76,00 a 0,40, dos órdenes de magnitud, así que cada creencia sobre el coste recibe un punto de operación distinto. Por eso el script imprime un barrido en lugar de una recomendación.
+De esa tabla salen dos cosas. Primera: **el umbral óptimo en coste no es una constante del modelo** — entre ratios de 1 a 500 se mueve de 74,00 a 0,25, dos órdenes de magnitud, así que cada creencia sobre el coste recibe un punto de operación distinto. Por eso el script imprime un barrido en lugar de una recomendación. El punto de producción por tramos está a menos de 0,0013 del óptimo barrido en este ratio, y el barrido es más barato en todos los ratios probados.
 
-Segunda, y más útil: el modelo previo a la auditoría **no es peor detectando fraude**. Atrapa exactamente la misma proporción (TP=67, FN=29, recall 0,6979 — idéntico) y solo se diferencia en lo que le cuesta hacerlo: **1.440 falsos positivos frente a 15**, precisión 0,0445 frente a 0,8171. Pierde contra no marcar nada. Ningún AUC nos habría dicho eso; lo dijo la aritmética de costes.
+Segunda, el modelo tiene que superar *ambas* políticas sin modelo, y en este corpus lo hace en todos los ratios que prueba el script — 0,0291 contra un suelo de 0,1000 en el ratio 10, y todavía 0,8052 contra la barra de 0,9900 de "marcar todo" a 500×. Ningún AUC te dice eso; lo dice la aritmética de costes.
 
-`breakeven_cost_ratio` es **103,2** — por encima de eso, marcar cada transacción sale tan barato como no marcar ninguna, porque con un 1% de prevalencia un fallo tiene que ser mucho más caro que el tiempo de analista desperdiciado. El modelo todavía supera la barra de "marcar todo" a 500×, y el informe lo dice en lugar de insinuar lo contrario.
+`breakeven_cost_ratio` es **99,0** — por encima de eso, marcar cada transacción sale tan barato como no marcar ninguna, porque con una prevalencia de alrededor del 1% un fallo tiene que ser mucho más caro que el tiempo de analista desperdiciado. Es una propiedad de la tasa base sola: el mismo número tanto si el modelo es excelente como si estuviera invertido, que es exactamente por lo que no puede usarse como evidencia en ningún sentido. El modelo todavía supera la barra de "marcar todo" a 500×, y el informe lo dice en lugar de insinuar lo contrario.
 
 **Simplificación conocida, impresa en el informe:** el óptimo barrido es un umbral plano mientras que producción usa uno por tramos de importe, así que la comparación es aproximada. El volumen de 50.000 transacciones/día es una suposición que escala todas las cifras por día. Y los recuentos provienen de un corpus sintético — así que esto es aritmética, no evidencia. El coste real por transacción del modelo es **desconocido**, y esta es la aritmética que tenemos preparada para el día en que exista un corpus etiquetado.
 
@@ -228,13 +227,28 @@ cd frontend && npm install && npm run dev
 
 ## Entrenamiento del Modelo ML
 
-El sistema funciona sin modelo (`ml_score = 0`). Para activar la detección completa:
+`models/xgboost_paysim_v1.joblib` está versionado, así que un clon recién hecho ya puntúa
+con la capa ML completa: no hay nada que entrenar antes de usar el sistema. Reentrenar es
+opcional; hace falta para cambiar el corpus, para reproducir las métricas de arriba o para
+trabajar sobre el modelo:
 
 ```bash
-python scripts/generate_synthetic_data.py     # 50k transacciones sintéticas (~5% fraude)
 python scripts/train_xgboost_aligned.py       # → models/xgboost_paysim_v1.joblib
 # reiniciar la API para cargar el modelo
 ```
+
+No hay un paso aparte de generación de datos. El trainer genera su propio corpus de 50.000
+transacciones y ~1% de fraude si falta `data/synthetic_transactions.csv`, y se niega a
+entrenar sobre cualquier corpus que no haya escrito él mismo: comprueba una marca
+`corpus_schema`, así que un corpus producido por otro generador falla de forma ruidosa en
+lugar de entrenar en silencio un modelo corrompido.
+
+`scripts/generate_synthetic_data.py` es un generador **aparte** para notebooks y dashboards
+de demostración: escribe una semilla de 5% de fraude en `data/demo_seed_transactions.csv`,
+que no es un archivo que el trainer lea.
+
+Si el artefacto falta o no se puede leer, la API igualmente arranca y puntúa, aportando
+`ml_score = 0`: las capas de reglas y de contexto llevan la decisión por sí solas.
 
 `train_xgboost_aligned.py` entrena sobre exactamente las features de `FeatureEngine` que usa producción. (`scripts/train_model.py` entrena una Isolation Forest legada — se mantiene por referencia, no se usa en el camino de scoring.)
 

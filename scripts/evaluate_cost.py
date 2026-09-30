@@ -307,9 +307,17 @@ def main() -> None:
             f"{change:>+9.4f} {alerts_per_day(best_counts, per_day):>11,.0f}"
         )
 
+    # Derived from the sweep above, never hardcoded. These two literals used to
+    # read "76.00 down to 0.40" and "0.9904" — figures from an earlier corpus
+    # that the table beside them no longer agreed with, so the narrative
+    # contradicted the numbers printed two lines above it. The README then
+    # quoted the narrative, which is how a stale threshold range reached a
+    # document describing a model that had since been retrained.
+    opt_high = max(r["best"].threshold for r in rows)
+    opt_low = min(r["best"].threshold for r in rows)
     print("\n  Read the 'opt t' column top to bottom before anything else. The")
     print("  cost-optimal threshold is not a constant of the model; it is a")
-    print("  function of the ratio, and it moves from 76.00 down to 0.40 across")
+    print(f"  function of the ratio, and it moves from {opt_high:.2f} down to {opt_low:.2f} across")
     print("  this range -- two orders of magnitude, and a different operating")
     print("  point for every belief about cost a reader might hold.")
     savings = sum(1 for r in rows if r["change"] < 0)
@@ -360,11 +368,15 @@ def main() -> None:
             f"{best_baseline:>15.4f} {row['model_cost']:>9.4f} "
             f"{('yes' if wins else 'NO'):>13}"
         )
+    # Derived, not hardcoded — see the note on the sweep narrative above. The
+    # flag-everything cost is a function of the held-out prevalence alone, so it
+    # is identical on every row by construction rather than by coincidence.
+    everything_fixed = rows[0]["everything"]
     print("\n  Why 'flag everything' ever wins: at ~1% prevalence it false-alarms")
     print("  on 99 of every 100 rows to catch 1, so it is only worth doing when a")
     print("  miss is ruinous relative to wasted analyst time -- which is what the")
     print("  ratio measures, not the model. That is why the baseline is FIXED at")
-    print("  0.9904 across the table while 'flag nothing' rises with the ratio.")
+    print(f"  {everything_fixed:.4f} across the table while 'flag nothing' rises with the ratio.")
     losses = [r for r in rows if r["model_cost"] >= r["best_baseline"]]
     if losses:
         worst = max(losses, key=lambda r: r["model_cost"] - r["best_baseline"])

@@ -30,6 +30,7 @@ Usage:
 
 import argparse
 import logging
+import math
 import sys
 from pathlib import Path
 
@@ -80,6 +81,37 @@ def production_threshold(amounts: np.ndarray) -> np.ndarray:
         mask = (amounts >= low) & (amounts < high)
         thresholds[mask] = threshold
     return thresholds
+
+
+#: Below this distance from 0 or 1, a Wilson bound is float noise from the
+#: `centre ± half` subtraction rather than a real bound, so it is snapped to
+#: the closed interval.
+_EPS = 1e-12
+
+
+def wilson_interval(successes: int, n_total: int, z: float = 1.959963984540054) -> tuple[float, float]:
+    """Closed-form 95% Wilson score interval for a binomial proportion.
+
+    Used instead of the normal approximation because at this prevalence the
+    true-positive counts are in the dozens, where the normal approximation
+    pushes a bound outside [0, 1] and is least trustworthy exactly where the
+    README asks a reader to trust it least.
+
+    Pure arithmetic on counts already computed by `report_metrics`, so it adds
+    no modelling assumption and no dependency. `tests/unit/test_evaluate_model_wilson.py`
+    pins it against statsmodels' independent implementation.
+    """
+    if n_total <= 0:
+        return (float("nan"), float("nan"))
+    p = successes / n_total
+    denom = 1.0 + z * z / n_total
+    centre = (p + z * z / (2 * n_total)) / denom
+    half = (z / denom) * math.sqrt(p * (1 - p) / n_total + z * z / (4 * n_total * n_total))
+    # `centre - half` suffers cancellation at the ends: with p == 0 the exact
+    # lower bound is 0 but the subtraction leaves ~1e-18. Snap to the closed
+    # interval instead of publishing float noise as a measurement.
+    low, high = centre - half, centre + half
+    return (0.0 if low < _EPS else low, 1.0 if high > 1.0 - _EPS else high)
 
 
 def build_matrix(
@@ -200,6 +232,26 @@ def report_metrics(
           f"({fp} false alarms per {fp + tn} legitimate)")
     if y.sum():
         print(f"  missed {fn} of {int(y.sum())} frauds ({fn / y.sum() * 100:.1f}%)")
+
+    # Every rate above is a point estimate on a split that holds few frauds.
+    # A point estimate without an interval is a claim, not a measurement, so
+    # the two rates a decision actually turns on carry theirs.
+    #
+    # Closed-form Wilson score interval. Chosen over the normal approximation
+    # because at ~1% prevalence and double-digit true positives the normal
+    # approximation leaves the interval bounds outside [0, 1] and is wrong
+    # exactly where it is needed. No new dependency: statsmodels agrees to
+    # four decimals (tests/unit/test_evaluate_model_wilson.py).
+    print("\n  -- 95% Wilson intervals (the rates a decision turns on) --")
+    for label, k, n_total in (
+        ("precision", tp, tp + fp),
+        ("recall   ", tp, tp + fn),
+    ):
+        if not n_total:
+            continue
+        lo, hi = wilson_interval(k, n_total)
+        print(f"  {label} {k / n_total:.4f}  CI [{lo:.3f} - {hi:.3f}]  "
+              f"width {(hi - lo) * 100:.1f} pts  (n={n_total})")
 
     prec_curve, rec_curve, _ = precision_recall_curve(y, y_proba)
     print("\n  -- precision/recall at selected score cut-offs --")
