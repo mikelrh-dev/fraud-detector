@@ -237,6 +237,14 @@ function ReportBody({ text }: { text: string }) {
   // True when the level-2 heading is the very first block. Decided from the
   // parsed structure because a CSS `:first` selector cannot express "first
   // *section*": it matches the first child whatever that child is.
+  //
+  // The reset is applied per-block, NOT from this boolean alone. A single
+  // boolean driving every level-2 heading put `border-t` and `border-t-0` on the
+  // same element: a heading-first report rendered its SECOND section with no top
+  // rule, and the two headings became visually indistinguishable. The reset
+  // describes ONE element — the first block — so it is guarded on `index === 0`
+  // at the point of use, and `opensWithLevel2` says only whether that one
+  // element is eligible.
   const opensWithLevel2 =
     blocks.length > 0 && blocks[0].type === "heading" && blocks[0].level === 2;
 
@@ -252,7 +260,7 @@ function ReportBody({ text }: { text: string }) {
               key={index}
               className={
                 "mt-6 border-t border-slate-700/70 pt-4 text-lg font-semibold tracking-tight text-slate-100" +
-                (opensWithLevel2 ? " mt-0 border-t-0 pt-0" : "")
+                (opensWithLevel2 && index === 0 ? " mt-0 border-t-0 pt-0" : "")
               }
             >
               {block.text}

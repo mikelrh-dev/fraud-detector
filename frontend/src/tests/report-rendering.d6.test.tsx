@@ -180,7 +180,12 @@ describe("D6-3 — the first-block reset survives a prose-first report", () => {
     );
 
     expect(within_(body, "Primero").className).toContain("border-t-0");
-    expect(within_(body, "Segundo").className).toContain("border-t");
+    // `toContain("border-t")` cannot make this assertion. `border-t` is a
+    // substring of `border-t-0`, and `border-t` is in the BASE class of every
+    // level-2 heading — so it is present whether or not the reset was applied.
+    // The claim this test exists to make is that `Segundo` does not carry the
+    // reset, and only a negative assertion can say that.
+    expect(within_(body, "Segundo").className).not.toContain("border-t-0");
   });
 
   it("no longer relies on a CSS :first selector at all", async () => {
