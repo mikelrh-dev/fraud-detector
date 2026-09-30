@@ -117,6 +117,169 @@ describe("parseReportLines — the format the prompt requests", () => {
   });
 });
 
+describe("parseReportLines — a bold-lead-in LIST is not a set of sections", () => {
+  // The defect these guard: ANY `N. **Label**: rest` became a level-2 heading,
+  // which is string-identical to a bold-lead-in ordered list. A five-item list
+  // became five section headings — five top rules and size steps invented out
+  // of a list the model never wrote as structure.
+  //
+  // The rule is now: only 1, 2, 3, arriving consecutively from a 1. See the
+  // ASSUMPTION block above `parseReportLines` — these tests pin the PARSER's
+  // behaviour on hand-written strings. They say nothing about whether the model
+  // complies, which is unobservable without the container.
+
+  const boldLeadInList = [
+    "1. **Monto**: supera el umbral habitual del usuario.",
+    "2. **Horario**: la operación ocurrió de madrugada.",
+    "3. **Comercio**: el categoría es de riesgo alto.",
+    "4. **Frecuencia**: segundo intento en cinco minutos.",
+    "5. **Origen**: país distinto al habitual del titular.",
+  ].join("\n");
+
+  it("stops promoting at the third item, so a longer list cannot become all sections", () => {
+    // HONEST LIMIT, asserted rather than wished away: the first THREE items of
+    // this list ARE rendered as headings, and no rule can prevent that. They
+    // are numbered 1, 2, 3 with bold lead-ins from a `1` — byte-for-byte the
+    // prompt's contract. A parser that demoted them would also demote real
+    // sections. This is the residual ambiguity the bet accepts, and the test
+    // says so instead of asserting a protection that does not exist.
+    //
+    // What the rule DOES buy is the cap: items 4 and 5 cannot become headings,
+    // so a list of any length stops being "all sections" at three.
+    const blocks = parseReportLines(boldLeadInList);
+
+    expect(blocks.filter((b) => b.type === "heading")).toHaveLength(3);
+    const lists = blocks.filter((b) => b.type === "list");
+    expect(lists).toHaveLength(1);
+    if (lists[0].type !== "list") throw new Error("expected list");
+    expect(lists[0].items).toHaveLength(2);
+  });
+
+  it("keeps the label text of a demoted item, with the bold markers unwrapped", () => {
+    // The rejected lines fall through to the ordered-list rule, which strips
+    // `**`. A demoted item that rendered as "****Monto****: ..." would be a new
+    // leak of the same class the parser exists to prevent.
+    const blocks = parseReportLines(boldLeadInList);
+    const list = blocks.find((b) => b.type === "list");
+    if (!list || list.type !== "list") throw new Error("expected list");
+
+    expect(list.items[0]).toBe("Frecuencia: segundo intento en cinco minutos.");
+    expect(list.items.join(" ")).not.toContain("*");
+  });
+
+  it("renders a bold-lead-in list that does NOT start at 1 as entirely a list", () => {
+    // The fully protected case, and the one the "not starting at 1" half of the
+    // rule buys. A list numbered 2..6 is unambiguous — no section sequence
+    // starts at 2 — so every item stays a list item.
+    const blocks = parseReportLines(
+      [
+        "2. **Monto**: supera el umbral habitual.",
+        "3. **Horario**: la operación ocurrió de madrugada.",
+        "4. **Comercio**: categoría de riesgo alto.",
+        "5. **Frecuencia**: segundo intento en cinco minutos.",
+        "6. **Origen**: país distinto al habitual.",
+      ].join("\n"),
+    );
+
+    expect(blocks.some((b) => b.type === "heading")).toBe(false);
+    const only = blocks[0];
+    if (only.type !== "list") throw new Error("expected list");
+    expect(only.items).toHaveLength(5);
+  });
+
+  it("does not read a heading out of a list that starts at 2", () => {
+    // "Numbering begins at 1". A document whose first numbered bold lead-in is
+    // 2 is not the prompt's shape, and the `2` must not consume the slot.
+    const blocks = parseReportLines("2. **Puntajes**: treinta y cinco puntos.");
+
+    expect(blocks.some((b) => b.type === "heading")).toBe(false);
+    expect(blocks[0].type).toBe("list");
+  });
+
+  it("still finds 1 after a rejected 2, because a rejection consumes nothing", () => {
+    // The counter advances only when a heading is TAKEN. If a stray `2. **` at
+    // the top of a report consumed the 2, a real section 1 further down would
+    // be demoted to a list item and the report would lose its opening heading.
+    const blocks = parseReportLines(
+      ["2. **Previsto**: no aplica.", "1. **Análisis**: treinta y cinco puntos."].join("\n"),
+    );
+
+    const headings = blocks.filter((b) => b.type === "heading");
+    expect(headings).toHaveLength(1);
+    if (headings[0].type !== "heading") throw new Error("expected heading");
+    expect(headings[0].text).toBe("Análisis");
+  });
+
+  it("stops at three: a fourth and fifth are list items", () => {
+    const blocks = parseReportLines(
+      [
+        "1. **Uno**: a.",
+        "2. **Dos**: b.",
+        "3. **Tres**: c.",
+        "4. **Cuatro**: d.",
+        "5. **Cinco**: e.",
+      ].join("\n"),
+    );
+
+    expect(blocks.filter((b) => b.type === "heading")).toHaveLength(3);
+    expect(blocks.filter((b) => b.type === "list")).toHaveLength(1);
+  });
+
+  it("rejects a gap in the sequence rather than skipping to fill it", () => {
+    // 1, 2, 4 — "increments consecutively". The 4 is not the next number, so it
+    // is a list item. It does not retroactively promote a later 4 either.
+    const blocks = parseReportLines(
+      ["1. **Uno**: a.", "2. **Dos**: b.", "4. **Cuatro**: d."].join("\n"),
+    );
+
+    const headings = blocks.filter((b) => b.type === "heading");
+    expect(headings).toHaveLength(2);
+    expect(blocks.filter((b) => b.type === "list")).toHaveLength(1);
+  });
+
+  it("counts across intervening prose and bullets", () => {
+    // The sequence is a property of the DOCUMENT, not of adjacent lines. A
+    // report that opens with prose and interleaves a bullet list must still
+    // find its sections — this is the shape PROMPT_SHAPED_REPORT has, and the
+    // rendering suite depends on it.
+    const blocks = parseReportLines(
+      [
+        "La transacción requiere atención.",
+        "",
+        "1. **Análisis**: treinta y cinco puntos.",
+        "",
+        "- Regla disparada: monto",
+        "- Regla disparada: horario",
+        "",
+        "2. **Decisión**: clasificada para revisión.",
+      ].join("\n"),
+    );
+
+    expect(blocks.filter((b) => b.type === "heading")).toHaveLength(2);
+  });
+
+  it("leaves '## ' headings alone — that rule is independent of the counter", () => {
+    // `## ` is a separate, shape-based branch. The narrowing must not have
+    // touched it, and a `##` report with no numbered sections at all is common.
+    const blocks = parseReportLines("## Resumen\nTexto.\n## Detalle\nMás texto.");
+
+    const headings = blocks.filter((b) => b.type === "heading");
+    expect(headings).toHaveLength(2);
+  });
+
+  it("does not invent a heading from a bold colon that is not a list marker", () => {
+    // Bold lead-in prose, mid-line and line-start, with no number. Nothing
+    // here may be promoted — this is the "structure out of prose" failure in
+    // its purest form.
+    const blocks = parseReportLines(
+      ["**Nota importante**: el análisis es explicativo.", "Motivo: monto elevado."].join("\n"),
+    );
+
+    expect(blocks.some((b) => b.type === "heading")).toBe(false);
+    expect(blocks.every((b) => b.type === "paragraph")).toBe(true);
+  });
+});
+
 describe("parseReportLines — the formats that already worked", () => {
   it("still reads '## ' as a level-2 heading", () => {
     const blocks = parseReportLines("## Análisis de Puntajes");
