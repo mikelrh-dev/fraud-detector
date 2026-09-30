@@ -69,9 +69,16 @@ services:
     # credential-stuffing target.
     #
     # The frontend container IS nginx (docker/nginx.conf) and already proxies
-    # /api to api:8000, so the API stays reachable at http://localhost:3000/api
-    # and Swagger at http://localhost:3000/docs. The SPA uses baseURL "/api/v1",
-    # i.e. the same origin, so it goes through nginx as well.
+    # /api, /health, /docs and /openapi.json to api:8000, so the API stays
+    # reachable at http://localhost:3000/api and Swagger at
+    # http://localhost:3000/docs. The SPA uses baseURL "/api/v1", i.e. the same
+    # origin, so it goes through nginx as well.
+    #
+    # The /docs and /openapi.json proxies were added because /docs previously
+    # matched no proxying location and fell through to the SPA, which made this
+    # comment's "Swagger at :3000/docs" false as well as the README's. The
+    # upstream still disables both when ENVIRONMENT=production, so nothing is
+    # re-exposed there.
     #
     # Because nginx is now the only ingress, TRUST_PROXY_HEADERS must be true:
     # otherwise every request would look like it came from the nginx container

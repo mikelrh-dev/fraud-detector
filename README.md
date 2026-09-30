@@ -184,16 +184,24 @@ cp .env.example .env
 
 docker compose up -d                                # 8 services: postgres, redis, ollama, api, 3 workers, frontend
 docker compose exec ollama ollama pull qwen2.5:0.5b # default LLM (configurable via OLLAMA_MODEL)
-docker compose exec api python scripts/init_db.py   # create tables
 
-# API docs:  http://localhost:8000/docs
-# Frontend:  http://localhost:3000
+# Frontend + API:  http://localhost:3000
+# API docs:        http://localhost:3000/docs
+# Liveness:        http://localhost:3000/health
 ```
+
+The API port is deliberately **not** published to the host, so nginx is the only
+ingress — that is what makes the per-IP rate limiter trustworthy (`X-Real-IP` is
+overwritten, not appended). Reach the API through nginx at `:3000`, never at `:8000`.
+
+Tables and migrations are applied automatically by the api container's
+entrypoint (`alembic upgrade head`) as it starts, so there is no separate
+bootstrap step.
 
 Create your first user via the API:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
+curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email": "analyst@example.com", "password": "...", "full_name": "Analyst"}'
 ```

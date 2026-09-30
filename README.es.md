@@ -184,16 +184,25 @@ cp .env.example .env
 
 docker compose up -d                                # 8 servicios: postgres, redis, ollama, api, 3 workers, frontend
 docker compose exec ollama ollama pull qwen2.5:0.5b # LLM por defecto (configurable vía OLLAMA_MODEL)
-docker compose exec api python scripts/init_db.py   # crear tablas
 
-# Docs API:   http://localhost:8000/docs
-# Frontend:   http://localhost:3000
+# Frontend + API:  http://localhost:3000
+# Docs API:        http://localhost:3000/docs
+# Liveness:        http://localhost:3000/health
 ```
+
+El puerto de la API no se publica deliberadamente al host, así que nginx es el
+único punto de entrada: eso es lo que hace confiable el limitador por IP
+(`X-Real-IP` se sobrescribe, no se agrega). La API se alcanza a través de nginx
+en `:3000`, nunca en `:8000`.
+
+Las tablas y las migraciones las aplica automáticamente el entrypoint del
+contenedor `api` (`alembic upgrade head`) al arrancar, así que no hace falta un
+paso de bootstrap aparte.
 
 Creá tu primer usuario vía API:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
+curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email": "analyst@example.com", "password": "...", "full_name": "Analyst"}'
 ```
