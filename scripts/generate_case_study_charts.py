@@ -12,7 +12,7 @@ Model-derived (full 50k synthetic dataset through the production
 FeatureEngine + saved calibrated artifact):
     feature-importance.png      1440x810   mean gain across the 5 calibrated folds
     shap-attribution.png        1440x750   TreeSHAP for one canonical high-risk tx
-    score-distribution.png      1440x750   cubic-smoothed ml_score histograms
+    score-distribution.png      1440x750   ml_score histograms (production serving output)
 
 Held-out evaluation (stratified 80/20 split, random_state=42 -- the exact split
 recipe used by train_xgboost_aligned.py, so the numbers line up with training;
@@ -72,6 +72,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.train_xgboost_aligned import (  # noqa: E402
+    FRAUD_NOISE_INTENSITY,
     add_realistic_noise,
     build_feature_vectors,
     build_synthetic_history,
@@ -146,10 +147,15 @@ def save(fig: plt.Figure, name: str, width_px: int, height_px: int) -> Path:
     return out
 
 
-def cubic_smooth(probabilities: np.ndarray) -> np.ndarray:
-    """Production serving transform (MLModelService.predict)."""
-    s = 0.5 + 0.7 * (probabilities - 0.5) ** 3 + 0.3 * (probabilities - 0.5)
-    return np.clip(s, 0.0, 1.0)
+def serving_score(probabilities: np.ndarray) -> np.ndarray:
+    """Production serving transform (MLModelService.predict), on 0-100.
+
+    The calibrated fraud probability IS the risk score: predict_proba() is
+    scaled by 100 with no smoothing, clipping or other post-processing. Kept as
+    a named function so the intent is stated once and cannot drift from
+    src/services/ml_model.py.
+    """
+    return probabilities * 100.0
 
 
 def pick_cost_optimal_threshold(y_true: np.ndarray, proba: np.ndarray) -> tuple[float, float]:
@@ -446,7 +452,9 @@ def main() -> None:
     # ------------------------------------------------------------------
     synth_tx, y = load_synthetic_data(DATA_SYNTHETIC)
     histories = [build_synthetic_history(tx) for tx in synth_tx]
-    noisy_tx, y = add_realistic_noise(synth_tx, y, fraud_noise_intensity=0.40)
+    noisy_tx, y = add_realistic_noise(
+        synth_tx, y, fraud_noise_intensity=FRAUD_NOISE_INTENSITY
+    )
     print("Extracting aligned features with production FeatureEngine...")
     X = build_feature_vectors([{"tx": tx, "history": h} for tx, h in zip(noisy_tx, histories)])
 
@@ -556,7 +564,7 @@ def main() -> None:
 
     print("Chart 3/8: score-distribution.png")
     proba_all = model.predict_proba(X)[:, 1]
-    scores_all = cubic_smooth(proba_all) * 100.0
+    scores_all = serving_score(proba_all)
     legit_scores, fraud_scores = scores_all[y == 0], scores_all[y == 1]
     bins = np.linspace(0, 100, 51)
     fig, ax = plt.subplots(figsize=(1440 / DPI, 750 / DPI))
@@ -577,7 +585,7 @@ def main() -> None:
         "n_fraud": int(len(fraud_scores)),
     }
     ax.set_title("ML Score Distribution — Trained Model over the 50k Synthetic Dataset", fontweight="bold", pad=14)
-    ax.set_xlabel("ml_score (production cubic-smoothed output, 0–100)")
+    ax.set_xlabel("ml_score (production serving output, 0–100)")
     ax.set_ylabel("transactions")
     ax.legend(loc="upper left")
     style_ticks(ax)
@@ -703,24 +711,27 @@ def main() -> None:
 
     print("Chart 7/8: fig-eval-calibration.png")
     groups = reliability_groups(proba, y_test)
-    mean_raw = [g[0] for g in groups]
+    mean_pred = [g[0] for g in groups]
     frac_pos = [g[1] for g in groups]
-    mean_smoothed = [float(np.mean(cubic_smooth(proba[g[2]]))) for g in groups]
+    # One curve, not two: the serving transform is probability x 100, so the
+    # score the system actually thresholds is this same predicted probability
+    # read on a 0-100 axis. A "before/after serving" pair would draw the same
+    # line twice, which reads as a bug rather than as the honest result.
     fig, ax = plt.subplots(figsize=(1080 / DPI, 840 / DPI))
     ax.plot((0, 1), (0, 1), color=MUTED, linestyle="--", linewidth=1.4, label="perfectly calibrated")
-    ax.plot(mean_raw, frac_pos, color=BLUE, marker="o", linewidth=2, label="raw predict_proba")
-    ax.plot(mean_smoothed, frac_pos, color=RED, marker="s", linewidth=2, label="after cubic smoothing (serving)")
+    ax.plot(mean_pred, frac_pos, color=BLUE, marker="o", linewidth=2,
+            label="predict_proba = serving ml_score / 100")
     ax.set_xlim(-0.03, 1.03)
     ax.set_ylim(-0.05, 1.05)
     ax.set_title("Reliability Diagram — is the score honest?", fontweight="bold", pad=14)
-    ax.set_xlabel("Mean predicted probability")
+    ax.set_xlabel("Mean predicted probability (= serving ml_score / 100)")
     ax.set_ylabel("Fraction of positives")
     ax.legend(loc="upper left")
     style_ticks(ax)
     save(fig, "fig-eval-calibration.png", 1080, 840)
     metrics["calibration_curve"] = {
-        "raw": [[round(a, 4), round(b, 4)] for a, b in zip(mean_raw, frac_pos)],
-        "smoothed_x": [round(v, 4) for v in mean_smoothed],
+        "serving_x": [round(a, 4) for a in mean_pred],
+        "observed_y": [round(b, 4) for b in frac_pos],
     }
 
     print("Chart 8/8: fig-eval-separability.png")
