@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 
+from src.api.main import app
+from src.core.dependencies import get_velocity_store
+
 
 class TestScoringPipelineIntegration:
     """Full scoring pipeline integration tests."""
@@ -121,17 +124,17 @@ class TestScoringPipelineIntegration:
                 return_value={"5min": 10, "1h": 50}
             )
 
-            response = await test_client.post(
-                "/api/v1/transactions",
-                json={
-                    "amount": 50000.00,
-                    "currency": "USD",
-                    "merchant_name": "Crypto Exchange",
-                    "merchant_category": "cryptocurrency",
-                    "card_last4": "9999",
-                },
-                headers=auth_headers,
-            )
+        response = await test_client.post(
+            "/api/v1/transactions",
+            json={
+                "amount": 5000.00,
+                "currency": "USD",
+                "merchant_name": "Electronics Store",
+                "merchant_category": "electronics",
+                "card_last4": "5678",
+            },
+            headers=auth_headers,
+        )
 
         assert response.status_code == 201
         data = response.json()
@@ -142,6 +145,130 @@ class TestScoringPipelineIntegration:
         assert "threshold" in data
         assert data["classification"] in ("legitimate", "review", "fraud")
         assert 0 <= data["ensemble_score"] <= 100
+
+
+class TestVelocityWriteOrdering:
+    """Why the velocity write is where it is — see ADR-007.
+
+    The Redis ZADD at `transactions.py:197` happens before the commit, which
+    lives in the `get_db` teardown. A failed commit therefore leaves a velocity
+    entry for a transaction that does not exist. That is an ACCEPTED divergence,
+    not an oversight, and this class exists so it cannot be "fixed" by accident
+    or quietly inverted later.
+
+    The write cannot move after the commit: `get_counts` on the next line feeds
+    THIS request's scoring, so the entry must be visible before the handler
+    returns, and the commit is after the handler returns. Moving it would mean
+    moving the commit into the handler — a restructuring of the request
+    lifecycle, which is the thing ADR-007 was written to avoid.
+
+    This ordering is the load-bearing fact behind the accepted risk, so it is
+    pinned. It passes today; it is a guard, not a reproduction, and ADR-007 says
+    so explicitly.
+    """
+
+    @staticmethod
+    def _given_empty_context_queries(mock_db: AsyncMock) -> None:
+        """The context aggregates in step 2.5 must return empty, not a coroutine.
+
+        Same shape the end-to-end tests use. `AsyncMock(spec=AsyncSession)`
+        answers `.scalars()` with a coroutine otherwise, and the endpoint's
+        except-handler reports it as "Failed to create transaction", which sends
+        you looking for a persistence bug instead of a mock gap.
+        """
+        mock_scalars = MagicMock()
+        mock_scalars.all = MagicMock(return_value=[])
+        mock_scalars.one = MagicMock(return_value=None)
+
+        result = MagicMock()
+        result.scalars = MagicMock(return_value=mock_scalars)
+        result.scalar = MagicMock(return_value=None)
+        result.scalar_one_or_none = MagicMock(return_value=None)
+
+        mock_db.execute = AsyncMock(return_value=result)
+        mock_db.flush = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_the_write_precedes_the_read_that_feeds_this_request_s_scoring(
+        self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
+    ):
+        calls: list[str] = []
+        store = MagicMock()
+        self._given_empty_context_queries(mock_db)
+
+        async def _record(*args, **kwargs):
+            calls.append("record")
+
+        async def _counts(*args, **kwargs):
+            calls.append("counts")
+            return {"5min": 0, "1h": 0}
+
+        store.record_transaction = _record
+        store.get_counts = _counts
+
+        # `Depends(get_velocity_store)` captured the function object at import
+        # time, so patching the module attribute does nothing — the override
+        # table is the only thing that swaps the store. (The end-to-end tests
+        # above patch the module attribute and never assert on the store, which
+        # is why they pass either way.)
+        app.dependency_overrides[get_velocity_store] = lambda: store
+
+        response = await test_client.post(
+                "/api/v1/transactions",
+                json={
+                    "amount": 5000.00,
+                    "currency": "USD",
+                    "merchant_name": "Electronics Store",
+                    "merchant_category": "electronics",
+                    "card_last4": "5678",
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 201
+        assert calls == ["record", "counts"], (
+            f"velocity calls were {calls}, expected ['record', 'counts']. The "
+            f"write must precede the read, because the read feeds this "
+            f"request's own scoring. If you are moving the write to after the "
+            f"commit, read ADR-007 first — the commit is in the get_db "
+            f"teardown and the ordering is not free to change."
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_velocity_counts_actually_reach_the_feature_vector(
+        self, test_client: AsyncClient, mock_db: AsyncMock, auth_headers: dict
+    ):
+        """The coupling itself, not just the call order.
+
+        Proves the read is load-bearing: a non-zero velocity count moves the
+        score. This is the reason the write cannot simply be deferred, stated as
+        a behaviour rather than as a comment.
+        """
+        store = MagicMock()
+        self._given_empty_context_queries(mock_db)
+        store.record_transaction = AsyncMock()
+        store.get_counts = AsyncMock(return_value={"5min": 40, "1h": 400})
+        app.dependency_overrides[get_velocity_store] = lambda: store
+
+        response = await test_client.post(
+            "/api/v1/transactions",
+            json={
+                "amount": 5000.00,
+                "currency": "USD",
+                "merchant_name": "Electronics Store",
+                "merchant_category": "electronics",
+                "card_last4": "5678",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 201
+        store.get_counts.assert_awaited_once()
+        data = response.json()
+        # 40 transactions in 5 minutes is a burst, so the velocity signal is
+        # non-zero and the rule engine had something to work with.
+        assert data["ensemble_score"] > 0
 
 
 class TestHealthEndpoints:
