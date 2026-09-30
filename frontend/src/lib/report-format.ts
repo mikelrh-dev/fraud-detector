@@ -24,12 +24,13 @@
  * Everything else stays a plain paragraph (rendered whitespace-pre-wrap).
  *
  * The numbered-heading rule is deliberately NARROWER than its shape: only the
- * 1, 2, 3 the prompt asks for become headings, and only when they arrive
- * consecutively from a 1. A `N. **Label**: rest` outside that sequence is an
- * ordered-list item, because a bold-lead-in list and a section heading are the
- * same string and the model writes both. That restriction rests on an
- * UNVERIFIED assumption about model output — read the ASSUMPTION block above
- * `parseReportLines` before changing the rule, and do not widen it on a hunch.
+ * 1, 2, 3 the prompt asks for become headings, only when they arrive
+ * consecutively from a 1, and only until the numbering restarts. A
+ * `N. **Label**: rest` outside that sequence is an ordered-list item, because a
+ * bold-lead-in list and a section heading are the same string and the model
+ * writes both. That restriction rests on an UNVERIFIED assumption about model
+ * output — read the ASSUMPTION block above `parseReportLines` before changing
+ * the rule, and do not widen it on a hunch.
  *
  * Not implemented, deliberately: nesting (`> `, indented sub-items), tables,
  * and inline code. A partial implementation of a format the model does not
@@ -72,7 +73,8 @@ const SECTION_COUNT = 3;
  *
  * WHAT IS BEING ASSUMED
  *   1. The report's sections are numbered 1, 2, 3 — starting at 1, with no gap.
- *   2. A line is a section heading only if its number is the next one expected.
+ *   2. A line is a section heading only if its number is the next one expected,
+ *      and the numbering has not restarted.
  *   3. At most three such lines exist per report.
  *
  * WHY THE RULE IS NARROW RATHER THAN SHAPE-BASED
@@ -89,10 +91,48 @@ const SECTION_COUNT = 3;
  *   reading real structure as prose — costs a heading: the text still renders,
  *   still has its bold label, and is merely less separated.
  *
- *   So when this bet is wrong, it now fails toward LESS structure: a report the
- *   model formatted as `##` sections or as a numbered list with bold lead-ins
- *   renders its section titles as list items. No sentence is dropped, no
- *   asterisk leaks, nothing is reordered. That is the intended direction.
+ *   So when this bet is wrong, the rule fails toward LESS structure: a report
+ *   the model formatted as `##` sections, or as a numbered list with bold
+ *   lead-ins, renders its section titles as list items. No sentence is dropped,
+ *   no asterisk leaks, nothing is reordered. That is the intended direction.
+ *
+ *   This paragraph was FALSE as written and said so nowhere. The counter it
+ *   described was document-global with no notion of the run having ended, so a
+ *   bold-lead-in list that restarted at 1 further down had its first item
+ *   demoted and its second PROMOTED — one list, rendered as a list item, then a
+ *   section divider with `mt-6 border-t`, then more of the same list. Structure
+ *   read out of a list is the exact direction this claims the rule avoids.
+ *   `lastSectionNumber` / `sectionRunClosed` in the function are the fix; see
+ *   the restart rule below for what closes a run and, more importantly, what
+ *   does not.
+ *
+ *   The one direction the rule cannot be held to, and does not claim: a
+ *   bold-lead-in list numbered 1, 2, 3 from a `1` is byte-for-byte the
+ *   contract, and its first three items become headings. That is the residual
+ *   ambiguity priced below, and no wording here pretends otherwise.
+ *
+ * WHAT THE RESTART RULE IS, AND WHY IT IS NOT "CONTIGUOUS FROM THE FIRST BLOCK"
+ *   The obvious stronger rule — any non-section block ends the run, the counter
+ *   is dead from there — was implemented and measured before being rejected.
+ *   It takes the PROMPT'S OWN OUTPUT to zero headings:
+ *
+ *     AssertionError: expected [] to have a length of 3 but got +0
+ *     AssertionError: expected [] to have a length of 2 but got +0
+ *     AssertionError: expected [] to have a length of 1 but got +0
+ *
+ *   on `produces three headings from the prompt's three requested sections`,
+ *   `counts across intervening prose and bullets`, and `still finds 1 after a
+ *   rejected 2`. A paragraph before section 1 is the shape the prompt asks
+ *   for, and bullets between sections are ordinary; closing the run on either
+ *   is closing it on the format itself, and `mt-6 border-t` plus the numbered
+ *   section styling go dead in production again — the D6-1 defect this file
+ *   exists to fix.
+ *
+ *   So a run is closed by exactly one thing: a number at or below one already
+ *   spent. That is a document that started numbering over, which is a list by
+ *   any reading, and it is evidence the document is not emitting 1, 2, 3. It
+ *   is narrower than contiguity, and it is the only signal that distinguishes
+ *   "prose between two real sections" from "a list restarting mid-document".
  *
  * WHAT WOULD OVERTURN IT
  *   One captured transcript of a real report. If the model reliably emits
@@ -150,6 +190,15 @@ export function parseReportLines(raw: string): ReportBlock[] {
   // arrives before any `1. **…**` is rejected and does not consume the `2`.
   let nextSectionNumber = 1;
 
+  // The highest number already spent on a section heading, or 0 if none has
+  // been. A number at or below this means the document RESTARTED its
+  // numbering — see the restart rule below.
+  let lastSectionNumber = 0;
+
+  // Set when a restart is seen, and never cleared. The section run is over
+  // for the rest of the document.
+  let sectionRunClosed = false;
+
   for (const line of raw.split("\n")) {
     if (line.startsWith("### ")) {
       blocks.push({ type: "heading", level: 3, text: stripBold(line.slice(4).trim()) });
@@ -171,8 +220,22 @@ export function parseReportLines(raw: string): ReportBlock[] {
     const boldHeading = NUMBERED_BOLD_HEADING.exec(line);
     if (boldHeading) {
       const [, number, label, rest] = boldHeading;
+      const parsed = Number(number);
       const expected = nextSectionNumber;
-      if (Number(number) === expected && expected <= SECTION_COUNT) {
+
+      // The restart rule. Once a number has been spent, a line carrying it
+      // again — or anything below it — is a document that started its
+      // numbering over, which is a LIST, not the section sequence. Continuing
+      // to accept numbers from there is what tore the list apart: the `1` of
+      // the new list was demoted while its `2` was promoted, so one list
+      // rendered as a list item, then a section divider with `mt-6 border-t`.
+      // Closing the run sends the whole restart to the list, which is the
+      // direction the comment above claims and did not deliver.
+      if (!sectionRunClosed && parsed <= lastSectionNumber) {
+        sectionRunClosed = true;
+      }
+
+      if (!sectionRunClosed && parsed === expected && expected <= SECTION_COUNT) {
         // A level-2-equivalent section: it divides the report, so it gets the
         // top rule and the size step. The model was told to number its three
         // top-level sections, and that is the structure being rendered.
@@ -181,13 +244,14 @@ export function parseReportLines(raw: string): ReportBlock[] {
           blocks.push({ type: "paragraph", text: stripBold(rest.trim()) });
         }
         nextSectionNumber = expected + 1;
+        lastSectionNumber = expected;
         continue;
       }
       // Anything else — a number that did not start at 1, a gap in the
-      // sequence, or an item past the third — falls through to the ordered-list
-      // rule below and is rendered as a list item. The bold markers are
-      // unwrapped there, so it reads as an emphasized list entry rather than as
-      // a section divider.
+      // sequence, a restarted list, or an item past the third — falls through
+      // to the ordered-list rule below and is rendered as a list item. The bold
+      // markers are unwrapped there, so it reads as an emphasized list entry
+      // rather than as a section divider.
     }
 
     if (line.startsWith("- ")) {

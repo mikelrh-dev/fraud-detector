@@ -280,6 +280,104 @@ describe("parseReportLines — a bold-lead-in LIST is not a set of sections", ()
   });
 });
 
+describe("parseReportLines — a restarted bold-lead-in list is a list, not a torn one", () => {
+  // W-2: the ASSUMPTION block claimed the narrowing "fails toward LESS
+  // structure". It did not, and the case below is how it failed.
+  //
+  // `nextSectionNumber` was a document-global counter with no notion of the
+  // run having ended. Once `1. **A**` was spent the counter sat at 2, so a
+  // bold-lead-in list that RESTARTED at 1 further down had its first item
+  // demoted (1 !== 2) and its second item PROMOTED (2 === 2):
+  //
+  //   1. **A**: a        -> heading
+  //   - nota             -> list
+  //   1. **B**: b        -> list item
+  //   2. **C**: c        -> heading, with mt-6 border-t
+  //
+  // One list, rendered as a list item, then a section divider, then more of
+  // the same list. That is structure read out of a list, which is the exact
+  // direction the comment said the rule failed in.
+  //
+  // The fix is the restart rule: a number at or below one already spent means
+  // the document started numbering over, so the section run closes and the
+  // whole restart goes to the list.
+  //
+  // What this is NOT is contiguity from the first block, which is the obvious
+  // stronger rule and was measured before being rejected: it takes the
+  // prompt's own output — a paragraph, then 1., 2., 3. — to ZERO headings,
+  // and that is the D6-1 defect this file exists to fix. `mt-6 border-t` and
+  // the numbered-section styling would go dead in production again. Prose
+  // before the first section, and bullets between sections, are the shape the
+  // prompt produces, so they cannot be what closes the run. A restart can.
+
+  it("does not promote the second item of a list that restarted at 1", () => {
+    // The exact traced input, unchanged.
+    const blocks = parseReportLines(
+      ["1. **A**: a", "- nota", "1. **B**: b", "2. **C**: c"].join("\n"),
+    );
+
+    const headings = blocks.filter((b) => b.type === "heading");
+    expect(headings).toHaveLength(1);
+    if (headings[0].type !== "heading") throw new Error("expected heading");
+    expect(headings[0].text).toBe("A");
+  });
+
+  it("keeps the restarted list whole — no item is split off into a heading", () => {
+    // The tear is not "one heading too many", it is a list cut in half. The
+    // items that belong to the restart must arrive together, in one list, in
+    // order, with the bullet that was already there.
+    const blocks = parseReportLines(
+      ["1. **A**: a", "- nota", "1. **B**: b", "2. **C**: c"].join("\n"),
+    );
+
+    const lists = blocks.filter((b) => b.type === "list");
+    expect(lists).toHaveLength(1);
+    if (lists[0].type !== "list") throw new Error("expected list");
+    expect(lists[0].items).toEqual(["nota", "B: b", "C: c"]);
+  });
+
+  it("closes the run for the rest of the document once a number repeats", () => {
+    // The run does not recover. `1. **C**` repeats a spent number, so from
+    // there nothing is a section again — including a `3.` that would
+    // otherwise have been the prompt's third and final heading.
+    const blocks = parseReportLines(
+      [
+        "1. **A**: a.",
+        "2. **B**: b.",
+        "1. **C**: c.",
+        "2. **D**: d.",
+        "3. **E**: e.",
+      ].join("\n"),
+    );
+
+    const headings = blocks.filter((b) => b.type === "heading");
+    expect(headings.map((h) => (h.type === "heading" ? h.text : "")).join(",")).toBe(
+      "A,B",
+    );
+    const lists = blocks.filter((b) => b.type === "list");
+    expect(lists).toHaveLength(1);
+    if (lists[0].type !== "list") throw new Error("expected list");
+    expect(lists[0].items).toEqual(["C: c.", "D: d.", "E: e."]);
+  });
+
+  it("is discriminating: the SAME shape with no restart still yields both sections", () => {
+    // The control, and the reason the pair above is a test rather than a
+    // tautology. These two documents differ only in whether the numbering
+    // restarts. If the rule above were "any number mismatch ends the run", or
+    // "prose and bullets end the run", this would fail — and with it the
+    // prompt's own output, which is prose, then 1., 2., 3.
+    const withRestart = parseReportLines(
+      ["1. **A**: a.", "1. **B**: b.", "2. **C**: c."].join("\n"),
+    );
+    const withoutRestart = parseReportLines(
+      ["1. **A**: a.", "2. **B**: b.", "3. **C**: c."].join("\n"),
+    );
+
+    expect(withRestart.filter((b) => b.type === "heading")).toHaveLength(1);
+    expect(withoutRestart.filter((b) => b.type === "heading")).toHaveLength(3);
+  });
+});
+
 describe("parseReportLines — the formats that already worked", () => {
   it("still reads '## ' as a level-2 heading", () => {
     const blocks = parseReportLines("## Análisis de Puntajes");
