@@ -66,13 +66,18 @@ class TestLLMPromptTemplate:
         transaction = {"amount": 15000.0, "merchant_name": "Test Store"}
         prompt = service.build_prompt(score_breakdown, transaction)
 
-        # Should contain Spanish keywords
-        assert any(word in prompt.lower() for word in ["justificación", "recomendación", "factores"])
         assert "transacción" in prompt.lower()
+        assert "decisión" in prompt.lower()
 
-    def test_prompt_includes_three_sections(self):
-        """The prompt should ask for: score analysis, decision explanation,
-        and contextual factors."""
+    def test_prompt_forbids_the_model_from_restating_figures(self):
+        """The model must not be asked to recite the scores.
+
+        A 1B model handed 85.0 returned 0.0 and then concluded the rules had
+        not contributed to a transaction they had flagged. The scores stay in
+        the prompt as magnitude context, but the instruction has to forbid
+        quoting them, because `_render_report` writes the authoritative
+        figures itself.
+        """
         service = LLMService()
         score_breakdown = {
             "rule_score": 60.0,
@@ -81,16 +86,26 @@ class TestLLMPromptTemplate:
             "fired_rules": ["high_amount"],
             "threshold": 70.0,
         }
-        transaction = {"amount": 15000.0, "merchant_name": "Test Store"}
-        prompt = service.build_prompt(score_breakdown, transaction)
+        prompt = service.build_prompt(score_breakdown, {"amount": 15000.0})
 
-        # Should contain the three required sections
-        assert "análisis de puntajes" in prompt.lower() or "analisis de puntajes" in prompt.lower()
-        assert (
-            "explicación de la decisión" in prompt.lower()
-            or "explicacion de la decision" in prompt.lower()
+        lowered = prompt.lower()
+        assert "no repitas" in lowered
+        assert "puntuación" in lowered or "puntuaciones" in lowered
+        # The decision is stated as already made, not as something to derive.
+        assert "ya está decidida" in lowered
+
+    def test_prompt_asks_for_two_prose_paragraphs(self):
+        """The contract is prose only: two paragraphs, no structure."""
+        service = LLMService()
+        prompt = service.build_prompt(
+            {"rule_score": 60.0, "ml_score": 80.0, "ensemble_score": 72.0,
+             "fired_rules": ["high_amount"], "threshold": 70.0},
+            {"amount": 15000.0},
         )
-        assert "factores contextuales" in prompt.lower()
+
+        lowered = prompt.lower()
+        assert "dos párrafos" in lowered
+        assert "sin títulos" in lowered
 
     def test_prompt_contains_transaction_details(self):
         """The prompt should include transaction details like amount and merchant."""
@@ -112,6 +127,70 @@ class TestLLMPromptTemplate:
         assert "15000" in prompt
         assert "Test Store" in prompt
         assert "USD" in prompt
+
+    def test_render_report_writes_the_figures_itself(self):
+        """Every number in the stored report comes from the inputs."""
+        report = LLMService._render_report(
+            {
+                "rule_score": 85.0,
+                "ml_score": 62.3,
+                "ensemble_score": 78.4,
+                "threshold": 45.0,
+                "classification": "fraud",
+                "fired_rules": ["high_amount", "unusual_merchant"],
+            },
+            {"amount": 8420.50},
+            "El importe es inusualmente alto para este comercio.\n\nRevisar manualmente.",
+        )
+
+        assert "78.4" in report
+        assert "45.0" in report
+        assert "85.0" in report
+        assert "62.3" in report
+        assert "FRAUDE" in report
+        assert "high_amount" in report
+        assert "El importe es inusualmente alto" in report
+        assert "Revisar manualmente" in report
+
+    def test_prose_cannot_overwrite_the_decision(self):
+        """A hallucinating model cannot change a figure the code already wrote.
+
+        This is the defect the redesign exists for: the model previously
+        reported 0.0 for every layer and called the transaction a review.
+        """
+        report = LLMService._render_report(
+            {
+                "rule_score": 85.0,
+                "ml_score": 62.3,
+                "ensemble_score": 78.4,
+                "threshold": 45.0,
+                "classification": "fraud",
+                "fired_rules": ["high_amount"],
+            },
+            {"amount": 8420.50},
+            "El puntaje es 0.0/100 y la transacción es REQUIERE REVISIÓN.",
+        )
+
+        assert "0.0/100" not in report.split("## Análisis")[0]
+        assert "FRAUDE" in report
+        assert "78.4" in report
+
+    def test_unsourced_numbers_flags_hallucinated_figures(self):
+        from src.services.llm import _numeric_fingerprints, _unsourced_numbers
+
+        allowed = _numeric_fingerprints(85.0, 62.3, 78.4, 45.0, 8420.50)
+        prose = "El score fue 78.4 y el coste 450 EUR en(reordered) 2023."
+
+        found = _unsourced_numbers(prose, allowed)
+        assert "78.4" not in found
+        assert "450" in found
+        assert "2023" in found
+
+    def test_split_prose_tolerates_a_single_paragraph(self):
+        """Short answers must not lose their text."""
+        analysis, recommendation = LLMService._split_prose("Solo un parrafo.")
+        assert analysis == "Solo un parrafo."
+        assert recommendation == ""
 
     def test_no_fired_rules_still_creates_prompt(self):
         """The prompt should work even when no rules fired."""
