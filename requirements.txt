@@ -7,6 +7,13 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 
 # Database
+# 2.0.51, not an older pin: tests/migrations/ register
+# @compiles(PG_UUID, "sqlite") returning "CHAR(32" so PostgreSQL migrations can
+# run on SQLite. Under 2.0.23 that string return is wrapped and emits
+# CHAR(32)(), which SQLite rejects as a syntax error — nine tests red in CI and
+# green locally, which is worse than either. KNOWN DEBT: the shim is still
+# version-sensitive; the constraint lives here, in the file that enforces it,
+# because a note in a commit message is invisible to whoever downgrades next.
 sqlalchemy[asyncio]==2.0.51
 alembic==1.14.0
 asyncpg==0.30.0

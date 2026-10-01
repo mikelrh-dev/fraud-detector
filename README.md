@@ -358,7 +358,7 @@ fraud-detector/
 # Backend (1210 tests)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # unit only
-pytest tests/integration -v     # integration only (needs postgres + redis)
+pytest tests/integration -v     # integration only — runs against MOCKED db and redis (see conftest)
 
 # Frontend
 cd frontend && npm test         # vitest
@@ -366,7 +366,7 @@ cd frontend && npm test         # vitest
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`), triggered on push/PR to `main`:
+GitHub Actions (`.github/workflows/ci.yml`), triggered on push/PR to `main`, `master` or `enhanced-proyecto`:
 
 | Job | What it does |
 |---|---|

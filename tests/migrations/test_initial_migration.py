@@ -7,7 +7,11 @@ The project targets PostgreSQL (UUID dialect types), so the round-trip runs on
 a scratch SQLite database with a small compile hook rendering PostgreSQL
 ``UUID`` as ``CHAR(32)``. This verifies the full structural surface of the
 migration (tables, columns, PKs, FKs, uniques, indexes). Native-PostgreSQL
-rendering is exercised by CI's Postgres service (see audit R3-008, wave 4).
+rendering is NOT exercised by CI: tests/conftest.py overrides get_db and
+get_redis with mocks, and these tests point alembic at SQLite, so neither the
+postgres nor the redis service container in ci.yml is contacted. What this
+module proves is that the migration graph is non-destructive and complete —
+not that it runs on PostgreSQL.
 """
 
 from pathlib import Path

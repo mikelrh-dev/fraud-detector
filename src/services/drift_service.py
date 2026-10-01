@@ -22,8 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 class DataDriftService:
-    """Detects concept drift in fraud detection features using Evidently.
-    
+    """Detects concept drift in fraud detection features.
+
+    The drift metric is a Population Stability Index computed with numpy
+    against a reference window. This class does not use Evidently: that
+    package had no import anywhere in the project and was removed from
+    requirements.txt, having only constrained the scikit-learn resolver.
+
     Compares current transaction features against a reference distribution
     to identify if fraud patterns have shifted.
     

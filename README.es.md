@@ -362,7 +362,7 @@ fraud-detector/
 # Backend (1210 tests)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # solo unitarios
-pytest tests/integration -v     # solo integración (requiere postgres + redis)
+pytest tests/integration -v     # solo integración — se ejecuta con db y redis SIMULADOS (ver conftest)
 
 # Frontend
 cd frontend && npm test         # vitest
@@ -370,7 +370,7 @@ cd frontend && npm test         # vitest
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`), disparado en push/PR a `main`:
+GitHub Actions (`.github/workflows/ci.yml`), disparado en push/PR a `main`, `master` o `enhanced-proyecto`:
 
 | Job | Qué hace |
 |---|---|

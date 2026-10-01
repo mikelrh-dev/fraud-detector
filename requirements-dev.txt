@@ -11,9 +11,10 @@ pytest-cov==6.0.0
 factory-boy==3.3.3
 Faker==33.3.1
 # tests/unit/test_outbox.py opens a real SQLite database through
-# create_async_engine("sqlite+aiosqlite:///..."), and the migration tests run
-# real DDL the same way. Without this the suite only passed on a developer
-# machine whose venv happened to carry it transitively.
+# create_async_engine("sqlite+aiosqlite:///..."). Nothing in requirements.txt
+# pulls aiosqlite, so a clean venv built from the two declared files fails
+# there rather than passing by accident. The migration tests do NOT need this:
+# they drive the synchronous create_engine over a plain sqlite:/// URL.
 aiosqlite==0.21.0
 
 # Lint / type gates
