@@ -6,14 +6,28 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import asyncio
 from sqlalchemy import create_engine
-from src.models.base import Base
-from src.models import (
-    User, Transaction, FraudScore, FraudAlert,
-    RuleMetadata, LLMReport, MLModelRun, AuditEntry, ShapAttribution
-)
+
 from src.core.config import settings
+
+# noqa comment below is deliberate: these imports look unused to ruff and to a
+# reader, but they are what registers every table on Base.metadata for
+# create_all(). Dropping them would not raise — Base.metadata would simply be
+# missing tables and this script would print success having created almost
+# nothing. They are kept explicit so schema creation does not depend on
+# src/models/__init__.py happening to re-export every model.
+from src.models import (  # noqa: F401
+    AuditEntry,
+    FraudAlert,
+    FraudScore,
+    LLMReport,
+    MLModelRun,
+    RuleMetadata,
+    ShapAttribution,
+    Transaction,
+    User,
+)
+from src.models.base import Base
 
 
 def init_db():

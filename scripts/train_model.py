@@ -33,8 +33,13 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from sklearn.metrics import (auc, precision_recall_curve, precision_score,
-                             recall_score, roc_auc_score, roc_curve)
+from sklearn.metrics import (
+    auc,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from xgboost import XGBClassifier
 
 # Add project root to path for imports

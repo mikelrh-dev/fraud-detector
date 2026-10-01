@@ -209,7 +209,8 @@ code([
 "# casi invisible y entiende el problema al instante.\n",
 "ax1 = axes[0, 0]\n",
 "colors = [\"#2ecc71\", \"#e74c3c\"]\n",
-"bars = ax1.bar([\"Legitimo (0)\", \"Fraude (1)\"], fraud_counts.values, color=colors, edgecolor=\"white\")\n",
+("bars = ax1.bar([\"Legitimo (0)\", \"Fraude (1)\"], fraud_counts.values,\n"
+             "             color=colors, edgecolor=\"white\")\n"),
 "for bar, val in zip(bars, fraud_counts.values):\n",
 "    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 50000,\n",
 "            f\"{val:,}\", ha=\"center\", fontweight=\"bold\")\n",
@@ -747,4 +748,8 @@ with open(output_path, "w", encoding="utf-8") as f:
     json.dump(notebook, f, indent=1, ensure_ascii=False)
 
 print(f"Notebook generado: {output_path}")
-print(f"Celdas: {len(cells)} ({sum(1 for c in cells if c['cell_type']=='markdown')} markdown + {sum(1 for c in cells if c['cell_type']=='code')} code)")
+print(
+    f"Celdas: {len(cells)} "
+    f"({sum(1 for c in cells if c['cell_type']=='markdown')} markdown + "
+    f"{sum(1 for c in cells if c['cell_type']=='code')} code)"
+)

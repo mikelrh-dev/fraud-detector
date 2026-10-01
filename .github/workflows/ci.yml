@@ -30,6 +30,22 @@ jobs:
       # shape -- a test asserting a local copy of the code instead of the code.
       # Nothing catches a test that stops testing if nothing lints the tests.
       #
+      # `scripts/` is now on the ruff command for the same reason, and it was
+      # ungated for two independent reasons that are easy to conflate:
+      #   1. `[tool.mypy] exclude` in pyproject.toml lists `scripts/`, so a
+      #      reader who greps pyproject.toml concludes the directory is
+      #      excluded from linting generally. It is not — that list is mypy's,
+      #      and `[tool.ruff]` sets no `exclude` at all.
+      #   2. The ruff step named `src/ tests/` and stopped. Ruff lints whatever
+      #      paths it is handed, so `scripts/` was never passed to any linter.
+      # Measured cost of that: 32 errors sat in 13 files, including 14 unused
+      # imports. In `scripts/` that shape is not cosmetic. These are the
+      # training and data-generation scripts that produce `models/` and
+      # `data/`; an import that stopped being used there is often a constant
+      # that stopped feeding the feature set or the label rule, and unlike a
+      # test it fails by producing a plausible-looking wrong artifact rather
+      # than by going red.
+      #
       # mypy stays on `src/` only, and the exclusion comes from the COMMAND, not
       # from configuration. The step below runs `mypy src/` and stops there, so
       # tests are never passed to mypy at all. `[tool.mypy] exclude` in
@@ -42,7 +58,7 @@ jobs:
       # on src/; it only stops this file citing a configuration that does not
       # say what it claims. tests/ci/test_ci_quality_gate.py guards the citation.
       - name: Run ruff
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ scripts/
       - name: Run mypy
         run: mypy src/
 

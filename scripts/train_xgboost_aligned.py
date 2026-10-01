@@ -68,25 +68,29 @@ Usage:
 
 import csv
 import logging
-import random
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import joblib
 import numpy as np
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import (auc, confusion_matrix,
-                             precision_recall_curve, precision_score, recall_score,
-                             roc_auc_score)
-from sklearn.model_selection import train_test_split
 import xgboost as xgb
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import (
+    auc,
+    confusion_matrix,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import train_test_split
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.core.ml_constants import CATEGORY_ALIAS_SPELLINGS  # noqa: E402
 from src.services.feature_engine import FeatureEngine  # noqa: E402
-from src.core.ml_constants import MERCHANT_RISK_CATEGORIES, CATEGORY_ALIAS_SPELLINGS  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,

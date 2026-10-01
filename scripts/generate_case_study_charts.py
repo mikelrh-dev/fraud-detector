@@ -78,7 +78,6 @@ from scripts.train_xgboost_aligned import (  # noqa: E402
     build_synthetic_history,
     load_synthetic_data,
 )
-
 from src.services.feature_engine import FEATURE_NAMES, FeatureEngine  # noqa: E402
 from src.services.ml_model import MLModelService  # noqa: E402
 
@@ -239,7 +238,6 @@ def build_network_graph(metrics_out: dict) -> None:
     service's own add_transaction() calls, and the printed metrics come from
     get_graph_features()/get_stats().
     """
-    import asyncio
 
     import networkx as nx
     from matplotlib.lines import Line2D
@@ -286,7 +284,10 @@ def build_network_graph(metrics_out: dict) -> None:
         )
 
     slate_face, slate_edge = "#64748b", "#94a3b8"
-    draw_group([n for n in users if n not in fraud_nodes and n != NEAR_NODE], "o", 520, slate_face, slate_edge)
+    draw_group(
+        [n for n in users if n not in fraud_nodes and n != NEAR_NODE],
+        "o", 520, slate_face, slate_edge
+    )
     draw_group([n for n in users if n in fraud_nodes], "o", 620, RED, "#fca5a5")
     draw_group([NEAR_NODE], "o", 620, AMBER, "#fde68a")
     draw_group([c for c in cards if c not in fraud_nodes], "s", 340, "#334155", slate_edge)
@@ -444,7 +445,7 @@ def main() -> None:
                     "fig-eval-calibration", "fig-eval-separability"}
     wanted_model_charts = MODEL_CHARTS if only is None else (only & MODEL_CHARTS)
     if not wanted_model_charts:
-        print(f"=== Done (requested figures refreshed) ===")
+        print("=== Done (requested figures refreshed) ===")
         return
 
     # ------------------------------------------------------------------
@@ -477,7 +478,10 @@ def main() -> None:
     for i, v in enumerate(imp[order]):
         ax.text(v + 0.008, i, f"{v:.3f}", va="center", fontfamily=MONO, fontsize=11)
     ax.set_xlim(0, max(imp.max() * 1.18, 0.05))
-    ax.set_title("Feature Importance — Trained XGBoost Artifact (xgboost_paysim_v1)", fontweight="bold", pad=14)
+    ax.set_title(
+        "Feature Importance — Trained XGBoost Artifact (xgboost_paysim_v1)",
+        fontweight="bold", pad=14
+    )
     ax.set_xlabel("mean gain-based importance across the 5 calibrated folds")
     style_ticks(ax)
     fig.tight_layout()
@@ -584,7 +588,10 @@ def main() -> None:
         "n_legit": int(len(legit_scores)),
         "n_fraud": int(len(fraud_scores)),
     }
-    ax.set_title("ML Score Distribution — Trained Model over the 50k Synthetic Dataset", fontweight="bold", pad=14)
+    ax.set_title(
+        "ML Score Distribution — Trained Model over the 50k Synthetic Dataset",
+        fontweight="bold", pad=14
+    )
     ax.set_xlabel("ml_score (production serving output, 0–100)")
     ax.set_ylabel("transactions")
     ax.legend(loc="upper left")
@@ -669,7 +676,10 @@ def main() -> None:
     ax.plot(rf_r, rf_p, color=BLUE, linewidth=3.2, alpha=0.55,
             label=f"Random Forest · PR-AUC = {rf_pr_auc:.3f}")
     prevalence = float(y_test.mean())
-    ax.axhline(prevalence, color=MUTED, linestyle="--", linewidth=1.4, label=f"dummy prevalence = {prevalence:.3f}")
+    ax.axhline(
+        prevalence, color=MUTED, linestyle="--", linewidth=1.4,
+        label=f"dummy prevalence = {prevalence:.3f}"
+    )
     rec_opt = float(recall_score(y_test, pred_opt, zero_division=0))
     prec_opt = float(precision_score(y_test, pred_opt, zero_division=0))
     ax.scatter([rec_opt], [prec_opt], color=GREEN, s=70, zorder=5, label=f"cost-optimal thr {opt_thr:.2f}")
@@ -740,7 +750,10 @@ def main() -> None:
     fig, axes = plt.subplots(1, 2, figsize=(1560 / DPI, 690 / DPI))
     ax = axes[0]
     log_bins = np.logspace(0, np.log10(amounts.max()), 55)
-    ax.hist(amounts[y == 0], bins=log_bins, color=BLUE, alpha=0.85, edgecolor=BG, linewidth=0.4, label="legitimate")
+    ax.hist(
+        amounts[y == 0], bins=log_bins, color=BLUE, alpha=0.85,
+        edgecolor=BG, linewidth=0.4, label="legitimate"
+    )
     ax.hist(amounts[y == 1], bins=log_bins, color=RED, alpha=0.85, edgecolor=BG, linewidth=0.4, label="fraud")
     ax.set_xscale("log")
     ax.set_title("Amount barely overlaps", fontweight="bold")
@@ -749,14 +762,22 @@ def main() -> None:
     ax.legend(loc="upper right")
     style_ticks(ax)
     ax = axes[1]
-    ax.hist(hours[y == 0], bins=np.arange(0, 26), color=BLUE, alpha=0.85, edgecolor=BG, linewidth=0.4, label="legitimate")
-    ax.hist(hours[y == 1], bins=np.arange(0, 26), color=RED, alpha=0.85, edgecolor=BG, linewidth=0.4, label="fraud")
+    ax.hist(
+        hours[y == 0], bins=np.arange(0, 26), color=BLUE, alpha=0.85,
+        edgecolor=BG, linewidth=0.4, label="legitimate"
+    )
+    ax.hist(
+        hours[y == 1], bins=np.arange(0, 26), color=RED, alpha=0.85,
+        edgecolor=BG, linewidth=0.4, label="fraud"
+    )
     ax.set_title("Hours barely overlap either", fontweight="bold")
     ax.set_xlabel("hour of day")
     ax.set_ylabel("transactions")
     style_ticks(ax)
-    fig.suptitle("Why the test set is trivially separable — synthetic class generators share almost no support",
-                 color=TITLE, fontweight="bold", fontsize=14)
+    fig.suptitle(
+        "Why the test set is trivially separable — synthetic class generators share almost no support",
+        color=TITLE, fontweight="bold", fontsize=14
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "fig-eval-separability.png", 1560, 690)
 

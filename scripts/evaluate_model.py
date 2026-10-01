@@ -40,16 +40,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import train_xgboost_aligned as T  # noqa: E402
 from sklearn.metrics import (  # noqa: E402
-    average_precision_score, brier_score_loss, confusion_matrix, f1_score,
-    precision_recall_curve, precision_score, recall_score, roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import train_test_split  # noqa: E402
 
 from src.services.feature_engine import FEATURE_NAMES  # noqa: E402
 from src.services.ml_model import MLModelService  # noqa: E402
-
-import train_xgboost_aligned as T  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger("evaluate")

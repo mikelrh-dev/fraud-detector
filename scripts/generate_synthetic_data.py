@@ -128,7 +128,10 @@ def generate_transaction(txn_id: int, base_time: datetime) -> dict:
     else:
         amount = max(1.0, round(random.gauss(user["avg_amount"], user["std_amount"]), 2))
         # Use realistic non-risk categories for legitimate transactions
-        normal_categories = ["groceries", "retail", "restaurant", "transport", "entertainment", "health", "education"]
+        normal_categories = [
+            "groceries", "retail", "restaurant", "transport",
+            "entertainment", "health", "education",
+        ]
         merchant_category = random.choice(normal_categories)
         merchant_name = random.choice(MERCHANTS["low_risk"])
 
