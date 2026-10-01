@@ -99,3 +99,26 @@ el resolvedor.
 
 Bloques 2 (venv), 4 (observabilidad), 6 (Postgres real). Docs y contrato de ML
 son el Loop 2. Nada de esto se toca aquí.
+## Log del primer run (36836657806) — dos causas, leidas
+
+4 de 5 jobs verdes en el primer intento: Frontend Lint + Test, Frontend Build,
+Backend Lint (ruff + mypy). Docker Build quedó skipped. Solo Backend Tests falló.
+
+**F1 · `ModuleNotFoundError: No module named 'aiosqlite'`**
+`tests/unit/test_outbox.py:171` abre una base SQLite real con
+`create_async_engine("sqlite+aiosqlite:///...")`. `aiosqlite` no estaba en
+`requirements.txt` ni en `requirements-dev.txt`: la suite solo pasaba en una
+máquina cuyo venv lo arrastraba por transitive. Añadido a requirements-dev.
+
+**F2 · `sqlite3.OperationalError: near "(": syntax error`**
+Tres ficheros de `tests/migrations/` registran
+`@compiles(PG_UUID, "sqlite")` devolviendo `"CHAR(32)"` para poder correr
+migraciones de PostgreSQL sobre SQLite. Con SQLAlchemy **2.0.23** —el pin— ese
+retorno se envuelve y emite `CHAR(32)()`, que SQLite rechaza como sintaxis.
+Con **2.0.51** —la versión del venv de desarrollo— emite el DDL correcto y los
+1180 tests pasan.
+
+Decisión: **alinear el pin con la realidad**, no rediseñar el shim a ciegas. La
+evidencia es directa: 1180/1180 verdes en 2.0.51. Arreglar la fragilidad del
+shim exigiría observar el comportamiento en las dos versiones, y aquí solo se
+tiene una. Se registra como deuda conocida, no como cerrada.

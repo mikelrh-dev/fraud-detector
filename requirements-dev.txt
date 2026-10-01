@@ -10,6 +10,11 @@ pytest-asyncio==0.25.3
 pytest-cov==6.0.0
 factory-boy==3.3.3
 Faker==33.3.1
+# tests/unit/test_outbox.py opens a real SQLite database through
+# create_async_engine("sqlite+aiosqlite:///..."), and the migration tests run
+# real DDL the same way. Without this the suite only passed on a developer
+# machine whose venv happened to carry it transitively.
+aiosqlite==0.21.0
 
 # Lint / type gates
 ruff==0.16.4
