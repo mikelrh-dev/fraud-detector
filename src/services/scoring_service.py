@@ -88,18 +88,24 @@ class ScoringService:
         self,
         tx_data: dict[str, Any],
         context: dict[str, Any],
-        user_history: dict[str, Any],
-        db: Any | None = None,
-        monitoring_service: Any | None = None,
+        user_history: dict[str, float],
     ) -> ScoringResult:
         """Run the full deterministic pipeline.
 
         CPU-bound steps (feature engineering, ML predict) are offloaded to
-        a thread. Model run tracking is awaited after scoring completes.
+        a thread so the event loop is never blocked (CV-002).
 
-        Optionally wires monitoring to persist a model run record (ML4).
-        The tracking call is best-effort — failures are logged but
-        never prevent the scoring result from being returned.
+        There is no database session and no monitoring collaborator here, by
+        decision rather than by omission. Both the ``monitoring_service``
+        parameter and the ``db`` parameter it needed were removed on
+        2026-10-01: see ``docs/plans/2026-10-01-monitoring-desenmascarar.md``
+        (W2) and ``src/services/__init__.py``. Recording a model run would
+        have meant one ``ml_model_runs`` row per scored transaction — a table
+        documented as a record of a model *training run* — with ``status``,
+        ``drift_detected`` and ``model_version`` all constant, so the hook
+        could only ever write decoration. If you are adding a per-transaction
+        audit row, that is a new table and a new reason; do not resurrect this
+        one.
         """
         # CPU-bound: rule engine + feature engine + ML predict
         def _compute() -> tuple[float, list[str], np.ndarray, float | None]:
@@ -168,19 +174,6 @@ class ScoringService:
         if ml_score is None:
             degraded_ml_layer.inc()
 
-        # ML4: model run tracking (awaited, not fire-and-forget)
-        if monitoring_service is not None and db is not None:
-            try:
-                await self._track_model_run(
-                    monitoring_service, db,
-                    rule_score=rule_score,
-                    ml_score=persisted_ml_score,
-                    ensemble_score=ensemble_score,
-                    classification=classification,
-                )
-            except Exception as exc:
-                logger.warning("Failed to track model run: %s", exc)
-
         return ScoringResult(
             rule_score=rule_score,
             fired_rules=list(fired_rules),
@@ -191,20 +184,3 @@ class ScoringService:
             classification=classification,
             layers_used=layers_used,
         )
-
-    @staticmethod
-    async def _track_model_run(
-        monitoring_service: Any,
-        db: Any,
-        **scores: Any,
-    ) -> None:
-        """Persist a model run record via MonitoringService (best-effort)."""
-        try:
-            await monitoring_service.track_model_run(
-                db=db,
-                model_version="v1",
-                metrics=scores,
-                drift_detected=False,
-            )
-        except Exception as exc:
-            logger.warning("Failed to track model run: %s", exc)

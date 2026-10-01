@@ -204,6 +204,84 @@ class TestDashboardEndpoint:
         assert "active_alerts" in data
 
     @pytest.mark.asyncio
+    async def test_model_status_is_derived_not_asserted(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
+        """The dashboard must not claim a working model it never asked about.
+
+        This line used to be the literal `"operational"`, computed from
+        nothing: the panel reported a healthy model while `/health/ready`
+        reported `not_loaded`, in the same process, off the same object. The
+        value now comes from `transactions.ml_model_status()`, and this asserts
+        it tracks the real `is_available` in BOTH directions.
+
+        Both directions matter. Asserting only the loaded case would pass again
+        the day someone reverted to a literal, because a model IS loaded in
+        this environment — a check that cannot fail when the code is wrong is
+        not a check.
+
+        `is_available` is a read-only property on MLModelService, so the patch
+        lands on the CLASS: that is what a reader would use to simulate an
+        absent model, and it is the state a stale or truncated artifact
+        actually produces in the container.
+        """
+        from src.schemas.monitoring import ModelStatus
+        from src.services.ml_model import MLModelService
+
+        mock_result = MagicMock()
+        mock_result.scalar.return_value = 0
+        mock_result.scalar_one_or_none.return_value = None
+        mock_result.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        for available in (True, False):
+            with patch.object(MLModelService, "is_available", available):
+                response = await test_client.get(
+                    "/api/v1/monitoring/dashboard",
+                    headers=auth_headers,
+                )
+
+                assert response.status_code == 200
+                expected = ModelStatus.OK if available else ModelStatus.NOT_LOADED
+                assert response.json()["model_status"] == expected, (
+                    f"with is_available={available} the dashboard reports a model "
+                    "state it did not measure"
+                )
+
+    @pytest.mark.asyncio
+    async def test_dashboard_and_readiness_agree_on_the_model(
+        self, test_client: AsyncClient, auth_headers: dict, mock_db: AsyncMock
+    ):
+        """One signal, two endpoints — asserted as agreement, not as a shared helper.
+
+        Both read `ml_model_status()`, so they cannot diverge while that holds.
+        This test exists to make the DIVERGENCE visible if someone reintroduces a
+        literal on either side, which is what a shared helper alone would not
+        catch: someone can change `/monitoring/dashboard` to hardcode a string
+        and every unit test of the helper still passes.
+        """
+        from src.services.ml_model import MLModelService
+
+        mock_result = MagicMock()
+        mock_result.scalar.return_value = 0
+        mock_result.scalar_one_or_none.return_value = None
+        mock_result.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        with patch.object(MLModelService, "is_available", False):
+            dashboard = await test_client.get(
+                "/api/v1/monitoring/dashboard", headers=auth_headers
+            )
+            readiness = await test_client.get("/health/ready")
+
+        assert dashboard.status_code == 200
+        assert readiness.status_code == 200
+        assert dashboard.json()["model_status"] == readiness.json()["checks"]["ml_model"], (
+            "the dashboard and the readiness probe disagree about the model"
+        )
+        assert dashboard.json()["model_status"] == "not_loaded"
+
+    @pytest.mark.asyncio
     async def test_dashboard_requires_auth(self, test_client: AsyncClient):
         """GET /monitoring/dashboard without auth should return 401."""
         response = await test_client.get("/api/v1/monitoring/dashboard")

@@ -23,11 +23,11 @@ Every transaction gets a 0–100 risk score, a classification (`legitimate | rev
 - **Fraud ring detection**: directed graph (NetworkX), flags users within 2 hops of a known fraudster
 - **Merchant spoofing detection**: sentence-transformers embeddings + cosine similarity (catches `AMAZ0N_STORE` → `Amazon`)
 - **Redis Streams** with consumer groups, pending-message recovery (`XAUTOCLAIM`) and a dead-letter queue
-- **Model monitoring**: PSI data drift, automatic retraining triggers (F1 < 0.7 or drift > 30) — implemented, not yet exercised against a populated reference
+- **Model monitoring**: PSI data drift against a persisted reference (`GET /api/v1/monitoring/drift`), with a nightly job that fails if the manifest drifts from the code. Automatic retraining triggers are **not** implemented — see below for why
 - **Immutable audit trail** with SHA-256 checksums on every scoring decision and analyst action
 - **JWT auth** (access + refresh + blacklist), role-based access (user/admin), per-route rate limiting
 - **React 19 dashboard** with score trends, SHAP cards and alert workflow
-- **1259 backend tests** (unit + integration) and 789 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build). `pytest tests/ -q` reports the backend figure as **1221 passed, 30 skipped, 8 xfailed**; `cd frontend && npm test` reports the frontend figure as 789 passed
+- **1242 backend tests** (unit + integration) and 789 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build). `pytest tests/ -q` reports the backend figure as **1205 passed, 30 skipped, 7 xfailed**; `cd frontend && npm test` reports the frontend figure as 789 passed
 
 ## Architecture
 
@@ -174,7 +174,7 @@ Second, the model has to beat *both* no-model policies, and on this corpus it do
 
 - **SHAP** (`TreeExplainer` over XGBoost): top-5 feature attributions computed async per scored transaction, rendered in the dashboard.
 - **Drift detection**: a custom PSI implementation (reference vs current distributions). `GET /api/v1/monitoring/drift`.
-- **Retraining triggers**: fire when `F1 < 0.7` or `drift_score > 30` (checked in `MonitoringService`). The logic is live; the drift reference it compares against has never been populated with a full window, and it now refuses to seed from fewer than 200 rows.
+- **Retraining triggers**: **not implemented.** The rule (`F1 < 0.7` or `drift_score > 30`) lived in `MonitoringService.check_retraining_trigger`, which was deleted along with the rest of that service — it was a second, unused PSI implementation and its only production hook wrote one row per scored transaction into `ml_model_runs`, a *training-run* table, with `status` and `drift_detected` hardcoded. The rule itself was also unreachable in practice: it needs ground-truth labels, and the project has none. Drift detection below is live; the retraining decision on top of it is not.
 - **Audit trail**: every score, analyst review and LLM report is recorded with SHA-256 checksums. Analyst activity export is admin-only.
 
 ## Async Workers (Redis Streams)
@@ -352,10 +352,10 @@ fraud-detector/
 │   ├── schemas/            # Pydantic v2 schemas
 │   ├── services/           # rule_engine, feature_engine, ml_model, ensemble, shap_service,
 │   │                       #   graph_service, merchant_embedding_service, velocity_store,
-│   │                       #   llm, drift_service, monitoring, audit, transaction, auth
+│   │                       #   llm, drift_service, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (Redis Streams consumers)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 24 components, vitest + MSW)
-├── tests/                  # unit + integration (1259 backend tests)
+├── tests/                  # unit + integration (1242 backend tests)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # PaySim exploration / training notebooks
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -366,7 +366,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (1259 tests — `pytest tests/ -q` prints 1221 passed, 30 skipped, 8 xfailed)
+# Backend (1242 tests — `pytest tests/ -q` prints 1205 passed, 30 skipped, 7 xfailed)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # unit only
 pytest tests/integration -v     # integration only — runs against MOCKED db and redis (see conftest)
@@ -457,4 +457,4 @@ Portfolio project by [mikelrh-dev](https://github.com/mikelrh-dev) demonstrating
 - ML in production: feature engineering aligned between training and serving, SHAP explainability, drift monitoring, retraining triggers
 - Reliable async pipelines: Redis Streams, consumer groups, retries, DLQ
 - Security: JWT with refresh + blacklist, RBAC, rate limiting, immutable SHA-256 audit trail
-- Testing discipline: 1259 backend tests (`pytest tests/ -q`) + frontend vitest suite (789 tests), 5-job CI
+- Testing discipline: 1242 backend tests (`pytest tests/ -q`) + frontend vitest suite (789 tests), 5-job CI

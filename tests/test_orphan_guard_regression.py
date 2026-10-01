@@ -6,10 +6,17 @@ text with only `def`/`class` lines skipped. A COMMENT counted as a caller:
 the dead `dequeue` at line 35 looking called for the whole life of the guard.
 
 The failure mode is not that the guard fires wrongly. It is that it under-
-reports, quietly, forever — and the eight exemptions in `KNOWN_VIOLATIONS` are
-what that silence bought. Reverting the function to text-matching flips those
-eight from xfail to pass and the suite stays green. That is the definition of a
+reports, quietly, forever — and every exemption in `KNOWN_VIOLATIONS` is what
+that silence bought. Reverting the function to text-matching flips them all
+from xfail to pass and the suite stays green. That is the definition of a
 guard that cannot detect the thing it was built to detect.
+
+The count is deliberately not written here. This file said "the eight
+exemptions" while the dict held eight, and went on saying it after the eighth
+was deleted on 2026-10-01 — a second instance of the exact defect it documents,
+in a file whose whole argument is that stale prose is not harmless. Read
+`len(orphans.KNOWN_VIOLATIONS)` instead; the number belongs to the dict, and
+only the dict can be authoritative about it.
 
 These tests hold `production_call_count` to its contract in both directions:
 

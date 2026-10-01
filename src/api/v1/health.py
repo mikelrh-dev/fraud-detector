@@ -62,10 +62,15 @@ async def readiness_check(
     # artifact still loads as "absent" and makes predict() return 0.0 for the
     # whole ML layer. Surface it: a scoring service quietly contributing nothing
     # is not something an operator should have to infer from score drift.
+    #
+    # The value comes from `ml_model_status()` so this endpoint and
+    # GET /monitoring/dashboard read the same signal. They used to disagree:
+    # the dashboard answered "operational" without asking, so a panel could
+    # report a healthy model while this check said `not_loaded`.
     try:
-        from src.api.v1.transactions import _ml_service
+        from src.api.v1.transactions import ml_model_status
 
-        checks["ml_model"] = "ok" if _ml_service.is_available else "not_loaded"
+        checks["ml_model"] = ml_model_status()
     except Exception as exc:
         logger.error("Readiness: ML model check failed", exc_info=True)
         checks["ml_model"] = f"error: {type(exc).__name__}"

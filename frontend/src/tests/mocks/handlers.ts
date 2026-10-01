@@ -122,7 +122,13 @@ export const handlers = [
       fraud_percentage: 2.3,
       avg_score: 18.5,
       active_alerts: 5,
-      model_status: "active",
+      // The backend's vocabulary, not a third one: ModelStatus in
+      // src/schemas/monitoring.py, derived by
+      // transactions.ml_model_status() and shared with /health/ready's
+      // `checks.ml_model`. It used to read "active" here while the API
+      // returned "operational" and the schema defaulted to "unknown" — three
+      // spellings of one state, none of which the page rendered.
+      model_status: "ok",
     });
   }),
 

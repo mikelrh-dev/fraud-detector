@@ -17,12 +17,25 @@ import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import type { Icon } from "@phosphor-icons/react";
 import { Bell, ChartBar, CreditCard, ShieldWarning } from "@phosphor-icons/react";
 
+/**
+ * The backend's `ModelStatus` enum (src/schemas/monitoring.py), which has two
+ * members and is derived from `MLModelService.is_available`.
+ *
+ * Typed as a closed union rather than `string` on purpose: this page does not
+ * render the value today, and that is precisely why the spelling drifted three
+ * ways without anyone noticing — "active" in the mock handler, "operational"
+ * in the endpoint, "unknown" in the schema default. A `string` cannot fail a
+ * build on any of them. The union makes a fourth spelling a compile error at
+ * every site that reads this field.
+ */
+type ModelStatus = "ok" | "not_loaded";
+
 interface DashboardMetrics {
   total_transactions: number;
   fraud_percentage: number;
   avg_score: number;
   active_alerts: number;
-  model_status: string;
+  model_status: ModelStatus;
 }
 
 async function fetchDashboardMetrics(): Promise<DashboardMetrics> {

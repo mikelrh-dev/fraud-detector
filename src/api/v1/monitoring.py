@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.rate_limit import check_rate_limit
-from src.api.v1.transactions import _current_user_uuid, _is_admin
+from src.api.v1.transactions import _current_user_uuid, _is_admin, ml_model_status
 from src.core.dependencies import (
     get_current_user,
     get_db,
@@ -139,6 +139,12 @@ async def get_dashboard_metrics(
     listing route in transactions.py already scopes non-admins to their own
     rows (R1-003); this now does the same, and keeps the cross-user view for
     admins, which is the operational purpose of a monitoring dashboard.
+
+    `model_status` is DERIVED, via `ml_model_status()` — the same function
+    `/health/ready` uses. This line used to be the literal `"operational"`, so
+    the dashboard asserted a working model without asking anything and could
+    report one while the readiness probe said `not_loaded`. Two endpoints, one
+    signal, and no claim nobody measured.
     """
     scope_user_id: uuid.UUID | None = None
     if not _is_admin(current_user):
@@ -186,7 +192,7 @@ async def get_dashboard_metrics(
             else 0.0,
             avg_score=avg_score,
             active_alerts=active_alerts,
-            model_status="operational",
+            model_status=ml_model_status(),
         )
     except Exception as exc:
         logger.exception("Failed to compute dashboard metrics: %s", exc)

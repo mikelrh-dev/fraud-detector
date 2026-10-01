@@ -67,6 +67,27 @@ export interface ScoreResponse {
   threshold: number;
   classification: string;
   fired_rules: string[];
+  /**
+   * Which ensemble layers contributed to this score — a subset of
+   * `"rule" | "ml" | "context"`, in evaluation order.
+   *
+   * This is where a missing ML layer is recorded. A15: the ensemble
+   * redistributes an absent layer's weight instead of spending it on nothing,
+   * and the *stored* `ml_score` stays `0.0` because `FraudScore.ml_score` is a
+   * non-nullable column. So a degraded score is a normal-looking number, and
+   * `"ml" in layers_used` is what tells the two apart — true when the model
+   * ran and genuinely scored zero, false when it never ran.
+   *
+   * OPTIONAL, and required to be. POST /transactions always sends it;
+   * GET /transactions/{id} cannot, because `ScoreBreakdown` is read from a
+   * stored `FraudScore` row and persisting this needs a column and therefore a
+   * migration — blocked on a live database (see
+   * `docs/plans/2026-09-28-fix-loop.md`, D7-1). `buildScoreResponse` in
+   * pages/TransactionDetail.tsx synthesises this shape from that GET response,
+   * so it cannot supply the field. Making it required here would mean
+   * fabricating it, which is the failure mode the optionality is avoiding.
+   */
+  layers_used?: string[];
   created_at: string;
   // Required on the server (str) and required here. `action` is nullable on
   // both sides: it is one of request_3d_secure | request_sms |

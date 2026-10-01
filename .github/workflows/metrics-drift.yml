@@ -112,4 +112,99 @@ jobs:
           git --no-pager diff -- docs/published_metrics.json
           echo "--- how to fix ---"
           echo "Run 'python scripts/generate_published_metrics.py' locally, commit docs/published_metrics.json in the same commit as the harness change, and update the prose from the manifest -- never from memory."
+          # Must be the last line of THIS step. A `::error::` annotation is a UI
+          # decoration and does not fail a step by itself; without this exit the
+          # job falls off the end of the block, returns 0, and reports green
+          # while printing that the manifest drifted. That is how a gate gets
+          # quietly disarmed by an unrelated edit landing one line too high.
           exit 1
+
+      # The second thing this workflow catches, and the more embarrassing one.
+      #
+      # Both READMEs quote the backend test count by hand, in four places each.
+      # It has gone stale three times in two days: once when tests were added,
+      # once when they were corrected by hand, and once when
+      # tests/test_monitoring.py was deleted. Nothing failed. A reader who runs
+      # the command the README itself prints gets a different number, and the
+      # README is the project's front page.
+      #
+      # It lives here and not in tests/docs/ for a concrete reason: collecting
+      # the suite loads tests/conftest.py, which raises ValidationError at
+      # import without REDIS_PASSWORD. tests/docs/ is a 0.3-second check that
+      # needs no environment, and this one needs `pytest tests/ -q` to actually
+      # run. Mixing the two would either slow the fast guard to two minutes or
+      # make it depend on credentials it has no business needing.
+      - name: Fail if the READMEs quote stale test counts
+        env:
+          # Present only to satisfy src.core.config.Settings at import; this job
+          # talks to no database. `db_password`, `redis_password` and
+          # `redis_url` are the three fields Settings declares with no default,
+          # and `.env` is gitignored, so a runner has none of them. Omitting
+          # `REDIS_URL` raises ValidationError before a single test collects --
+          # ci.yml's backend-test sets all three and says why.
+          REDIS_PASSWORD: unused_in_scheduled_job
+          DB_PASSWORD: unused_in_scheduled_job
+          DB_USER: fraud
+          DB_NAME: fraud_detector
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          # `|| true` on the pytest call is load-bearing, not defensive noise.
+          # GitHub Actions runs `run:` blocks with `bash -eo pipefail`, so a
+          # non-zero pytest propagates through the pipe and `set -e` aborts the
+          # step ON THAT LINE -- before `echo "$summary"`, so the captured
+          # output is thrown away and the job reports failure with no output at
+          # all. A guard that dies silently gets deleted by the next person who
+          # does not trust it.
+          set +e
+          summary="$(python -m pytest tests/ -q 2>&1 | tail -5)"
+          pytest_status=$?
+          set -e
+          echo "$summary"
+          if [ "$pytest_status" -ne 0 ]; then
+            echo "::error title=Suite did not pass::'pytest tests/ -q' exited $pytest_status. The documented counts cannot be verified against a red suite, so this step refuses to judge the READMEs. Fix the suite first."
+            exit 1
+          fi
+          # Each extraction tolerates an empty result, because a `grep` that
+          # matches nothing also exits 1 under pipefail and would kill the step
+          # before it can say WHICH file was wrong. An empty value is then
+          # caught explicitly below, with a message.
+          collected="$(python -m pytest tests/ --collect-only -q 2>&1 | grep -oE '[0-9]+ tests? collected' | head -1 | grep -oE '^[0-9]+' || true)"
+          passed="$(echo "$summary" | grep -oE '[0-9]+ passed' | head -1 | grep -oE '^[0-9]+' || true)"
+          echo "collected=$collected passed=$passed"
+          if [ -z "$collected" ] || [ -z "$passed" ]; then
+            echo "::error title=Could not read the test counts::The step could not parse pytest output, so it cannot say whether the READMEs are stale. That is itself a failure: the numbers were unverifiable."
+            exit 1
+          fi
+          drift=0
+          check() {
+            local file="$1" pattern="$2" label="$3" expected="$4"
+            # An exact expected count, not `grep -q`. The number is quoted in
+            # four places per README, and a partial update -- someone fixing the
+            # summary line and missing the other three -- is the realistic human
+            # failure. `grep -q` passes on the first match, so it would ship a
+            # README that contradicts itself.
+            local hits
+            hits="$(grep -cE "$pattern" "$file" || true)"
+            if [ "$hits" -eq "$expected" ]; then
+              echo "  ok   $file  ($label, $hits/$expected places)"
+            else
+              echo "::error title=Stale test count::$file says $label in $hits place(s), expected $expected. A partial update leaves a README that contradicts itself."
+              drift=1
+            fi
+          }
+          check README.md    "$collected backend tests"    "$collected backend tests" 3
+          check README.es.md "$collected (backend )?tests de backend" "$collected tests de backend" 3
+          check README.md    "$passed passed"              "$passed passed" 2
+          check README.es.md "$passed pasados"              "$passed pasados" 2
+          if [ "$drift" -ne 0 ]; then
+            echo ""
+            echo "The READMEs quote the backend test count by hand. Re-run"
+            echo "'pytest tests/ -q' and 'pytest tests/ --collect-only -q', then update"
+            echo "ALL the places in both READMEs in the same commit that changed the count."
+            echo ""
+            echo "If the READMEs were STRUCTURALLY edited too -- a line added that also"
+            echo "quotes the count -- the expected 3 and 2 above are stale too. Bump them"
+            echo "in this file deliberately rather than loosening the check: that number"
+            echo "is a claim about how often the READMEs repeat themselves."
+          fi
+          exit $drift

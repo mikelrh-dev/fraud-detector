@@ -33,6 +33,7 @@ from src.models.fraud_alert import AlertStatus, FraudAlert
 from src.models.fraud_score import FraudClassification, FraudScore
 from src.models.shap_attribution import ShapAttribution
 from src.models.transaction import Transaction, TransactionStatus
+from src.schemas.monitoring import ModelStatus
 from src.schemas.scoring import ScoreResponse
 from src.schemas.transaction import (
     ScoreBreakdown,
@@ -149,6 +150,27 @@ _scoring_service = ScoringService(
 
 # Load ML model at startup (synchronous, runs once)
 _ml_service.load_model()
+
+
+def ml_model_status() -> ModelStatus:
+    """The one derivation of "is the ML model loaded?".
+
+    Lives next to ``_ml_service`` because it reads that object, and both
+    ``/health/ready`` (api/v1/health.py) and ``/monitoring/dashboard``
+    (api/v1/monitoring.py) return its result, so the two endpoints read the
+    same signal and cannot contradict each other.
+
+    This function exists because the dashboard used to answer the literal
+    ``"operational"`` without consulting anything: a panel could claim a
+    working model while the readiness probe said ``not_loaded``, which is the
+    same class of assertion-without-measurement this project keeps removing.
+
+    Deliberately not wrapped in a try/except. A diagnostic that swallows its
+    own failure and reports "ok" is worse than a 500, and ``is_available`` is
+    a read-only property that only reads ``_model is not None`` — there is
+    nothing here that can plausibly fail once the module has imported.
+    """
+    return ModelStatus.OK if _ml_service.is_available else ModelStatus.NOT_LOADED
 
 
 @router.post("", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
@@ -278,6 +300,7 @@ async def create_and_score_transaction(
     threshold = score.threshold
     ensemble_score = score.ensemble_score
     classification = score.classification
+    layers_used = score.layers_used
 
     # 6. Persist the score
     fraud_score = FraudScore(
@@ -413,6 +436,7 @@ async def create_and_score_transaction(
         threshold=threshold,
         classification=classification,
         fired_rules=fired_rules,
+        layers_used=list(layers_used),
         created_at=datetime.now(tz=timezone.utc),
         friction_level=friction_level,
         action=action,
