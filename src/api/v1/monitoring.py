@@ -309,8 +309,10 @@ async def get_drift_status(
                     reference_size,
                 )
 
-        # Evaluate drift using ThreadPoolExecutor to avoid blocking event loop
-        # Evidently calculations are CPU-bound (500ms-2s), must run in thread
+        # Evaluate drift without blocking the event loop. The PSI is computed
+        # with numpy here, not by Evidently: that package had no import
+        # anywhere in the project and was only ever pinning the scikit-learn
+        # resolver, which is what broke collection in CI.
         drift_result = await asyncio.to_thread(
             _drift_service.evaluate_drift,
             current_data,

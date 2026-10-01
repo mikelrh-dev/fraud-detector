@@ -53,7 +53,6 @@ numpy==1.26.4
 scipy>=1.11,<2.0
 pandas==2.2.0
 shap==0.46.0
-evidently==0.4.30
 sentence-transformers==2.2.2
 networkx==3.3
 

@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    # enhanced-proyecto carries the project's real work. It was missing here
+    # from 2026-08-27 to 2026-10-01, which is why 165 commits landed with no
+    # CI validation at all - the pipeline was not subscribed to the branch.
+    branches: [main, master, enhanced-proyecto]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, enhanced-proyecto]
 
 env:
   PYTHON_VERSION: "3.11"
@@ -101,6 +104,14 @@ jobs:
           DB_HOST: "127.0.0.1"
           DB_PORT: "5432"
           REDIS_URL: redis://localhost:6379/0
+          # Settings declares redis_password with no default. The only three
+          # required fields are db_password, redis_password and redis_url, so
+          # omitting this one raised ValidationError at import and killed the
+          # whole session before a single test was collected.
+          # The CI Redis service runs without --requirepass and uses
+          # `redis-cli ping` as its healthcheck, so this value exists only to
+          # satisfy the validation - it authenticates nothing.
+          REDIS_PASSWORD: unused_in_ci
         run: pytest tests/ -v --cov=src --cov-report=xml --cov-fail-under=80
 
   frontend-lint-test:
