@@ -158,7 +158,10 @@ def main() -> None:
     # PER ROW from the amount, so a misaligned pair would silently produce a
     # perfectly plausible-looking confusion matrix.
     transactions, y = T.load_synthetic_data(str(T.DATA_SYNTHETIC))
-    X, _, amounts, _ = E.build_matrix(transactions)
+    # `y` is required, not optional: build_matrix hands it to the noise pass, and
+    # a fabricated all-zero array made the fraud branch unreachable so the matrix
+    # priced here was not the one the model was fit on.
+    X, _, amounts, _ = E.build_matrix(transactions, y)
     row_index = np.arange(len(y))
     # sklearn interleaves: for each array it returns train then test. Verified
     # empirically rather than assumed, because the wrong unpacking order here

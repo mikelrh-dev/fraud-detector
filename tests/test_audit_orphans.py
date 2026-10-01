@@ -52,8 +52,9 @@ DELIBERATE_MAINTENANCE_API = {
 #:     calls redis directly. Both were hidden because a COMMENT mentioning
 #:     `dequeue` was being counted as a caller.
 #:   - `migrate_legacy_list` — a stream migration path never wired up.
-#:   - `alerts_per_day` / `optimal_threshold` / `breakeven_cost_ratio` — dead in
-#:     cost_model.py.
+#:   - `alerts_per_day` / `optimal_threshold` / `breakeven_cost_ratio` — live
+#:     code in cost_model.py that no request path calls. NOT dead: see the
+#:     entries in the dict for who calls them.
 #:
 #: `test_every_exemption_is_still_a_live_violation` keeps the set honest in the
 #: other direction: wire one of these up and the entry must be deleted, so an
@@ -62,7 +63,13 @@ DELIBERATE_MAINTENANCE_API = {
 #: WHAT THE GUARD DOES NOT COVER. Stated because a guard whose own comment
 #: overstates it is the defect class this repository keeps auditing.
 #:   - `src/` only. A caller in `scripts/`, `alembic/` or `notebooks/` is
-#:     invisible, and no CI gate reads those either.
+#:     invisible, and no CI gate reads those either. This is the limitation
+#:     that matters for the three cost_model entries: their only callers are
+#:     in `scripts/evaluate_cost.py`, so this guard reports them as uncalled
+#:     whether or not they are used. Read those three as "unreachable from an
+#:     HTTP request", which is what was actually measured, and never as
+#:     "delete me" — they generate the cost table the README publishes, and
+#:     that table was live before this comment said otherwise.
 #:   - It fires only for a symbol that is BOTH uncalled and test-referenced.
 #:     Dead code no test touches cannot be seen by it at all.
 #:   - Two skip paths bypass this dict entirely and are deliberate:
@@ -103,9 +110,28 @@ KNOWN_VIOLATIONS = {
         "AUDIT-2026-09-29: a stream migration path that was built and never "
         "wired to a caller."
     ),
-    "alerts_per_day": "AUDIT-2026-09-29: dead in cost_model.py; see the module's other three.",
-    "optimal_threshold": "AUDIT-2026-09-29: dead in cost_model.py.",
-    "breakeven_cost_ratio": "AUDIT-2026-09-29: dead in cost_model.py.",
+    "alerts_per_day": (
+        "AUDIT-2026-09-29: NOT dead, and this entry previously said it was — "
+        "a label a maintainer could act on by deleting live code. It is "
+        "called from scripts/evaluate_cost.py, which imports it from "
+        "src/services/cost_model.py and prints the per-day figure in the cost "
+        "sensitivity table the README publishes. This guard only parses src/, "
+        "so it cannot see that caller: what is actually established is that no "
+        "HTTP request reaches it."
+    ),
+    "optimal_threshold": (
+        "AUDIT-2026-09-29: NOT dead — same correction as alerts_per_day. "
+        "scripts/evaluate_cost.py calls it to sweep the cost-optimal flat "
+        "threshold across C_fn/C_fp, and its output is the sweep the README "
+        "quotes ('moves from 75.00 down to 0.20'). Unreachable from a "
+        "request; live as a reporting tool."
+    ),
+    "breakeven_cost_ratio": (
+        "AUDIT-2026-09-29: NOT dead — same correction as alerts_per_day. "
+        "scripts/evaluate_cost.py calls it and prints the ratio (99.0) that "
+        "the README quotes. Unreachable from a request; live as a reporting "
+        "tool."
+    ),
 }
 
 

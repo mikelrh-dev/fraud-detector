@@ -121,18 +121,40 @@ def wilson_interval(successes: int, n_total: int, z: float = 1.959963984540054) 
 
 def build_matrix(
     transactions: list[dict],
+    labels: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
-    """Feature matrix, labels, raw amounts, and archetype tags."""
+    """Feature matrix, labels, raw amounts, and archetype tags.
+
+    `labels` is the real per-row fraud label, and it is handed to the noise
+    pass because that is what the trainer does. `train_xgboost_aligned.build_training_matrix`
+    calls `add_realistic_noise` with the real labels at line 946; this harness
+    used to pass `np.zeros(...)`, so the fraud branch of the noise pass was
+    unreachable here — the ±40% fraud amount jitter, the 3% merchant typo and
+    the ±30-minute timestamp jitter never ran — while the trainer's own log
+    still announced "fraud: 40.0% noise intensity".
+
+    That is not a cosmetic mismatch. The fraud jitter is what makes ~1% of the
+    corpus hard; without it this harness was measuring the model against a
+    cleaner, less-noised matrix than the one it was fit on, and publishing the
+    result as a held-out score. Every figure this harness prints depends on
+    reconstructing the trainer's matrix exactly, so the labels are an argument
+    and not an implementation detail.
+
+    The labels are returned rather than re-derived from the rows: neither
+    `generate_synthetic_data` nor `_load_synthetic_csv` writes an `is_fraud` key
+    into the transaction dict (both keep it in the parallel labels array), so a
+    row-level `tx.get("is_fraud", 0)` lookup yields an all-zero column on both
+    corpora.
+    """
     archetypes = [str(t.get("archetype", "") or "") for t in transactions]
-    transactions, _ = T.add_realistic_noise(
-        transactions, np.zeros(len(transactions), dtype=int),
+    transactions, labels = T.add_realistic_noise(
+        transactions, labels,
         fraud_noise_intensity=T.FRAUD_NOISE_INTENSITY,
     )
     histories = [T.build_synthetic_history(t) for t in transactions]
     X = T.build_feature_vectors(transactions, histories)
-    y = np.array([int(tx.get("is_fraud", 0)) for tx in transactions])
     amounts = np.array([float(tx["amount"]) for tx in transactions])
-    return X, y, amounts, archetypes
+    return X, labels, amounts, archetypes
 
 
 def calibration_curve(y_true: np.ndarray, y_proba: np.ndarray, n_bins: int = 10):
@@ -336,7 +358,7 @@ def main() -> None:
 
     if args.csv:
         transactions, labels = T._load_synthetic_csv(args.csv)
-        X, _, amounts, arch_csv = build_matrix(transactions)
+        X, _, amounts, arch_csv = build_matrix(transactions, labels)
         y = labels
         print(f"\nEvaluating the REAL labelled corpus: {args.csv}")
         print("NOTE: run the same command again WITHOUT --csv to see the")
@@ -349,7 +371,7 @@ def main() -> None:
         # Rebuild the training distribution, split it exactly as training
         # does, and prove SMOTE never touched the test side.
         transactions, y = T.load_synthetic_data(str(T.DATA_SYNTHETIC))
-        X, _, amounts, arch = build_matrix(transactions)
+        X, _, amounts, arch = build_matrix(transactions, y)
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=TEST_SIZE, random_state=SPLIT_SEED, stratify=y
         )
@@ -365,8 +387,8 @@ def main() -> None:
         print(f"  test rows             {len(y_test)}  fraud {int(y_test.sum())}"
               f"  ({y_test.mean() * 100:.2f}%)")
 
-        # Falsifiable check, not a claim. Two invariants, both of which failed
-        # before CAL-001 was fixed:
+        # Falsifiable check, not a claim. Three invariants, all of which have
+        # failed on this pipeline at some point:
         #
         #   1. The row count of every evaluated split is exactly its share of
         #      the corpus. A resampler inflates the row count; this asserts the
@@ -374,6 +396,8 @@ def main() -> None:
         #   2. The prior recorded in the deployed artifact equals the corpus
         #      prevalence. The artifact used to be produced by calibrating on
         #      a 33%-prior matrix, and nothing about the deployed file said so.
+        #   3. The fraud branch of the noise pass actually ran on this
+        #      harness's own matrix (asserted below).
         expected_train = int(round(len(y) * (1 - TEST_SIZE)))
         assert len(y_train) == expected_train, (
             f"training split has {len(y_train)} rows, expected {expected_train} "
@@ -383,6 +407,29 @@ def main() -> None:
         )
         print(f"  ASSERTED: train rows == {expected_train} (the corpus share, "
               f"unresampled)")
+
+        # Invariant 3, added after this harness was found passing noise labels.
+        #
+        # The fraud noise is ±40% on the amount, 3% chance of a merchant typo
+        # and ±30 minutes of timestamp jitter. Legitimate noise is ±2-5%. So
+        # if the fraud branch ran, at least some corpus amounts moved by more
+        # than the legitimate band ever can, and the frauds in particular moved
+        # far. If the harness regresses to passing zeros to the noise pass,
+        # every row moves by at most 5% and this fires — which is the point:
+        # the harness reconstructs the trainer's matrix to measure it, and a
+        # silently different matrix produces confident numbers about a corpus
+        # that was never evaluated.
+        on_disk = np.array([float(t["amount"]) for t in transactions])
+        drift = np.abs(amounts / on_disk - 1.0)[y == 1]
+        assert drift.any() and drift.max() > 0.10, (
+            f"no fraud row moved more than 10% from its on-disk amount "
+            f"(max {drift.max() if drift.size else 0.0:.4f}) — the fraud "
+            f"branch of add_realistic_noise did not run. Pass the real labels "
+            f"to it; np.zeros(...) makes it unreachable."
+        )
+        print(f"  ASSERTED: fraud noise applied — {int((drift > 0.10).sum())} of "
+              f"{int((y == 1).sum())} fraud rows moved >10% from the on-disk "
+              f"amount (the legitimate band is ±5%)")
 
         stamp = getattr(service, "calibration_prior", None)
         if stamp is None:
@@ -407,8 +454,6 @@ def main() -> None:
                   f"== training split prior {float(y_train.mean()):.6f}")
         print("  Every number below is measured at the real prevalence, not an")
         print("  artificial one.")
-        print("  Every number below is measured at the real prevalence, not an")
-        print("  artificial one.")
 
         metrics_train = report_metrics(
             "TRAIN SPLIT (in-sample — for reference only, not a result)",
@@ -425,7 +470,7 @@ def main() -> None:
         held_tx, held_y = T.generate_synthetic_data(
             n_samples=30000, fraud_rate=0.01, seed=20240101
         )
-        X_held, _, amounts_held, arch_held = build_matrix(held_tx)
+        X_held, _, amounts_held, arch_held = build_matrix(held_tx, held_y)
         print("\n  held-out corpus: 30000 rows, seed 20240101, never used in training")
         metrics_held = report_metrics(
             "HELD-OUT CORPUS (unseen seed, never trained on, never resampled)",

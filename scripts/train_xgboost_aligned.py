@@ -171,9 +171,14 @@ CORPUS_SCHEMA_COLUMN = "corpus_schema"
 FRAUD_NOISE_INTENSITY = 0.40
 
 #: How far the class prior of the matrix handed to the calibrator may differ
-#: from the corpus prevalence before training refuses to continue. The two are
-#: the same object in the correct pipeline, so any non-trivial drift means
-#: something resampled the data in between. See CAL-001 in the docstring.
+#: from the training split's own prior before training refuses to continue.
+#: Those are the same object in the correct pipeline, so any non-trivial drift
+#: means something rewired the split between the two computations. It is NOT a
+#: tolerance on split-sampling noise and must not be used as one: a stratified
+#: 80/20 split of this corpus puts the two priors 1e-05 apart, four orders of
+#: magnitude over this tolerance, so widening the comparison to the corpus
+#: prevalence makes every training run raise. See the block at the guard itself
+#: and CAL-001 in the docstring.
 CALIBRATION_PRIOR_TOLERANCE = 1e-9
 
 # --- Behavioural archetypes -------------------------------------------------
@@ -884,8 +889,20 @@ def add_realistic_noise(
 
         noisy_txs.append(tx_copy)
     
-    logger.info("Added realistic noise to %d transactions (fraud: %.1f%% noise intensity)",
-                len(transactions), fraud_noise_intensity * 100)
+    # The row count belongs in this line, not just the intensity. `labels` is a
+    # parameter, and a caller that passes an array of zeros makes the fraud
+    # branch above unreachable while the old message went on claiming
+    # "fraud: 40.0% noise intensity" — asserting an effect on rows it had not
+    # touched. Stating the count makes the message falsifiable at a glance: a
+    # caller that passes real labels sees the number it expected, and one that
+    # does not sees its own zeros reflected back.
+    fraud_rows = int(np.sum(np.asarray(labels) == 1))
+    logger.info(
+        "Added realistic noise to %d transactions "
+        "(fraud: %.1f%% intensity applied to %d fraud rows; "
+        "legitimate rows get ±2-5%%)",
+        len(transactions), fraud_noise_intensity * 100, fraud_rows,
+    )
     return noisy_txs, labels
 
 
@@ -1042,6 +1059,50 @@ def main() -> None:
     calibration_prior = float(np.mean(y_train))
     logger.info("Calibrator was fit on %d rows at a %.4f%% fraud prior",
                 len(y_train), calibration_prior * 100)
+
+    # READ THIS BEFORE CHANGING WHAT THE CHECK BELOW COMPARES.
+    #
+    # `contamination` (line above) is `sum(y_train) / len(y_train)` and
+    # `calibration_prior` is `np.mean(y_train)`. Those are the same number by
+    # construction — one is the mean written out by hand — so the difference is
+    # identically zero and this branch cannot fire. Measured: |diff| = 0.000e+00.
+    # Two consequences follow, and only the first is a defect:
+    #
+    #   1. The message below names "the corpus prevalence" as the thing
+    #      `contamination` is. It is not. `contamination` is the TRAINING
+    #      SPLIT's prevalence, the same object as `calibration_prior`. Neither
+    #      operand is the corpus prevalence.
+    #
+    #   2. DO NOT "repair" this by comparing against `np.mean(all_labels)`, the
+    #      real corpus prevalence. It reads like the obviously-intended fix and
+    #      it breaks every training run. A stratified 80/20 split of this corpus
+    #      yields 0.010050 for the train half against 0.010040 for the whole
+    #      corpus — a difference of 1e-05 against a tolerance of 1e-9, a
+    #      hundred thousand times over. Stratification distributes labels as
+    #      evenly as it can, which makes the two *nearly* equal and therefore
+    #      guarantees that any non-zero tolerance trips on the residual. The
+    #      tolerance is calibrated for the difference a resampler introduces
+    #      (a whole prior), not for split-sampling noise (a millionth).
+    #
+    # So the comparison stays as it is: redundant by construction, cheap, and
+    # loud if someone ever rewires `y_train` between the two lines so that they
+    # stop being the same object. That is the one failure it can still catch,
+    # and keeping it costs one float subtraction.
+    #
+    # THE CHECK WITH REAL VALUE IS NOT HERE. It reads the stamp off the
+    # deployed artifact and compares it against the training split's prior,
+    # where the two sides are produced independently:
+    #
+    #   - scripts/evaluate_model.py, in the PRIOR INTEGRITY CHECK block, reads
+    #     `service.calibration_prior` off the loaded artifact and asserts it
+    #     equals `y_train.mean()` to 1e-9, plus a row-count assertion that
+    #     catches a resampler by inflating the row count.
+    #   - tests/test_model_feature_contract.py builds its matrix through
+    #     `build_training_matrix`, so it cannot measure a re-implementation that
+    #     drifted from the real pipeline.
+    #
+    # Read that pair as the CAL-001 regression guard. This one is a tripwire,
+    # not the test.
     if abs(contamination - calibration_prior) > CALIBRATION_PRIOR_TOLERANCE:
         raise ValueError(
             f"CAL-001 regression: the calibrator was fit on data with a "
