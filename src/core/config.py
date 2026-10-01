@@ -60,7 +60,11 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:0.5b"
+    # Must match the model actually pulled in the Ollama container. Nothing in
+    # the compose stack pulls it: the healthcheck runs `ollama list`, which
+    # passes with zero models, so a clean deploy reports healthy and then 404s
+    # on the first report. Changing this string does not install anything.
+    ollama_model: str = "llama3.2:1b"
 
     # JWT
     # Ephemeral dev secret; production MUST inject via env (R1-005 guard, wave 5).
