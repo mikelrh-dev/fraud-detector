@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>04 Evaluación del Modelo - Caso de Estudio Fraud Detector</title>
-  <meta name="description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 leído directamente del vector de scores, precisión 0.8353 y recall 0.7100 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
+  <meta name="description" content="Evaluación held-out del modelo de fraude: PR-AUC 0,7740 leído directamente del vector de scores, precisión 0,8353 y recall 0,7100 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
   <meta property="og:title" content="04 Evaluación del Modelo - Caso de Estudio Fraud Detector">
-  <meta property="og:description" content="Evaluación held-out del modelo de fraude: PR-AUC 0.7728 leído directamente del vector de scores, precisión 0.8353 y recall 0.7100 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
+  <meta property="og:description" content="Evaluación held-out del modelo de fraude: PR-AUC 0,7740 leído directamente del vector de scores, precisión 0,8353 y recall 0,7100 en el umbral de producción, y un desglose de errores por arquetipo conductual que muestra que los fallos restantes del modelo son exactamente los casos que el corpus fue diseñado como difíciles.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="es_ES">
   <meta property="og:locale:alternate" content="en_US">
@@ -46,7 +46,7 @@
 <header class="chapter-header">
       <span class="chapter-num">Capítulo 04</span>
       <h1>Evaluación del Modelo — Errores por Diseño</h1>
-      <p class="chapter-subtitle">PR-AUC 0.7728 en el split held-out, 29 fraudes perdidos de 100 — y un desglose de errores que muestra exactamente qué transacciones el modelo se equivoca.</p>
+      <p class="chapter-subtitle">PR-AUC 0,7740 en el test split, 29 fraudes perdidos de 100 — y un desglose de errores que muestra exactamente qué transacciones el modelo se equivoca.</p>
     </header>
 
     <section class="reveal">
@@ -80,8 +80,8 @@
           </thead>
           <tbody>
             <tr><td>Dummy (clase mayoritaria)</td><td class="mono">0.010</td><td class="mono">0.500</td><td class="mono">0.000</td><td class="mono">0.000</td><td class="mono">0.000</td></tr>
-            <tr><td class="mono">Test split (10.000 filas, 100 fraude)</td><td class="weight">0.7728</td><td class="weight">0.9181</td><td class="weight">0.8353</td><td class="weight">0.7100</td><td class="weight">0.7676</td></tr>
-            <tr><td class="mono">Corpus held-out (30.000 filas, seed no visto)</td><td class="weight">0.7569</td><td class="weight">0.9217</td><td class="weight">0.8865</td><td class="weight">0.7049</td><td class="weight">0.7853</td></tr>
+            <tr><td class="mono">Test split (10.000 filas, 100 fraude)</td><td class="weight">0,7740</td><td class="weight">0,9248</td><td class="weight">0,8353</td><td class="weight">0,7100</td><td class="weight">0,7676</td></tr>
+            <tr><td class="mono">Corpus held-out (30.000 filas, seed no visto)</td><td class="weight">0,7549</td><td class="weight">0,9210</td><td class="weight">0,8860</td><td class="weight">0,7014</td><td class="weight">0,7829</td></tr>
           </tbody>
         </table>
         </div>
@@ -92,8 +92,8 @@
         Matriz de confusión en el test split: TN=9.886 · FP=14 · FN=29 · TP=71. El PR-AUC de 0.010
         de la fila dummy no es un número ajustado — <em>es</em> la prevalencia. Un clasificador de
         clase mayoritaria puntúa PR-AUC igual a la tasa base por definición, así que con 1% de
-        prevalencia todo el rango útil de esa métrica vive entre 0.010 y 1.000, y
-        0.7728 ÷ 0.010 = 77,3&times; el suelo.</p>
+        prevalencia todo el rango útil de esa métrica vive entre 0,010 y 1,000, y
+        0,7740 ÷ 0,010 = 77,4&times; el suelo.</p>
 
         <figure class="figure">
           <img loading="lazy" decoding="async" src="../assets/fig-eval-confusion.png" alt="Dos matrices de confusión lado a lado. En el umbral 0.50: 9.890 verdaderos negativos, 10 falsos positivos, 29 falsos negativos, 71 verdaderos positivos. En el umbral costo-óptimo 0.15: 9.840 verdaderos negativos, 60 falsos positivos, 23 falsos negativos, 77 verdaderos positivos." width="1440" height="660">
@@ -261,13 +261,13 @@
             <tr><th>C<sub>fn</sub>/C<sub>fp</sub></th><th>Umbral óptimo</th><th>Precision</th><th>Recall</th><th>Costo por txn</th><th>Alertas/día</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">1&times;</td><td class="mono">74.00</td><td class="mono">1.0000</td><td class="mono">0.7000</td><td class="mono">0.0030</td><td class="mono">350</td></tr>
-            <tr><td class="mono">5&times;</td><td class="mono">74.00</td><td class="mono">1.0000</td><td class="mono">0.7000</td><td class="mono">0.0150</td><td class="mono">350</td></tr>
-            <tr><td class="mono">10&times;</td><td class="mono">31.00</td><td class="mono">0.7766</td><td class="mono">0.7300</td><td class="mono">0.0291</td><td class="mono">470</td></tr>
-            <tr><td class="mono">25&times;</td><td class="mono">11.50</td><td class="mono">0.5132</td><td class="mono">0.7800</td><td class="mono">0.0624</td><td class="mono">760</td></tr>
-            <tr><td class="mono">50&times;</td><td class="mono">11.50</td><td class="mono">0.5132</td><td class="mono">0.7800</td><td class="mono">0.1174</td><td class="mono">760</td></tr>
-            <tr><td class="mono">100&times;</td><td class="mono">0.35</td><td class="mono">0.1732</td><td class="mono">0.8400</td><td class="mono">0.2001</td><td class="mono">2.425</td></tr>
-            <tr><td class="mono">500&times;</td><td class="mono">0.25</td><td class="mono">0.1334</td><td class="mono">0.8500</td><td class="mono">0.8052</td><td class="mono">3.185</td></tr>
+            <tr><td class="mono">1&times;</td><td class="mono">75,00</td><td class="mono">1,0000</td><td class="mono">0,7000</td><td class="mono">0,0030</td><td class="mono">350</td></tr>
+            <tr><td class="mono">5&times;</td><td class="mono">75,00</td><td class="mono">1,0000</td><td class="mono">0,7000</td><td class="mono">0,0150</td><td class="mono">350</td></tr>
+            <tr><td class="mono">10&times;</td><td class="mono">15,50</td><td class="mono">0,5662</td><td class="mono">0,7700</td><td class="mono">0,0289</td><td class="mono">680</td></tr>
+            <tr><td class="mono">25&times;</td><td class="mono">11,50</td><td class="mono">0,5166</td><td class="mono">0,7800</td><td class="mono">0,0623</td><td class="mono">755</td></tr>
+            <tr><td class="mono">50&times;</td><td class="mono">11,50</td><td class="mono">0,5166</td><td class="mono">0,7800</td><td class="mono">0,1173</td><td class="mono">755</td></tr>
+            <tr><td class="mono">100&times;</td><td class="mono">0,30</td><td class="mono">0,1576</td><td class="mono">0,8400</td><td class="mono">0,2049</td><td class="mono">2.665</td></tr>
+            <tr><td class="mono">500&times;</td><td class="mono">0,20</td><td class="mono">0,0985</td><td class="mono">0,8600</td><td class="mono">0,7787</td><td class="mono">4.365</td></tr>
           </tbody>
         </table>
         </div>
@@ -277,10 +277,9 @@
         ya que el corpus no lleva timestamps.</p>
 
         <p>El umbral óptimo se mueve a lo largo de <strong>dos órdenes de magnitud</strong>, de
-        74.00 a 0.25, y cada creencia sobre el costo produce un punto operativo distinto. En la ratio
-        de 10&times; que este capítulo ha usado históricamente como ilustración el óptimo es 31.00; a
-        100&times; es 0.35, y la cola es más de cinco veces más grande (470 alertas/día frente a
-        2.425). Publicar un único "umbral óptimo"
+        75,00 a 0,20, y cada creencia sobre el costo produce un punto operativo distinto. En la ratio
+        de 10&times; el óptimo es 15,50; a 100&times; es 0,30, y la cola es casi cuatro veces más grande
+        (680 alertas/día frente a 2.665). Publicar un único "umbral óptimo"
         sería publicar un supuesto con un punto decimal.</p>
 
         <figure class="figure">
@@ -298,11 +297,11 @@
         de <strong>99.0&times;</strong> la política más barata que no involucra ningún modelo es no
         revisar nada — y no revisar nada cuesta el precio de cada fraude perdido, así que su costo
         por transacción sube con la ratio. Con la tasa base del 1% eso da
-        <code>p&nbsp;&times;&nbsp;C_fn</code>: 0.0100 en 1&times;, 0.1000 en 10&times;, 0.5000 en
+        <code>p&nbsp;&times;&nbsp;C_fn</code>: 0,0100 en 1&times;, 0,1000 en 10&times;, 0,5000 en
         50&times;. Cada fila del barrido de arriba se mide contra su propio suelo, y por eso un
-        costo de modelo de 0.0291 en 10&times; todavía lo supera. Por encima de 99.0&times; la
+        costo de modelo de 0,0289 en 10&times; todavía lo supera. Por encima de 99.0&times; la
         política más barata sin modelo pasa a ser revisar cada transacción y el suelo se vuelve un
-        0.9900 fijo — unas 99&times; más difícil de superar, e inmutable frente a la ratio. Ese
+        0,9900 fijo — unas 99&times; más difícil de superar, e inmutable frente a la ratio. Ese
         punto de equilibrio es una propiedad únicamente de la tasa base: es el mismo número tanto si
         el modelo es excelente como si estuviera invertido, y por eso mismo no puede usarse como
         evidencia en ninguna dirección.</p>
@@ -314,7 +313,7 @@
         <h2>¿El score es honesto? Calibración</h2>
         <p>El score de serving es la probabilidad calibrada del modelo escalada por 100 (Capítulo
         3), así que no hay nada que deshacer antes de medirlo. En el test split el error de
-        calibración esperado es <strong>0.0026</strong> con una brecha con signo de &minus;0.0003 —
+        calibración esperado es <strong>0,0026</strong> con una brecha con signo de &minus;0,0004 —
         pero ese titular se favorece a sí mismo por una razón estructural: el 98.4% del split cae
         dentro del bin de probabilidad más bajo, así que el promedio ponderado está dominado por un
         bin que está trivialmente bien calibrado.</p>
@@ -339,15 +338,15 @@
             <tr><th>Bin predicho</th><th>n</th><th>Predicho medio</th><th>Tasa de fraude observada</th><th>Brecha</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">[0.0, 0.1)</td><td class="mono">9.840</td><td class="mono">0.0020</td><td class="mono">0.0022</td><td class="mono">+0.0002</td></tr>
-            <tr><td class="mono">[0.1, 0.2)</td><td class="mono">48</td><td class="mono">0.1497</td><td class="mono">0.0833</td><td class="mono">&minus;0.0663</td></tr>
-            <tr><td class="mono">[0.2, 0.3)</td><td class="mono">17</td><td class="mono">0.2459</td><td class="mono">0.0588</td><td class="mono">&minus;0.1871</td></tr>
-            <tr><td class="mono">[0.3, 0.4)</td><td class="mono">8</td><td class="mono">0.3378</td><td class="mono">0.1250</td><td class="mono">&minus;0.2128</td></tr>
-            <tr><td class="mono">[0.4, 0.5)</td><td class="mono">6</td><td class="mono">0.4519</td><td class="mono">0.1667</td><td class="mono">&minus;0.2853</td></tr>
-            <tr><td class="mono">[0.5, 0.6)</td><td class="mono">6</td><td class="mono">0.5248</td><td class="mono">0.1667</td><td class="mono">&minus;0.3581</td></tr>
-            <tr><td class="mono">[0.6, 0.7)</td><td class="mono">4</td><td class="mono">0.6609</td><td class="mono">0.0000</td><td class="mono tone-warn">&minus;0.6609</td></tr>
-            <tr><td class="mono">[0.7, 0.8)</td><td class="mono">3</td><td class="mono">0.7384</td><td class="mono">0.6667</td><td class="mono">&minus;0.0717</td></tr>
-            <tr><td class="mono">[0.8, 0.9)</td><td class="mono">68</td><td class="mono">0.8692</td><td class="mono">1.0000</td><td class="mono">+0.1308</td></tr>
+<tr><td class="mono">[0.0, 0.1)</td><td class="mono">9.842</td><td class="mono">0,0020</td><td class="mono">0,0022</td><td class="mono">+0,0002</td></tr>
+            <tr><td class="mono">[0.1, 0.2)</td><td class="mono">44</td><td class="mono">0,1521</td><td class="mono">0,0909</td><td class="mono">&minus;0,0612</td></tr>
+            <tr><td class="mono">[0.2, 0.3)</td><td class="mono">20</td><td class="mono">0,2466</td><td class="mono">0,1000</td><td class="mono">&minus;0,1466</td></tr>
+            <tr><td class="mono">[0.3, 0.4)</td><td class="mono">8</td><td class="mono">0,3487</td><td class="mono">0,1250</td><td class="mono">&minus;0,2237</td></tr>
+            <tr><td class="mono">[0.4, 0.5)</td><td class="mono">5</td><td class="mono">0,4600</td><td class="mono">0,0000</td><td class="mono">&minus;0,4600</td></tr>
+            <tr><td class="mono">[0.5, 0.6)</td><td class="mono">6</td><td class="mono">0,5310</td><td class="mono">0,1667</td><td class="mono">&minus;0,3644</td></tr>
+            <tr><td class="mono">[0.6, 0.7)</td><td class="mono">4</td><td class="mono">0,6648</td><td class="mono">0,0000</td><td class="mono tone-warn">&minus;0,6648</td></tr>
+            <tr><td class="mono">[0.7, 0.8)</td><td class="mono">6</td><td class="mono">0,7742</td><td class="mono">0,8333</td><td class="mono">+0,0591</td></tr>
+            <tr><td class="mono">[0.8, 0.9)</td><td class="mono">65</td><td class="mono">0,8710</td><td class="mono">1,0000</td><td class="mono">+0,1290</td></tr>
             <tr><td class="mono">[0.9, 1.0)</td><td class="mono">0</td><td class="mono">n/a</td><td class="mono">n/a</td><td class="mono">n/a</td></tr>
           </tbody>
         </table>
@@ -355,10 +354,11 @@
         <p class="table-caption">Test split. Se muestran los diez bins de ancho fijo sobre [0, 1], así
         que la columna <code>n</code> suma las 10.000 filas completas; el bin superior está
         genuinamente vacío y se deja visible en lugar de ocultarse. El modelo
-        es sistemáticamente <em>sobreconfiante en el medio</em> — todos los bins entre 0.1 y 0.8
-        quedan por debajo de la diagonal, y un score de 0.66 correspondió a una
-        tasa de fraude observada de 0.00 — y con <em>baja confianza</em> en la parte alta, donde
-        puntúa 0.8692 frente a una tasa observada de 1.0000 y por tanto subestima el riesgo. Sobre
+        es sistemáticamente <em>sobreconfiante en el medio</em> — todos los bins entre 0,1 y 0,7
+        quedan por debajo de la diagonal, y un score de 0,66 correspondió a una
+        tasa de fraude observada de 0,00 — y con <em>baja confianza</em> en la parte alta, donde
+        los bins de 0,7 a 0,9 quedan por encima y un 0,8710 predicho se encontró con una tasa
+        observada de 1,0000, por lo que subestima el riesgo. Sobre
         un score plano esto molesta poco, porque los umbrales de producción se sitúan entre 40 y 70.
         Aun así es lo primero que habría que arreglar, y el arreglo es un paso de calibración
         ajustado contra la tasa base real y no contra una remuestreada (Capítulo 3).</p>
@@ -381,8 +381,8 @@
           <tbody>
             <tr><td>Precision (test split)</td><td class="mono">0,8353</td><td class="mono">[0,742, 0,899]</td><td class="mono">15,7 pts</td><td class="mono">85</td></tr>
             <tr><td>Recall (test split)</td><td class="mono">0,7100</td><td class="mono">[0,615, 0,790]</td><td class="mono">17,5 pts</td><td class="mono">100</td></tr>
-            <tr><td>Precision (corpus held-out)</td><td class="mono">0,8865</td><td class="mono">[0,839, 0,921]</td><td class="mono">8,2 pts</td><td class="mono">229</td></tr>
-            <tr><td>Recall (corpus held-out)</td><td class="mono">0,7049</td><td class="mono">[0,650, 0,755]</td><td class="mono">10,5 pts</td><td class="mono">288</td></tr>
+            <tr><td>Precision (corpus held-out)</td><td class="mono">0,8860</td><td class="mono">[0,838, 0,921]</td><td class="mono">8,3 pts</td><td class="mono">228</td></tr>
+            <tr><td>Recall (corpus held-out)</td><td class="mono">0,7014</td><td class="mono">[0,646, 0,751]</td><td class="mono">10,5 pts</td><td class="mono">288</td></tr>
           </tbody>
         </table>
         </div>

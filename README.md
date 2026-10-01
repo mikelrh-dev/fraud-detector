@@ -27,7 +27,7 @@ Every transaction gets a 0–100 risk score, a classification (`legitimate | rev
 - **Immutable audit trail** with SHA-256 checksums on every scoring decision and analyst action
 - **JWT auth** (access + refresh + blacklist), role-based access (user/admin), per-route rate limiting
 - **React 19 dashboard** with score trends, SHAP cards and alert workflow
-- **1210 backend tests** (unit + integration) and 789 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build)
+- **1218 backend tests** (unit + integration) and 789 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build). `pytest tests/ -q` reports the backend figure as **1180 passed, 30 skipped, 8 xfailed**; `cd frontend && npm test` reports the frontend figure as 789 passed
 
 ## Architecture
 
@@ -120,7 +120,7 @@ Every figure below is printed by `python scripts/evaluate_model.py`, on the 10,0
 
 | | |
 |---|---|
-| Held-out ROC-AUC / PR-AUC | 0.9181 / 0.7728 |
+| Held-out ROC-AUC / PR-AUC | 0.9248 / 0.7740 |
 | At the production threshold | precision 0.8353 · recall 0.7100 · F1 0.7676 |
 | Confusion at that threshold | TP=71 · FP=14 · FN=29 · TN=9886 |
 | False positives | 14 in 9,900 legitimate |
@@ -160,11 +160,11 @@ On the same held-out split (TP=71 · FP=14 · FN=29 · TN=9886), in units where 
 | Flag nothing (no model) | 0.1000 |
 | Flag everything (no model) | 0.9900 |
 | **This model at today's tiered point** | **0.0304** |
-| This model at the best flat threshold (31.00) | 0.0291 |
+| This model at the best flat threshold (15.50) | 0.0289 |
 
-Two things fall out of that table. First, **the cost-optimal threshold is not a constant of the model** — across ratios from 1 to 500 it moves from 74.00 down to 0.25, two orders of magnitude, so every belief about cost gets a different operating point. That is why the script prints a sweep instead of a recommendation. The tiered production point is within 0.0013 of the swept optimum at this ratio, and the sweep is cheaper at every ratio tested.
+Two things fall out of that table. First, **the cost-optimal threshold is not a constant of the model** — across ratios from 1 to 500 it moves from 75.00 down to 0.20, two orders of magnitude, so every belief about cost gets a different operating point. That is why the script prints a sweep instead of a recommendation. The tiered production point is within 0.0015 of the swept optimum at this ratio, and the sweep is cheaper at every ratio tested.
 
-Second, the model has to beat *both* no-model policies, and on this corpus it does at every ratio the script tests — 0.0291 against a floor of 0.1000 at ratio 10, and still 0.8052 against the 0.9900 flag-everything bar at 500×. No AUC tells you that; the cost arithmetic does.
+Second, the model has to beat *both* no-model policies, and on this corpus it does at every ratio the script tests — 0.0289 against a floor of 0.1000 at ratio 10, and still 0.7787 against the 0.9900 flag-everything bar at 500×. No AUC tells you that; the cost arithmetic does.
 
 `breakeven_cost_ratio` is **99.0** — above that, flagging every transaction becomes as cheap as flagging none, because at ~1% prevalence a miss has to be that much more expensive than wasted analyst time. It is a property of the base rate alone: the same number whether the model is excellent or inverted, which is exactly why it cannot be used as evidence either way. The model still clears the flag-everything bar at 500×, and the report says so rather than implying the opposite.
 
@@ -197,7 +197,7 @@ cd fraud-detector
 cp .env.example .env
 
 docker compose up -d                                # 8 services: postgres, redis, ollama, api, 3 workers, frontend
-docker compose exec ollama ollama pull qwen2.5:0.5b # default LLM (configurable via OLLAMA_MODEL)
+docker compose exec ollama ollama pull llama3.2:1b  # default LLM (configurable via OLLAMA_MODEL)
 
 # Frontend + API:  http://localhost:3000
 # API docs:        http://localhost:3000/docs
@@ -212,13 +212,24 @@ Tables and migrations are applied automatically by the api container's
 entrypoint (`alembic upgrade head`) as it starts, so there is no separate
 bootstrap step.
 
-Create your first user via the API:
+Create your first user and log in. `RegisterRequest` requires `username`
+(letters, digits, `_`, `.`, `-`), `email`, and a `password` of at least 8
+characters that is neither a common password nor a fragment of the username or
+the email. `role` defaults to `analyst`, and self-service registration cannot
+grant anything else:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email": "analyst@example.com", "password": "...", "full_name": "Analyst"}'
+  -d '{"username":"demo","email":"demo@example.com","password":"Str0ng-Pass-2026","role":"analyst"}'
+
+curl -X POST http://localhost:3000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"demo@example.com","password":"Str0ng-Pass-2026"}'
 ```
+
+Every endpoint outside auth needs the `access_token` from that login as
+`Authorization: Bearer <token>`; without it they return 401.
 
 > `scripts/create_admin.py` prints a ready-to-run SQL `INSERT` if you prefer to seed an admin directly.
 
@@ -286,7 +297,7 @@ If the artifact is missing or unreadable the API still starts and scores, contri
 | GET | `/api/v1/transactions` | user — list, filters, pagination |
 | GET | `/api/v1/transactions/{id}` | user — detail + SHAP attributions |
 | DELETE | `/api/v1/transactions/{id}` | **admin** — soft delete |
-| GET | `/api/v1/transactions/graph/stats` | user — fraud network stats |
+| GET | `/api/v1/transactions/graph/stats` | **admin** — whole-graph fraud network stats (403 without admin) |
 | GET | `/api/v1/transactions/{uid}/graph-features` | user — graph features per user |
 | GET | `/api/v1/transactions/{id}/embedding` | user — merchant embedding analysis |
 
@@ -344,7 +355,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (Redis Streams consumers)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 24 components, vitest + MSW)
-├── tests/                  # unit + integration (1210 backend tests)
+├── tests/                  # unit + integration (1218 backend tests)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # PaySim exploration / training notebooks
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -355,7 +366,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (1210 tests)
+# Backend (1218 tests — `pytest tests/ -q` prints 1180 passed, 30 skipped, 8 xfailed)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # unit only
 pytest tests/integration -v     # integration only — runs against MOCKED db and redis (see conftest)
@@ -413,9 +424,14 @@ TRUST_PROXY_HEADERS=false
 
 Everything else has a real default in `src/core/config.py`: `DB_USER=fraud`,
 `DB_NAME=fraud_detector`, `DB_HOST=localhost`, `DB_PORT=5432`, `OLLAMA_HOST=http://localhost:11434`,
-`OLLAMA_MODEL=qwen2.5:0.5b`, `OLLAMA_TIMEOUT=30`, `JWT_ALGORITHM=HS256`, `JWT_EXP_MINUTES=15`,
+`OLLAMA_MODEL=llama3.2:1b`, `OLLAMA_TIMEOUT=30`, `JWT_ALGORITHM=HS256`, `JWT_EXP_MINUTES=15`,
 the ensemble weights `0.60 / 0.25 / 0.15`, `FRAUD_DETECTION_ENABLED=true`,
 `VELOCITY_STORE_ENABLED=true` and `FRONTEND_URL=http://localhost:3000`.
+
+Those are the defaults for running the API on your own machine. Under compose
+the service names replace the host ones — `DB_HOST=postgres`,
+`REDIS_URL=redis://:…@redis:6379/0`, `OLLAMA_HOST=http://ollama:11434` — and
+nothing except port 3000 is reachable from the host.
 
 ## Design Decisions
 
@@ -441,4 +457,4 @@ Portfolio project by [mikelrh-dev](https://github.com/mikelrh-dev) demonstrating
 - ML in production: feature engineering aligned between training and serving, SHAP explainability, drift monitoring, retraining triggers
 - Reliable async pipelines: Redis Streams, consumer groups, retries, DLQ
 - Security: JWT with refresh + blacklist, RBAC, rate limiting, immutable SHA-256 audit trail
-- Testing discipline: 1210 backend tests + frontend vitest suite (789 tests), 5-job CI
+- Testing discipline: 1218 backend tests (`pytest tests/ -q`) + frontend vitest suite (789 tests), 5-job CI

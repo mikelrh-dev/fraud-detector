@@ -31,7 +31,7 @@ FRONTEND_URL=https://your-domain.com
 
 # Ollama
 OLLAMA_HOST=http://ollama:11434
-OLLAMA_MODEL=qwen2.5:0.5b
+OLLAMA_MODEL=llama3.2:1b
 ```
 
 ## Deploy con Docker Compose
@@ -40,10 +40,16 @@ OLLAMA_MODEL=qwen2.5:0.5b
 # Build y start
 docker compose up -d
 
-# Verificar health
-curl http://localhost:8000/health
-curl http://localhost:8000/health/ready
-curl http://localhost:8000/health/workers
+# Descargar el modelo del LLM (nada en el stack lo hace por ti; el
+# healthcheck de ollama es `ollama list`, que pasa con cero modelos)
+docker compose exec ollama ollama pull llama3.2:1b
+
+# Verificar health. Compose NO publica el puerto de la API: el unico
+# puerto en el host es 3000, que es nginx, y nginx hace de proxy de
+# /api, /health y /docs hacia api:8000 dentro de la red.
+curl http://localhost:3000/health
+curl http://localhost:3000/health/ready
+curl http://localhost:3000/health/workers
 
 # Ver logs
 docker compose logs -f api
@@ -97,8 +103,10 @@ docker compose logs postgres
 # Verificar que el modelo existe
 docker compose exec api ls -la models/
 
-# Re-entrenar si es necesario
-docker compose exec api python scripts/train_model.py
+# Re-entrenar si es necesario. train_model.py escribe una baseline sin
+# calibrar en models/xgboost_reference_v1.joblib y NO es el modelo que se
+# sirve; el que se sirve lo produce train_xgboost_aligned.py.
+docker compose exec api python scripts/train_xgboost_aligned.py
 ```
 
 ## Rollback

@@ -27,7 +27,7 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 - **Audit trail inmutable** con checksums SHA-256 en cada decisión de scoring y acción de analista
 - **Auth JWT** (access + refresh + blacklist), acceso por roles (user/admin), rate limiting por ruta
 - **Dashboard React 19** con tendencias de score, tarjetas SHAP y flujo de trabajo de alertas
-- **1210 tests de backend** (unitarios + integración) y 789 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker)
+- **1218 tests de backend** (unitarios + integración) y 789 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker). `pytest tests/ -q` informa la cifra de backend como **1180 pasados, 30 omitidos, 8 xfail**; `cd frontend && npm test` informa la de frontend como 789 pasados
 
 ## Arquitectura
 
@@ -121,7 +121,7 @@ Todas las cifras de esta sección las imprime `python scripts/evaluate_model.py`
 
 | | |
 |---|---|
-| ROC-AUC / PR-AUC en test retenido | 0,9181 / 0,7728 |
+| ROC-AUC / PR-AUC en test retenido | 0,9248 / 0,7740 |
 | En el umbral de producción | precisión 0,8353 · recall 0,7100 · F1 0,7676 |
 | Matriz de confusión en ese umbral | TP=71 · FP=14 · FN=29 · TN=9886 |
 | Falsos positivos | 14 de 9.900 legítimos |
@@ -161,11 +161,11 @@ Sobre el mismo split retenido (TP=71 · FP=14 · FN=29 · TN=9886), en unidades 
 | No marcar nada (sin modelo) | 0,1000 |
 | Marcar todo (sin modelo) | 0,9900 |
 | **Este modelo en el punto por tramos actual** | **0,0304** |
-| Este modelo en el mejor umbral plano (31,00) | 0,0291 |
+| Este modelo en el mejor umbral plano (15,50) | 0,0289 |
 
-De esa tabla salen dos cosas. Primera: **el umbral óptimo en coste no es una constante del modelo** — entre ratios de 1 a 500 se mueve de 74,00 a 0,25, dos órdenes de magnitud, así que cada creencia sobre el coste recibe un punto de operación distinto. Por eso el script imprime un barrido en lugar de una recomendación. El punto de producción por tramos está a menos de 0,0013 del óptimo barrido en este ratio, y el barrido es más barato en todos los ratios probados.
+De esa tabla salen dos cosas. Primera: **el umbral óptimo en coste no es una constante del modelo** — entre ratios de 1 a 500 se mueve de 75,00 a 0,20, dos órdenes de magnitud, así que cada creencia sobre el coste recibe un punto de operación distinto. Por eso el script imprime un barrido en lugar de una recomendación. El punto de producción por tramos está a menos de 0,0015 del óptimo barrido en este ratio, y el barrido es más barato en todos los ratios probados.
 
-Segunda, el modelo tiene que superar *ambas* políticas sin modelo, y en este corpus lo hace en todos los ratios que prueba el script — 0,0291 contra un suelo de 0,1000 en el ratio 10, y todavía 0,8052 contra la barra de 0,9900 de "marcar todo" a 500×. Ningún AUC te dice eso; lo dice la aritmética de costes.
+Segunda, el modelo tiene que superar *ambas* políticas sin modelo, y en este corpus lo hace en todos los ratios que prueba el script — 0,0289 contra un suelo de 0,1000 en el ratio 10, y todavía 0,7787 contra la barra de 0,9900 de "marcar todo" a 500×. Ningún AUC te dice eso; lo dice la aritmética de costes.
 
 `breakeven_cost_ratio` es **99,0** — por encima de eso, marcar cada transacción sale tan barato como no marcar ninguna, porque con una prevalencia de alrededor del 1% un fallo tiene que ser mucho más caro que el tiempo de analista desperdiciado. Es una propiedad de la tasa base sola: el mismo número tanto si el modelo es excelente como si estuviera invertido, que es exactamente por lo que no puede usarse como evidencia en ningún sentido. El modelo todavía supera la barra de "marcar todo" a 500×, y el informe lo dice en lugar de insinuar lo contrario.
 
@@ -198,7 +198,7 @@ cd fraud-detector
 cp .env.example .env
 
 docker compose up -d                                # 8 servicios: postgres, redis, ollama, api, 3 workers, frontend
-docker compose exec ollama ollama pull qwen2.5:0.5b # LLM por defecto (configurable vía OLLAMA_MODEL)
+docker compose exec ollama ollama pull llama3.2:1b  # LLM por defecto (configurable vía OLLAMA_MODEL)
 
 # Frontend + API:  http://localhost:3000
 # Docs API:        http://localhost:3000/docs
@@ -214,13 +214,23 @@ Las tablas y las migraciones las aplica automáticamente el entrypoint del
 contenedor `api` (`alembic upgrade head`) al arrancar, así que no hace falta un
 paso de bootstrap aparte.
 
-Creá tu primer usuario vía API:
+Creá tu primer usuario y entrá. `RegisterRequest` exige `username` (letras,
+dígitos, `_`, `.`, `-`), `email` y una `password` de al menos 8 caracteres que
+no sea una contraseña común ni un fragmento del username o del email. `role`
+vale `analyst` por defecto, y el registro público no puede conceder otro:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email": "analyst@example.com", "password": "...", "full_name": "Analyst"}'
+  -d '{"username":"demo","email":"demo@example.com","password":"Str0ng-Pass-2026","role":"analyst"}'
+
+curl -X POST http://localhost:3000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"demo@example.com","password":"Str0ng-Pass-2026"}'
 ```
+
+Todos los endpoints fuera de auth necesitan el `access_token` de ese login en
+`Authorization: Bearer <token>`; sin él devuelven 401.
 
 > `scripts/create_admin.py` imprime un `INSERT` SQL listo para ejecutar si preferís sembrar un admin directamente.
 
@@ -289,7 +299,7 @@ Si el artefacto falta o no se puede leer, la API igualmente arranca y puntúa, a
 | GET | `/api/v1/transactions` | user — listado, filtros, paginación |
 | GET | `/api/v1/transactions/{id}` | user — detalle + atribuciones SHAP |
 | DELETE | `/api/v1/transactions/{id}` | **admin** — soft delete |
-| GET | `/api/v1/transactions/graph/stats` | user — estadísticas del grafo de fraude |
+| GET | `/api/v1/transactions/graph/stats` | **admin** — estadísticas del grafo de fraude completo (403 sin admin) |
 | GET | `/api/v1/transactions/{uid}/graph-features` | user — features de grafo por usuario |
 | GET | `/api/v1/transactions/{id}/embedding` | user — análisis de embedding del merchant |
 
@@ -348,7 +358,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (consumidores Redis Streams)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 páginas, 24 componentes, vitest + MSW)
-├── tests/                  # unitarios + integración (1210 tests de backend)
+├── tests/                  # unitarios + integración (1218 tests de backend)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # notebooks de exploración/entrenamiento con PaySim
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -359,7 +369,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (1210 tests)
+# Backend (1218 tests — `pytest tests/ -q` imprime 1180 pasados, 30 omitidos, 8 xfail)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # solo unitarios
 pytest tests/integration -v     # solo integración — se ejecuta con db y redis SIMULADOS (ver conftest)
@@ -419,10 +429,15 @@ TRUST_PROXY_HEADERS=false
 
 Todo lo demás sí tiene un default real en `src/core/config.py`: `DB_USER=fraud`,
 `DB_NAME=fraud_detector`, `DB_HOST=localhost`, `DB_PORT=5432`,
-`OLLAMA_HOST=http://localhost:11434`, `OLLAMA_MODEL=qwen2.5:0.5b`, `OLLAMA_TIMEOUT=30`,
+`OLLAMA_HOST=http://localhost:11434`, `OLLAMA_MODEL=llama3.2:1b`, `OLLAMA_TIMEOUT=30`,
 `JWT_ALGORITHM=HS256`, `JWT_EXP_MINUTES=15`, los pesos del ensemble `0,60 / 0,25 / 0,15`,
 `FRAUD_DETECTION_ENABLED=true`, `VELOCITY_STORE_ENABLED=true` y
 `FRONTEND_URL=http://localhost:3000`.
+
+Esos son los defaults para correr la API en tu propia máquina. Bajo compose los
+nombres de servicio reemplazan a los de host — `DB_HOST=postgres`,
+`REDIS_URL=redis://:…@redis:6379/0`, `OLLAMA_HOST=http://ollama:11434` — y desde
+el host no se alcanza nada salvo el puerto 3000.
 
 ## Decisiones de Arquitectura
 
@@ -448,4 +463,4 @@ Proyecto de portfolio de [mikelrh-dev](https://github.com/mikelrh-dev) que demue
 - ML en producción: feature engineering alineado entre entrenamiento y serving, explicabilidad SHAP, monitoreo de drift, triggers de reentrenamiento
 - Pipelines async confiables: Redis Streams, consumer groups, reintentos, DLQ
 - Seguridad: JWT con refresh + blacklist, RBAC, rate limiting, audit trail inmutable con SHA-256
-- Disciplina de testing: 1210 tests de backend + suite vitest de frontend (789 tests), CI de 5 jobs
+- Disciplina de testing: 1218 tests de backend (`pytest tests/ -q`) + suite vitest de frontend (789 tests), CI de 5 jobs
