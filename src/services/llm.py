@@ -26,7 +26,6 @@ _PROMPT_TEMPLATE = """Eres un analista de sistemas de detección de fraude.
 
 ## Datos de la Transacción
 - Monto: ${amount} {currency}
-- Comercio: {merchant_name}
 - Sector: {merchant_category}
 
 ## Contexto del Score
@@ -45,37 +44,37 @@ ML, y no depende de ti.
 ## Reglas Que Se Activaron
 {rule_details}
 
+{combination_guidance}
+
 ## Cómo responde un buen analista
-Un buen analista no enumera las reglas: describe el comportamiento que
-combinan. Dos ejemplos del registro que se busca.
+Describe, no enumeres. Estos dos ejemplos muestran el registro; no los copies,
+no repitas sus frases y no las menciones.
 
-### Ejemplo A
-Reglas activadas: high_amount, off_hours_crypto, merchant_blacklisted
-Respuesta: El caso combina un importe alto, una franja horaria en la que la
-actividad legítima es escasa y un comercio que ya consta como bloqueado.
-Ninguna de las tres señales cierra el caso por separado; la combinación sí,
-porque un reintento nocturno sobre un medio de pago comprometido es
-exactamente el patrón que las tres reglas buscan a la vez.
+### Ejemplo A — una sola señal
+Reglas activadas: high_amount
+Respuesta: El sistema ha marcado el importe por sí solo. Es el único factor
+disponible, así que conviene encuadrarlo sin exaggeratedlo: una compra
+atípica que por sí sola no distingue un fraude de una compra de verdad alta.
 
-### Ejemplo B
-Reglas activadas: high_amount, velocity_5min
-Respuesta: Dos señales que apuntan al mismo comportamiento: el importe excede
-lo habitual para el segmento y el cliente ha comprimido varias operaciones en
-una ventana muy corta. Eso apunta a una operación troceada para evitar el
-umbral de revisión, más que a un robo directo.
+### Ejemplo B — varias señales
+Reglas activadas: high_amount, unusual_merchant
+Respuesta: Aquí ya hay dos factores independientes, y es la combinación la que
+aporta: un importe elevado por sí solo sería Few; lo hace relevante que el
+comercio esté en la lista de bloqueados. Ese cruce es el que revisa un
+analista antes que por separado.
 
 ## Tu Tarea
 Escribe DOS párrafos en español y nada más:
 
-1. Qué comportamiento combinado representan las reglas que se activaron,
-   descrito como una conducta, sin enumerar las reglas ni sus nombres.
+1. {first_paragraph_task}
 
 2. Qué debería hacer un analista a continuación.
 
 REGLAS ESTRICTAS:
 - NO repitas ninguna puntuación, umbral ni cifra. Los números ya están
   escritos por el sistema; tú solo narras.
-- NO inventes datos que no estén aquí.
+- NO menciones hechos que no estén en "Reglas Que Se Activaron". Si una
+  señal no aparece ahí, no ocurrió.
 - NO menciones que eres un modelo de lenguaje.
 - Devuelve solo los dos párrafos, sin títulos, sin listas, sin numeración."""
 
@@ -141,10 +140,15 @@ class LLMService:
         it from repeating them, because `generate_report` renders the
         authoritative figures itself.
 
+        The merchant name is deliberately absent. It was reaching the model,
+        which pasted it into the prose and stored it in the report; a merchant
+        identifier is also the kind of value that should not travel through a
+        generation step when the category carries the same analytical signal.
+
         Args:
             score_breakdown: Dict with rule_score, ml_score, ensemble_score,
                 fired_rules, threshold, classification.
-            transaction: Dict with amount, merchant_name, currency, etc.
+            transaction: Dict with amount, merchant_category, currency, etc.
 
         Returns:
             Formatted prompt string.
@@ -154,6 +158,41 @@ class LLMService:
             rule_details = "\n".join(f"- {rule}" for rule in fired_rules)
         else:
             rule_details = "- Ninguna regla activada"
+
+        # Measured on the corpus: 26.6% of transactions trigger exactly one
+        # rule and only 6.4% trigger two or more. A model handed two
+        # multi-rule examples fills a single-rule case out to match them, so
+        # the instruction has to know which population it is looking at.
+        if len(fired_rules) == 1:
+            combination_guidance = (
+                "## Aviso importante\n"
+                "Se activó **una sola regla**. No hay combinación que describir: no "
+                "menciones patrones combinados, ni otras señales, ni factores que no "
+                "aparezcan arriba. Describe únicamente lo que esa señal indica por sí "
+                "sola, y di con claridad que es un factor aislado."
+            )
+            first_paragraph_task = (
+                "Qué indica la única señal activada, sin exagerarla y sin "
+                "inventar factores adicionales."
+            )
+        elif len(fired_rules) >= 2:
+            combination_guidance = (
+                "## Aviso importante\n"
+                f"Se activaron **{len(fired_rules)} reglas**. Describe el "
+                "comportamiento que combinan, no las reglas una por una, y no "
+                "añadas señales que no estén arriba."
+            )
+            first_paragraph_task = (
+                "Qué comportamiento combinado representan las reglas que se "
+                "activaron, descrito como una conducta."
+            )
+        else:
+            combination_guidance = (
+                "## Aviso importante\n"
+                "No se activó ninguna regla. Describe la transacción sin "
+                "inventar motivos de sospecha."
+            )
+            first_paragraph_task = "Qué hay que destacar en esta transacción."
 
         # Map classification to Spanish labels and decision text
         classification = score_breakdown.get("classification", "review")
@@ -174,13 +213,14 @@ class LLMService:
         return _PROMPT_TEMPLATE.format(
             amount=self._format_amount(transaction.get("amount")),
             currency=transaction.get("currency") or "USD",
-            merchant_name=transaction.get("merchant_name") or "desconocido",
             merchant_category=transaction.get("merchant_category") or "sin especificar",
             rule_score=score_breakdown.get("rule_score", 0),
             ml_score=score_breakdown.get("ml_score", 0),
             ensemble_score=score_breakdown.get("ensemble_score", 0),
             threshold=score_breakdown.get("threshold", 70),
             rule_details=rule_details,
+            combination_guidance=combination_guidance,
+            first_paragraph_task=first_paragraph_task,
             classification_label=classification_label,
             decision=decision,
         )

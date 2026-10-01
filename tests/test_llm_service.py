@@ -107,6 +107,56 @@ class TestLLMPromptTemplate:
         assert "dos párrafos" in lowered
         assert "sin títulos" in lowered
 
+    def test_prompt_excludes_the_merchant_name(self):
+        """The merchant identifier must not reach the model.
+
+        Measured: with the name in the prompt, llama3.2:1b pasted it into the
+        prose and the report was stored with it. A merchant identifier should
+        not travel through a generation step, and the category carries the
+        same analytical signal.
+        """
+        service = LLMService()
+        prompt = service.build_prompt(
+            {"rule_score": 35.0, "ml_score": 10.0, "ensemble_score": 30.1,
+             "fired_rules": ["amount_round_number"], "threshold": 70.0},
+            {"amount": 45.0, "merchant_name": "Store_3", "merchant_category": "grocery"},
+        )
+
+        assert "Store_3" not in prompt
+        assert "grocery" in prompt
+
+    def test_prompt_tells_the_model_how_many_rules_fired(self):
+        """A single-rule case must not be described as a combination.
+
+        26.6% of transactions trigger exactly one rule against 6.4% for two or
+        more. Given two multi-rule examples, the model completed a one-rule
+        case up to match them — inventing time-of-day, velocity and blacklist
+        signals in 31 of 18 measured reports.
+        """
+        service = LLMService()
+        base = {"rule_score": 35.0, "ml_score": 10.0, "ensemble_score": 30.1, "threshold": 70.0}
+
+        one = service.build_prompt({**base, "fired_rules": ["high_amount"]}, {"amount": 500.0})
+        assert "una sola regla" in one.lower()
+        assert "no hay combinación" in one.lower()
+
+        many = service.build_prompt(
+            {**base, "fired_rules": ["high_amount", "unusual_merchant"]},
+            {"amount": 500.0},
+        )
+        assert "2 reglas" in many.lower()
+        assert "no hay combinación" not in many.lower()
+
+    def test_prompt_forbids_facts_absent_from_the_rules(self):
+        """The hard constraint the earlier prompt lacked."""
+        service = LLMService()
+        prompt = service.build_prompt(
+            {"rule_score": 35.0, "ml_score": 10.0, "ensemble_score": 30.1,
+             "fired_rules": ["high_amount"], "threshold": 70.0},
+            {"amount": 500.0},
+        )
+        assert "no menciones hechos que no estén" in prompt.lower()
+
     def test_prompt_contains_transaction_details(self):
         """The prompt should include transaction details like amount and merchant."""
         service = LLMService()
@@ -120,13 +170,16 @@ class TestLLMPromptTemplate:
         transaction = {
             "amount": 15000.0,
             "merchant_name": "Test Store",
+            "merchant_category": "retail",
             "currency": "USD",
         }
         prompt = service.build_prompt(score_breakdown, transaction)
 
         assert "15000" in prompt
-        assert "Test Store" in prompt
         assert "USD" in prompt
+        # The category carries the analytical signal; the identifier does not
+        # belong in a generation step at all (see the exclusion test above).
+        assert "retail" in prompt
 
     def test_render_report_writes_the_figures_itself(self):
         """Every number in the stored report comes from the inputs."""
