@@ -52,12 +52,13 @@ docker compose up -d
 ```
 
 **Qué se inicia:**
-- PostgreSQL (puerto 5432)
-- Redis (puerto 6379) con persistencia AOF + RDB
-- Ollama (puerto 11434) — modelo LLM
-- API (puerto 8000) — FastAPI
-- 3 Workers: llm-worker, shap-worker, embedding-worker
-- Frontend (puerto 3000) — React
+- PostgreSQL — solo `postgres:5432` dentro de la red de compose. No publica puerto en el host.
+- Redis — solo `redis:6379` dentro de la red. Con persistencia AOF + RDB.
+- Ollama — solo `ollama:11434` dentro de la red. Modelo LLM.
+- API — solo `api:8000` dentro de la red. Es un `expose:` interno, **no** se publica en el host (ver §3.1).
+- 3 Workers: `worker` (LLM), `shap-worker`, `embedding-worker`.
+  El del LLM se llama `worker` en compose; su módulo es `src.workers.llm_worker`. `docker compose logs llm-worker` falla con "no such service".
+- Frontend — **único** servicio que publica un puerto en el host: `3000:80`. Es nginx, y hace de proxy hacia `api:8000`.
 
 ### 2.2 Verificar que todos los servicios están healthy
 ```bash
@@ -69,61 +70,98 @@ docker compose ps
 # redis                 Up (healthy)
 # ollama                Up
 # api                   Up (healthy)
-# llm-worker            Up
+# worker                Up
 # shap-worker           Up
 # embedding-worker      Up
 # frontend              Up
 ```
 
-### 2.3 Esperar a que Ollama descarue el modelo (puede tardar 5-10 min)
+### 2.3 Descargar el modelo de Ollama (puede tardar 5-10 min)
+
+El healthcheck de `ollama` es `ollama list`, que pasa con cero modelos. Es
+decir: **nadie descarga el modelo por ti**. Sin este paso el contenedor se
+declara sano y luego todos los informes dan 404.
+
 ```bash
+# Descargar el modelo (OLLAMA_MODEL en .env dice llama3.2:1b)
+docker compose exec ollama ollama pull llama3.2:1b
+
 # Ver logs de ollama
 docker compose logs ollama
 
-# Debería terminar con algo como:
-# Successfully loaded model "mistral"
+# Comprobar que el modelo está ahí
+docker compose exec ollama ollama list
+# Debería mostrar: llama3.2:1b
 ```
+
+Si cambias `OLLAMA_MODEL` en `.env`, descarga ese modelo y no otro.
 
 ---
 
 ## FASE 3: VERIFICAR CONEXIONES (5 minutos)
 
+Compose publica **un solo puerto en el host**: el `3000:80` de `frontend`, que
+es nginx. La API no está publicada — `8000` es un `expose:` interno del
+contenedor, así que `curl http://localhost:8000/...` desde el host recibe
+conexión rehusada. Se llega a la API a través de nginx, en `:3000`. Lo que no
+se publica se comprueba entrando al contenedor con `docker compose exec`.
+
 ### 3.1 Comprobar que la API está viva
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:3000/health
 # Debería devolver: {"status":"ok"}
+
+# Este consulta Postgres y Redis de verdad — es el mismo check que usa el
+# healthcheck del contenedor `api`, y es el que detecta una DB sin migrar
+curl http://localhost:3000/health/ready
 ```
 
 ### 3.2 Comprobar que Redis está alive
 ```bash
-redis-cli ping
+# Redis no publica puerto: hay que entrar al contenedor
+docker compose exec redis redis-cli ping
 # Debería devolver: PONG
 
 # Verificar persistencia
-redis-cli CONFIG GET appendonly
+docker compose exec redis redis-cli CONFIG GET appendonly
 # Debería mostrar: appendonly yes
 ```
 
 ### 3.3 Comprobar que PostgreSQL está alive
 ```bash
-psql -h localhost -U fraud -d fraud_detector -c "SELECT 1"
+# PostgreSQL tampoco publica puerto
+docker compose exec postgres psql -U fraud -d fraud_detector -c "SELECT 1"
 # Debería devolver: 1
 ```
 
 ### 3.4 Verificar que Ollama tiene el modelo
 ```bash
-curl http://localhost:11434/api/tags
-# Debería mostrar: "mistral" en la lista
+# Ollama tampoco publica puerto
+docker compose exec ollama ollama list
+# Debería mostrar "llama3.2:1b" en la lista
 ```
 
 ---
 
 ## FASE 4: INICIALIZAR BASE DE DATOS (5 minutos)
 
-### 4.1 Correr migraciones de Alembic
+### 4.1 Las migraciones ya corrieron
+
+No hay paso manual de Alembic. `docker/entrypoint.api.sh` corre
+`alembic upgrade head` bajo `set -e` antes de levantar uvicorn, así que las
+migraciones se aplican al arrancar el contenedor `api`. Correrlas a mano
+ejecutaría el mismo paso dos veces; y si una migración fallara durante el
+arranque, el contenedor no arrancaría en lugar de servir 500s.
+
+Cómo comprobarlo, sin ejecutar nada:
 ```bash
-docker compose exec api alembic upgrade head
-# Debería completar sin errores
+# El log del arranque muestra el paso de migraciones
+docker compose logs api | head -5
+# ==> Applying database migrations
+# ==> Starting API
+
+# Y /health/ready corre SELECT 1 y PING de verdad: si faltara una tabla, falla
+curl http://localhost:3000/health/ready
 ```
 
 ### 4.2 Crear usuario admin (opcional, para testing)
@@ -144,7 +182,7 @@ python scripts/generate_synthetic_data.py
 
 ### 5.1 Crear una transacción legítima
 ```bash
-curl -X POST http://localhost:8000/api/v1/transactions \
+curl -X POST http://localhost:3000/api/v1/transactions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{
@@ -168,7 +206,7 @@ curl -X POST http://localhost:8000/api/v1/transactions \
 
 ### 5.2 Crear una transacción sospechosa
 ```bash
-curl -X POST http://localhost:8000/api/v1/transactions \
+curl -X POST http://localhost:3000/api/v1/transactions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{
@@ -196,20 +234,20 @@ curl -X POST http://localhost:8000/api/v1/transactions \
 # Ver logs de workers
 docker compose logs shap-worker | tail -20
 docker compose logs embedding-worker | tail -20
-docker compose logs llm-worker | tail -20
+docker compose logs worker | tail -20
 
 # Debería mostrar: "SHAP computed for transaction", "Embedding processed", "LLM report"
 ```
 
 ### 5.4 Verificar Redis Streams
 ```bash
-# Ver eventos en cada stream
-redis-cli XLEN fraud:llm
-redis-cli XLEN fraud:shap
-redis-cli XLEN fraud:embeddings
+# Redis no publica puerto: hay que entrar al contenedor
+docker compose exec redis redis-cli XLEN fraud:llm
+docker compose exec redis redis-cli XLEN fraud:shap
+docker compose exec redis redis-cli XLEN fraud:embeddings
 
 # Ver consumer groups
-redis-cli XINFO GROUPS fraud:llm
+docker compose exec redis redis-cli XINFO GROUPS fraud:llm
 
 # Debería mostrar info de consumer groups activos
 ```
@@ -244,7 +282,7 @@ docker compose logs -f
 docker compose logs -f api
 
 # Solo workers
-docker compose logs -f shap-worker embedding-worker llm-worker
+docker compose logs -f shap-worker embedding-worker worker
 
 # Solo Redis
 docker compose logs -f redis
@@ -285,19 +323,21 @@ docker compose logs api
 
 # Causas comunes:
 # 1. PostgreSQL no está healthy → esperar más tiempo
-# 2. Puerto 8000 ya está en uso → cambiar puerto en docker-compose.yml
+# 2. El puerto 3000 ya está en el host → detener lo que lo ocupe, o cambiar
+#    "3000:80" en docker-compose.yml. El 8000 no puede entrar en conflicto: es
+#    un expose: interno y no se publica
 # 3. Error de importación → verificar requirements.txt
 ```
 
 ### Si Redis no persiste
 ```bash
-# Verificar configuración
-redis-cli CONFIG GET appendonly
-redis-cli CONFIG GET save
+# Verificar configuración (dentro del contenedor: Redis no publica puerto)
+docker compose exec redis redis-cli CONFIG GET appendonly
+docker compose exec redis redis-cli CONFIG GET save
 
-# Si no está activado:
-redis-cli CONFIG SET appendonly yes
-redis-cli CONFIG REWRITE  # Persistir cambios
+# Si no está activado, hay que cambiar el `command:` del servicio redis en
+# docker-compose.yml, no el Redis en caliente: docker compose up recrea el
+# contenedor y perdería lo hecho con CONFIG SET.
 ```
 
 ### Si un worker está crasheando
@@ -316,9 +356,9 @@ docker compose restart shap-worker
 # Borrar volumen de PostgreSQL (⚠️ BORRA DATOS)
 docker compose down -v
 
-# Reiniciar limpio
+# Reiniciar limpio. No hace falta correr migraciones a mano: el entrypoint
+# corre `alembic upgrade head` bajo `set -e` en cada arranque de `api`
 docker compose up -d
-docker compose exec api alembic upgrade head
 ```
 
 ---
@@ -363,9 +403,10 @@ docker compose config
 - [ ] `docker compose up -d` completado
 - [ ] Todos los servicios en `Up (healthy)`
 - [ ] Ollama descargó modelo (~5-10 min)
-- [ ] `curl http://localhost:8000/health` → OK
-- [ ] `redis-cli ping` → PONG
-- [ ] Alembic migrations corrieron
+- [ ] `curl http://localhost:3000/health` → OK
+- [ ] `docker compose exec redis redis-cli ping` → PONG
+- [ ] `curl http://localhost:3000/health/ready` → OK (Postgres y Redis de verdad)
+- [ ] Alembic migrations aplicadas por el entrypoint (log: `==> Applying database migrations`)
 - [ ] Transacción de prueba creada y clasificada
 - [ ] Workers procesando eventos (ver logs)
 - [ ] Redis Streams tienen eventos
@@ -391,9 +432,9 @@ cp .env.example .env
 # 3. Iniciar
 docker compose up -d
 
-# 4. Verificar
+# 4. Verificar (el único puerto publicado en el host es el 3000)
 docker compose ps
-curl http://localhost:8000/health
+curl http://localhost:3000/health
 
 # 5. Ver logs
 docker compose logs -f

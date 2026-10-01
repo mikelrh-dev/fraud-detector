@@ -27,7 +27,7 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 - **Audit trail inmutable** con checksums SHA-256 en cada decisión de scoring y acción de analista
 - **Auth JWT** (access + refresh + blacklist), acceso por roles (user/admin), rate limiting por ruta
 - **Dashboard React 19** con tendencias de score, tarjetas SHAP y flujo de trabajo de alertas
-- **1218 tests de backend** (unitarios + integración) y 789 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker). `pytest tests/ -q` informa la cifra de backend como **1180 pasados, 30 omitidos, 8 xfail**; `cd frontend && npm test` informa la de frontend como 789 pasados
+- **1259 tests de backend** (unitarios + integración) y 789 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker). `pytest tests/ -q` informa la cifra de backend como **1221 pasados, 30 omitidos, 8 xfail**; `cd frontend && npm test` informa la de frontend como 789 pasados
 
 ## Arquitectura
 
@@ -358,7 +358,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, monitoring, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (consumidores Redis Streams)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 páginas, 24 componentes, vitest + MSW)
-├── tests/                  # unitarios + integración (1218 tests de backend)
+├── tests/                  # unitarios + integración (1259 tests de backend)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # notebooks de exploración/entrenamiento con PaySim
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -369,7 +369,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (1218 tests — `pytest tests/ -q` imprime 1180 pasados, 30 omitidos, 8 xfail)
+# Backend (1259 tests — `pytest tests/ -q` imprime 1221 pasados, 30 omitidos, 8 xfail)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # solo unitarios
 pytest tests/integration -v     # solo integración — se ejecuta con db y redis SIMULADOS (ver conftest)
@@ -388,7 +388,7 @@ GitHub Actions (`.github/workflows/ci.yml`), disparado en push/PR a `main`, `mas
 | `backend-test` | pytest con contenedores de servicio PostgreSQL 16 + Redis 7 |
 | `frontend-lint-test` | ESLint + vitest |
 | `frontend-build` | build de producción (tras lint+test) |
-| `docker-build` | build smoke de imágenes Docker (solo PRs) |
+| `docker-build` | construye las imágenes backend y frontend (push + PR). Solo construye: nunca las ejecuta |
 
 ## Variables de Entorno
 
@@ -463,4 +463,4 @@ Proyecto de portfolio de [mikelrh-dev](https://github.com/mikelrh-dev) que demue
 - ML en producción: feature engineering alineado entre entrenamiento y serving, explicabilidad SHAP, monitoreo de drift, triggers de reentrenamiento
 - Pipelines async confiables: Redis Streams, consumer groups, reintentos, DLQ
 - Seguridad: JWT con refresh + blacklist, RBAC, rate limiting, audit trail inmutable con SHA-256
-- Disciplina de testing: 1218 tests de backend (`pytest tests/ -q`) + suite vitest de frontend (789 tests), CI de 5 jobs
+- Disciplina de testing: 1259 tests de backend (`pytest tests/ -q`) + suite vitest de frontend (789 tests), CI de 5 jobs

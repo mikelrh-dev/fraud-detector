@@ -25,10 +25,12 @@ WHAT IT DOES NOT DO
 It does not re-run the harness. It reads the manifest and the documents, so it
 completes in well under a second and belongs in the pull-request pipeline. The
 harness takes minutes, so a change to the harness with nobody regenerating the
-manifest would leave this test green. That gap is why the CI workflow carries a
-nightly `published-metrics` job that regenerates the file and fails on a git
-diff -- the fast test catches documentation drift, the scheduled job catches
-code drift.
+manifest would leave this test green. That gap is why
+`.github/workflows/metrics-drift.yml` exists: a separate workflow, because a
+`schedule:` on ci.yml would run lint, both test suites, both frontend jobs and
+the image build every night just to regenerate one JSON. It regenerates the
+manifest and fails on a git diff -- the fast test catches documentation drift,
+the scheduled workflow catches code drift.
 
 NUMBER FORMATS
 --------------

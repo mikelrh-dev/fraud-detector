@@ -48,17 +48,18 @@ ls -lh models/
 # Levantar servicios primero
 docker compose up -d
 
-# Pull del modelo LLM (~2GB)
-docker compose exec ollama ollama pull llama3.2:3b
+# Pull del modelo LLM (~1.3GB)
+docker compose exec ollama ollama pull llama3.2:1b
 
 # Verificar que está instalado
 docker compose exec ollama ollama list
 ```
 
-**Alternativa más rápida:** Usar un modelo más pequeño:
-```bash
-docker compose exec ollama ollama pull qwen2.5:1.5b  # ~1GB, más rápido
-```
+**Nota:** el modelo de producción es `llama3.2:1b` — lo declaran `OLLAMA_MODEL`
+en `.env.example` y `ollama_model` en `src/core/config.py`. Si cambias el modelo
+en uno de esos dos sitios, cámbialo en el otro también y descarga ese: la API
+pide un modelo concreto y un `ollama pull` de otro deja el despliegue sano y con
+todos los informes dando 404.
 
 ---
 
@@ -79,24 +80,44 @@ docker compose logs -f worker
 ```
 
 **Servicios:**
-| Servicio | URL | Descripción |
-|----------|-----|-------------|
-| API | http://localhost:8000 | Backend FastAPI |
-| API Docs | http://localhost:8000/docs | Swagger UI |
-| Frontend | http://localhost:3000 | Dashboard React |
-| PostgreSQL | localhost:5432 | Base de datos |
-| Redis | localhost:6379 | Cache + Queue |
-| Ollama | localhost:11434 | LLM local |
+
+Compose publica **un solo puerto en el host**: el `3000:80` de `frontend`, que
+es nginx y hace de proxy hacia `api:8000`. Cualquier `curl http://localhost:8000/...`
+desde el host recibe conexión rehusada.
+
+| Servicio | Desde el host | Dirección |
+|----------|---------------|-----------|
+| Frontend + API | **sí** | http://localhost:3000 |
+| API Docs | **sí** | http://localhost:3000/docs |
+| Frontend (directo) | no | `frontend:80`, solo dentro de la red |
+| API | no | `api:8000`, solo dentro de la red |
+| PostgreSQL | no | `postgres:5432`, solo dentro de la red |
+| Redis | no | `redis:6379`, solo dentro de la red |
+| Ollama | no | `ollama:11434`, solo dentro de la red |
+
+Lo que no se publica se alcanza con `docker compose exec <servicio> <comando>`.
 
 ---
 
-## 5. Ejecutar Migraciones de Base de Datos
+## 5. Las migraciones ya corrieron
+
+No hay paso manual. `docker/entrypoint.api.sh` ejecuta `alembic upgrade head`
+bajo `set -e` antes de levantar uvicorn, así que las tablas se crean al arrancar
+el contenedor `api`. Si una migración falla, el contenedor no arranca en lugar
+de servir 500s.
+
+Para comprobarlo sin ejecutar nada:
 
 ```bash
-# Crear tablas en PostgreSQL
-docker compose exec api alembic upgrade head
+# El log del arranque
+docker compose logs api | head -5
+# ==> Applying database migrations
+# ==> Starting API
 
-# Verificar que las tablas se crearon
+# Y /health/ready corre SELECT 1 y PING contra Postgres y Redis de verdad
+curl http://localhost:3000/health/ready
+
+# Ver las tablas que se crearon
 docker compose exec postgres psql -U fraud -d fraud_detector -c "\dt"
 ```
 
@@ -105,8 +126,8 @@ docker compose exec postgres psql -U fraud -d fraud_detector -c "\dt"
 ## 6. Crear Usuario Admin
 
 ```bash
-# Registrarse via API
-curl -X POST http://localhost:8000/api/v1/auth/register \
+# Registrarse via API (toda petición va por nginx, en el puerto 3000)
+curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
@@ -115,7 +136,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
   }'
 
 # Login para obtener JWT
-curl -X POST http://localhost:8000/api/v1/auth/login \
+curl -X POST http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@frauddetector.dev",
@@ -133,7 +154,7 @@ export JWT_TOKEN="eyJ..."
 ### Crear una transacción de prueba
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/transactions \
+curl -X POST http://localhost:3000/api/v1/transactions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -d '{
@@ -163,14 +184,14 @@ curl -X POST http://localhost:8000/api/v1/transactions \
 ### Ver alertas
 
 ```bash
-curl http://localhost:8000/api/v1/alerts \
+curl http://localhost:3000/api/v1/alerts \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
 ### Ver informe LLM (si se generó)
 
 ```bash
-curl http://localhost:8000/api/v1/transactions/{transaction_id}/report \
+curl http://localhost:3000/api/v1/transactions/{transaction_id}/report \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
@@ -213,10 +234,12 @@ nano .env  # Editar con valores de producción
 docker compose up -d --build
 
 # 5. Pull modelo Ollama
-docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama pull llama3.2:1b
 
-# 6. Migraciones
-docker compose exec api alembic upgrade head
+# 6. Verificar. No hay paso de migraciones: el entrypoint corre
+#    `alembic upgrade head` bajo `set -e` al arrancar `api`
+docker compose ps
+curl http://localhost:3000/health/ready
 
 # 7. (Opcional) Configurar Nginx + SSL
 # Ver docs de Let's Encrypt para tu dominio
@@ -245,9 +268,9 @@ Para tu portfolio, graba un video de 30-60 segundos mostrando:
 
 - [ ] Dataset descargado o generado
 - [ ] Modelo ML entrenado (`models/isolation_forest_v1.joblib`)
-- [ ] Modelo Ollama descargado (`llama3.2:3b`)
+- [ ] Modelo Ollama descargado (`llama3.2:1b`)
 - [ ] `docker compose up` funcionando
-- [ ] Migraciones ejecutadas
+- [ ] Migraciones aplicadas por el entrypoint al arrancar `api`
 - [ ] Usuario admin creado
 - [ ] Transacción de prueba creada
 - [ ] Alerta generada
@@ -278,21 +301,23 @@ ls -lh models/
 ```bash
 # Verificar que Ollama está corriendo
 docker compose ps ollama
-# Pull del modelo
-docker compose exec ollama ollama pull llama3.2:3b
+# Pull del modelo — nada lo descarga por ti
+docker compose exec ollama ollama pull llama3.2:1b
 ```
 
 ### Error: "Port already in use"
 ```bash
-# Cambiar puertos en docker-compose.yml o detener otros servicios
-# API: 8000, Frontend: 3000, Postgres: 5432, Redis: 6379, Ollama: 11434
+# El único puerto que compose publica en el host es el 3000 (frontend: 80).
+# Detener lo que lo ocupe, o cambiar "3000:80" en docker-compose.yml.
+# El 8000 no puede entrar en conflicto: es un expose: interno del contenedor api.
+# Postgres, Redis y Ollama tampoco publican nada.
 ```
 
 ---
 
 ## Recursos
 
-- **API Docs**: http://localhost:8000/docs
+- **API Docs**: http://localhost:3000/docs
 - **README**: [README.md](./README.md)
 - **SDD Artifacts**: [openspec/](./openspec/)
 - **Tests**: `pytest tests/ -v --cov=src`

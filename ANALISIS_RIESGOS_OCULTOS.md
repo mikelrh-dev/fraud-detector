@@ -305,7 +305,7 @@ worker:  # llm_worker
 | API | 300MB | 600MB | **2GB** | 2.5GB |
 | embedding-worker | 300MB | 800MB | **1GB** | 1.2GB |
 | shap-worker | 200MB | 600MB | **800M** | 1GB |
-| llm-worker | 100MB | 300MB | **500M** | 600M |
+| worker (LLM) | 100MB | 300MB | **500M** | 600M |
 
 **Benefit:**
 - Si embedding-worker crece anormalmente → Docker mata solo ese container

@@ -103,9 +103,9 @@ f185953  feat(scoring): improve fraud detection reliability
 - `pytest tests/` — To be run with resolved pandas/numpy conflicts (local env issue)
 
 ### Integration Validation
-- Docker compose includes all services (Redis, PostgreSQL, embedding-worker, llm-worker)
+- Docker compose includes all services (Redis, PostgreSQL, embedding-worker, worker)
 - Workers run as background services
-- Redis Streams can be monitored: `redis-cli XINFO STREAM fraud:llm`
+- Redis Streams can be monitored: `docker compose exec redis redis-cli XINFO STREAM fraud:llm`
 
 ---
 
@@ -148,7 +148,7 @@ f185953  feat(scoring): improve fraud detection reliability
 
 3. **Start workers:**
    ```bash
-   docker compose up -d shap-worker embedding-worker llm-worker
+   docker compose up -d shap-worker embedding-worker worker
    ```
 
 4. **Start API:**
@@ -158,9 +158,9 @@ f185953  feat(scoring): improve fraud detection reliability
 
 5. **Verify streams:**
    ```bash
-   redis-cli XINFO STREAM fraud:llm
-   redis-cli XINFO STREAM fraud:shap
-   redis-cli XINFO STREAM fraud:embeddings
+   docker compose exec redis redis-cli XINFO STREAM fraud:llm
+   docker compose exec redis redis-cli XINFO STREAM fraud:shap
+   docker compose exec redis redis-cli XINFO STREAM fraud:embeddings
    ```
 
 ---
@@ -170,7 +170,7 @@ f185953  feat(scoring): improve fraud detection reliability
 ### Short-term
 - Run full integration tests (fix pandas/numpy version lock)
 - Monitor worker latency in production
-- Verify consumer group lag (redis-cli XINFO GROUPS fraud:llm)
+- Verify consumer group lag (docker compose exec redis redis-cli XINFO GROUPS fraud:llm)
 
 ### Long-term
 - Add dead-letter queue for messages failing after N retries

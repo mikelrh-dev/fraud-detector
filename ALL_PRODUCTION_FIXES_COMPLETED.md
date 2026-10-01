@@ -46,8 +46,9 @@ shap-worker:
   mem_limit: 800m    # SHAP calculations
   memswap_limit: 1g
 
-llm-worker:
-  mem_limit: 500m    # Queue consumer (light)
+worker:
+  mem_limit: 500m    # Queue consumer (light). Runs src.workers.llm_worker,
+                     # so compose names it `worker`, not `llm-worker`.
   memswap_limit: 600m
 ```
 **Impacto:** Si worker tiene memory leak → Docker lo mata (OOM killer), no afecta PostgreSQL.
@@ -128,20 +129,25 @@ docker compose up -d
 
 ### Verification
 ```bash
+# Compose publishes ONE host port: 3000:80 on `frontend`, which is nginx and
+# proxies to api:8000. Redis, Postgres and Ollama publish nothing, and the API
+# port 8000 is a container-internal `expose:` -- so every check below either
+# goes through :3000 or enters the container.
+
 # Check Redis persistence
-redis-cli CONFIG GET appendonly
-redis-cli INFO persistence
+docker compose exec redis redis-cli CONFIG GET appendonly
+docker compose exec redis redis-cli INFO persistence
 
 # Monitor memory usage
 docker stats
 
 # Check streams
-redis-cli XINFO STREAM fraud:llm
-redis-cli XINFO STREAM fraud:shap
-redis-cli XINFO STREAM fraud:embeddings
+docker compose exec redis redis-cli XINFO STREAM fraud:llm
+docker compose exec redis redis-cli XINFO STREAM fraud:shap
+docker compose exec redis redis-cli XINFO STREAM fraud:embeddings
 
-# Health check
-curl http://localhost:8000/health
+# Health check (this one really queries Postgres and Redis)
+curl http://localhost:3000/health/ready
 ```
 
 ---

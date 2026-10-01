@@ -33,11 +33,12 @@ Procedimiento para levantar infraestructura, backend y frontend localmente.
 ```bash
 cp .env.example .env
 docker compose up -d
-docker compose exec ollama ollama pull qwen2.5:0.5b
-docker compose exec api alembic upgrade head
+docker compose exec ollama ollama pull llama3.2:1b
 ```
 
-API en `http://localhost:8000`, frontend en `http://localhost:3000`, Redis en `6379`, PostgreSQL en `5432` y Ollama en `11434`.
+No hay paso de migraciones: `docker/entrypoint.api.sh` corre `alembic upgrade head` bajo `set -e` antes de levantar uvicorn, así que las tablas se aplican al arrancar el contenedor `api`. Comprobarlo con `docker compose logs api | head -5` (`==> Applying database migrations`) o con `curl http://localhost:3000/health/ready`, que consulta Postgres y Redis de verdad.
+
+Compose publica un solo puerto en el host: `3000:80` de `frontend`, que es nginx y hace de proxy hacia `api:8000`. El puerto `8000` de la API es un `expose:` interno, así que `curl http://localhost:8000/...` desde el host recibe conexión rehusada. PostgreSQL (`postgres:5432`), Redis (`redis:6379`) y Ollama (`ollama:11434`) tampoco publican nada: se alcanzan con `docker compose exec <servicio> <comando>`.
 
 ## Interpretation
 

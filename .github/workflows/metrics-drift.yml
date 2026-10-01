@@ -1,0 +1,115 @@
+name: Metrics Drift
+
+# WHY THIS IS NOT A JOB IN ci.yml
+# -------------------------------
+# `tests/docs/test_published_metrics.py` compares every scoped document against
+# `docs/published_metrics.json` and fails when the two disagree in either
+# direction. That test *reads* the manifest; it never runs the harness. So if
+# `scripts/evaluate_model.py`, `scripts/evaluate_cost.py`,
+# `scripts/train_xgboost_aligned.py` or anything under `src/services/` that the
+# harnesses import changes the numbers, and nobody regenerates, then the
+# manifest keeps describing the previous run, the documents keep agreeing with
+# that stale manifest, and the guard stays green. The prose is describing an
+# evaluation that no longer happens and no test notices.
+#
+# That is the drift this workflow exists to catch, and the fast test structurally
+# cannot: comparing documents against a manifest that has stopped corresponding
+# to the code is comparing two documents.
+#
+# A `schedule:` on ci.yml would close the gap by running every job in that file
+# -- backend lint, mypy, the pytest suite with coverage, frontend lint, frontend
+# tests, frontend build and both docker builds -- every night, in order to
+# rewrite one JSON file. This workflow runs only the generator, so the nightly
+# cost is one job instead of six, and the generator's 7-16 minutes are not
+# blocking anyone's pull request.
+
+on:
+  schedule:
+    # 23:41 UTC. GitHub-hosted runners are on UTC and this repository's
+    # contributors are in Europe/Madrid, so 23:41 UTC lands at 01:41 CEST /
+    # 00:41 CET -- the middle of the night, which is not a time anyone is
+    # pushing to this branch. Two deliberate choices there: an off-peak hour
+    # keeps the run from competing with the working day for runner capacity,
+    # and the odd minute (41) avoids the top of the hour, where every scheduled
+    # workflow on GitHub tries to start simultaneously and the platform's own
+    # queueing delay is highest. Daily, not hourly: the generator takes 7-16
+    # minutes and a cron that re-fires every hour would start overlapping runs.
+    - cron: "41 23 * * *"
+  workflow_dispatch:
+
+env:
+  # Same value ci.yml pins. The manifest is produced by the same Python the
+  # suite is green on; regenerating it under a different interpreter would make
+  # a drift failure indistinguishable from an environment difference, which is
+  # the one thing this job must not be ambiguous about.
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  published-metrics:
+    name: Regenerate manifest and fail on drift
+    runs-on: ubuntu-latest
+    # The generator takes 7-16 minutes. 60 is generous for that and still
+    # bounds a hung run, which would otherwise hold a runner until GitHub's
+    # six-hour default killed it.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      # No services block, and that is the point: the generator loads the
+      # committed model artifact, the committed synthetic corpus and nothing
+      # else. No Postgres, no Redis, no Ollama. A nightly job that needed a
+      # database would fail for reasons unrelated to drift, and a guard that
+      # fails for unrelated reasons gets ignored.
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Regenerate docs/published_metrics.json
+        # No arguments: `scripts/generate_published_metrics.py` has no argparse
+        # and its `__main__` block calls `main()`, which writes the manifest to
+        # `docs/published_metrics.json` at the repository root. It *imports* the
+        # harnesses' functions instead of parsing their stdout, so a cosmetic
+        # edit to a `print()` cannot silently move a published number. Run from
+        # the repository root, which is the default working directory here.
+        run: python scripts/generate_published_metrics.py
+
+      # The check itself. Regenerating and diffing is the only honest form of
+      # this gate: comparing the new manifest against the committed one proves
+      # the committed file is exactly what the current code produces. Anything
+      # weaker -- comparing against a hash, checking that the file exists, or
+      # grepping for a key -- would pass while the numbers were stale, which is
+      # the failure this job exists to prevent.
+      #
+      # The decision uses `git status --porcelain`, NOT `git diff --quiet`.
+      # `git diff` has two verified false-green shapes, and either one turns
+      # this gate into a job that goes green forever while the manifest lies:
+      #   1. It cannot see an UNTRACKED file. If docs/published_metrics.json were
+      #      ever dropped from version control, the generator recreates it and
+      #      `git diff` sees nothing at all.
+      #   2. It compares worktree against the INDEX, not against HEAD. Any step
+      #      that stages the regenerated file makes the difference invisible.
+      # `git status --porcelain` reports modified, staged, deleted and untracked
+      # alike, so it closes both holes at once and is the check itself rather
+      # than a fallback.
+      - name: Fail if the manifest drifted from the code
+        run: |
+          drift="$(git status --porcelain -- docs/published_metrics.json)"
+          if [ -z "$drift" ]; then
+            echo "docs/published_metrics.json reproduces byte-for-byte from the current harnesses."
+            exit 0
+          fi
+          echo "::error title=Published metrics drifted::docs/published_metrics.json is not what the current harnesses produce. The committed manifest no longer describes the code, and tests/docs/test_published_metrics.py cannot see it because it only compares documents against the manifest."
+          echo "--- git status --porcelain ---"
+          echo "$drift"
+          echo "--- git diff --stat ---"
+          git --no-pager diff --stat -- docs/published_metrics.json
+          echo "--- git diff ---"
+          git --no-pager diff -- docs/published_metrics.json
+          echo "--- how to fix ---"
+          echo "Run 'python scripts/generate_published_metrics.py' locally, commit docs/published_metrics.json in the same commit as the harness change, and update the prose from the manifest -- never from memory."
+          exit 1
