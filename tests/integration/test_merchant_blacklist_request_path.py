@@ -30,7 +30,13 @@ VALID_PAYLOAD = {
     "amount": 500.00,
     "currency": "USD",
     "merchant_name": "Grocery Store",
-    "merchant_category": "groceries",
+    # D3: this said "groceries", which is NOT in KNOWN_MERCHANT_CATEGORIES and
+    # is not an alias of "grocery" either — an unknown category scoring
+    # merchant_risk_level = 0.0 and is_crypto = 0.0, and now a 422. "grocery" is
+    # the canonical spelling and produces the same two features, so the rule
+    # under test is unchanged. If "groceries" is a spelling real clients send,
+    # the fix is one entry in CATEGORY_ALIASES — not a hand-edited fixture.
+    "merchant_category": "grocery",
     "card_last4": "1234",
 }
 

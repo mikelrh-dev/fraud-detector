@@ -60,7 +60,16 @@ class TestScoringPipelineIntegration:
                     "amount": 5000.00,
                     "currency": "USD",
                     "merchant_name": "Electronics Store",
-                    "merchant_category": "electronics",
+# D3: this payload said "electronics", which is NOT in
+# KNOWN_MERCHANT_CATEGORIES. It was an unknown category scoring
+# merchant_risk_level = 0.0 and is_crypto = 0.0 — indistinguishable, to every
+# consumer, from a category the system understands and found safe — and the
+# endpoint now answers 422 for it. "retail" is the canonical equivalent for a
+# non-risky retailer and produces the same two features, so the assertions
+# below measure what they measured before. If "electronics" is a category this
+# product should accept, the fix is one entry in CATEGORY_ALIASES, not a
+# hand-edited fixture.
+                    "merchant_category": "retail",
                     "card_last4": "5678",
                 },
                 headers=auth_headers,
@@ -130,7 +139,7 @@ class TestScoringPipelineIntegration:
                 "amount": 5000.00,
                 "currency": "USD",
                 "merchant_name": "Electronics Store",
-                "merchant_category": "electronics",
+                "merchant_category": "retail",
                 "card_last4": "5678",
             },
             headers=auth_headers,
@@ -220,7 +229,16 @@ class TestVelocityWriteOrdering:
                     "amount": 5000.00,
                     "currency": "USD",
                     "merchant_name": "Electronics Store",
-                    "merchant_category": "electronics",
+# D3: this payload said "electronics", which is NOT in
+# KNOWN_MERCHANT_CATEGORIES. It was an unknown category scoring
+# merchant_risk_level = 0.0 and is_crypto = 0.0 — indistinguishable, to every
+# consumer, from a category the system understands and found safe — and the
+# endpoint now answers 422 for it. "retail" is the canonical equivalent for a
+# non-risky retailer and produces the same two features, so the assertions
+# below measure what they measured before. If "electronics" is a category this
+# product should accept, the fix is one entry in CATEGORY_ALIASES, not a
+# hand-edited fixture.
+                    "merchant_category": "retail",
                     "card_last4": "5678",
                 },
                 headers=auth_headers,
@@ -266,7 +284,7 @@ class TestVelocityWriteOrdering:
             "amount": 5000.00,
             "currency": "USD",
             "merchant_name": "Electronics Store",
-            "merchant_category": "electronics",
+            "merchant_category": "retail",
             "card_last4": "5678",
         }
 

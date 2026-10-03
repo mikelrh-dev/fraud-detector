@@ -11,13 +11,25 @@ import { Field } from "../components/Field";
 import { LABEL_MUTED } from "../lib/ui";
 import { MAIN_LANDMARK_ID } from "../lib/focusable";
 import { Input } from "../components/Input";
+import { Select } from "../components/Select";
+import { MERCHANT_CATEGORIES } from "../lib/merchant-vocabulary.generated";
 import type { ScoreResponse } from "../api/transactions";
 
 const transactionSchema = z.object({
   amount: z.coerce.number().positive("El monto debe ser mayor a 0"),
   currency: z.string().length(3, "La moneda debe tener 3 caracteres"),
   merchant_name: z.string().min(1, "El nombre del comercio es requerido"),
-  merchant_category: z.string().optional(),
+  // D3: derived from the generated vocabulary rather than restated here.
+  //
+  // The client cannot invent a value any more than the API accepts one, and
+  // the rule that says so is read off the same list the `<option>`s come from —
+  // so the two cannot disagree, which they would if this were an inline
+  // `z.enum([...])`. The empty string is the "(ninguna)" option and stays valid:
+  // the field is optional and a blank category is an incomplete record, which
+  // the backend reads exactly this way.
+  merchant_category: z
+    .union([z.literal(""), z.enum(MERCHANT_CATEGORIES)])
+    .optional(),
   card_last4: z
     .string()
     .length(4, "Debe tener 4 dígitos")
@@ -117,7 +129,19 @@ export default function CreateTransactionPage() {
             />
           </Field>
 
-          {/* Merchant Category (optional) */}
+          {/* Merchant Category (optional, closed list).
+              D3: this was a free-text input, which meant whoever typed here
+              decided which features fired - `is_crypto` and
+              `merchant_risk_level` both read the category, so a value outside
+              the vocabulary silently scored 0.0 and the API now answers 422.
+              A select cannot offer a value the backend refuses.
+
+              The options are the canonical wire values, untranslated. The
+              operator picking one needs to see the exact string that decides
+              the features, not a Spanish label for it; a display map is a
+              product decision, and a wrong one in a mapping table would be a
+              quieter bug than an honest value.
+          */}
           <Field
             id="merchant_category"
             label={
@@ -125,12 +149,16 @@ export default function CreateTransactionPage() {
                 Categoría <span className={LABEL_MUTED}>(opcional)</span>
               </>
             }
+            hint="Vacío si el comercio no tiene categoría conocida."
           >
-            <Input
-              type="text"
-              {...register("merchant_category")}
-              placeholder="Ej: retail, travel"
-            />
+            <Select {...register("merchant_category")} defaultValue="">
+              <option value="">(Ninguna)</option>
+              {MERCHANT_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </Select>
           </Field>
 
           {/* Card Last 4 */}

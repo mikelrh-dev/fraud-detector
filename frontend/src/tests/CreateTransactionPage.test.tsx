@@ -13,6 +13,7 @@ import { expectCarries } from "../test-utils/className";
 import { server } from "./mocks/server";
 import type { AuthState } from "../store/authStore";
 import { makeAuthState } from "../test-utils/authState";
+import { MERCHANT_CATEGORIES } from "../lib/merchant-vocabulary.generated";
 import type { ReactNode } from "react";
 import type { UserEvent } from "@testing-library/user-event";
 import type { ScoreResponse } from "../api/transactions";
@@ -66,13 +67,25 @@ const SCORE_FIXTURE: ScoreResponse = {
  * The five fields, in the order the page renders them. `id` is the value `Field`
  * derives the label's `htmlFor`, the control's id and the `-error` node's id
  * from, so it is the join key for every association asserted below.
+ *
+ * `tagName` was added by D3 and is not cosmetic. The merchant category stopped
+ * being a free-text `<input>` and became a closed `<select>`, and the
+ * association test used to assert `"INPUT"` for every field in this list — a
+ * single hardcoded tag that would have failed on the change for the wrong
+ * reason, and would have been "fixed" by deleting the merchant_category entry
+ * rather than by stating what it now is.
  */
 const FIELDS = [
-  { id: "amount", label: "Monto", value: "500" },
-  { id: "currency", label: "Moneda", value: "USD" },
-  { id: "merchant_name", label: "Comercio", value: "Test Store" },
-  { id: "merchant_category", label: "Categoría (opcional)", value: "retail" },
-  { id: "card_last4", label: /dígitos/i, value: "1234" },
+  { id: "amount", label: "Monto", value: "500", tagName: "INPUT" },
+  { id: "currency", label: "Moneda", value: "USD", tagName: "INPUT" },
+  { id: "merchant_name", label: "Comercio", value: "Test Store", tagName: "INPUT" },
+  {
+    id: "merchant_category",
+    label: "Categoría (opcional)",
+    value: "retail",
+    tagName: "SELECT",
+  },
+  { id: "card_last4", label: /dígitos/i, value: "1234", tagName: "INPUT" },
 ] as const;
 
 /**
@@ -243,9 +256,9 @@ describe("CreateTransactionPage — primitives migration", () => {
     // longer disagree. Asserted per field rather than once, because the failure
     // mode is per-field: one hand-rolled pair drifts while the other four hold.
     renderPage();
-    for (const { id, label } of FIELDS) {
+    for (const { id, label, tagName } of FIELDS) {
       const control = screen.getByLabelText(label);
-      expect(control.tagName).toBe("INPUT");
+      expect(control.tagName).toBe(tagName);
       expect(control.getAttribute("id")).toBe(id);
 
       const labelEl = document.querySelector(`label[for="${id}"]`);
@@ -253,21 +266,25 @@ describe("CreateTransactionPage — primitives migration", () => {
     }
   });
 
-  it("every input carries the shared INPUT_BASE chrome", () => {
+  it("every form control carries the shared INPUT_BASE chrome", () => {
     // Token-wise, so a class cannot be quietly dropped from `INPUT_BASE`
     // without this going red. The old hand-rolled string is a SUBSET of
     // `INPUT_BASE` (it has `focus:ring-2` where the constant has
     // `focus-visible:ring-2`, and it has no `disabled:opacity-50`), which is
     // why this is a real assertion and not a tautology.
+    //
+    // `input, select` rather than `input` since D3: the merchant category is a
+    // `<Select>` now, and a test scoped to `input` would have quietly stopped
+    // covering one of the five controls.
     renderPage();
-    const inputs = Array.from(document.querySelectorAll("input"));
-    expect(inputs).toHaveLength(5);
-    for (const input of inputs) {
-      expectCarries(input, INPUT_BASE);
+    const controls = Array.from(document.querySelectorAll("input, select"));
+    expect(controls).toHaveLength(5);
+    for (const control of controls) {
+      expectCarries(control, INPUT_BASE);
     }
   });
 
-  it("every input's focus ring fires on keyboard, never on mouse click", () => {
+  it("every form control's focus ring fires on keyboard, never on mouse click", () => {
     // Spelled as literals, NOT as `FOCUS_RING`, and that is the whole point of
     // a separate test. The test above compares the DOM against the imported
     // constant, so it CANNOT catch the constant regressing — verified by
@@ -280,11 +297,11 @@ describe("CreateTransactionPage — primitives migration", () => {
     // edit to `FOCUS_RING` reintroduces `focus:`, this goes red on the five
     // fields that used to carry the defect.
     renderPage();
-    const inputs = Array.from(document.querySelectorAll("input"));
-    expect(inputs).toHaveLength(5);
-    for (const input of inputs) {
-      expectCarries(input, "focus-visible:ring-2 focus-visible:ring-focus-ring");
-      for (const cls of Array.from(input.classList)) {
+    const controls = Array.from(document.querySelectorAll("input, select"));
+    expect(controls).toHaveLength(5);
+    for (const control of controls) {
+      expectCarries(control, "focus-visible:ring-2 focus-visible:ring-focus-ring");
+      for (const cls of Array.from(control.classList)) {
         // `/^focus:(?!-)/` matches a bare `focus:` variant and nothing else: the
         // lookahead is what keeps it off `focus-visible:...`, which also begins
         // with the literal text `focus-`.
@@ -411,5 +428,110 @@ describe("CreateTransactionPage — primitives migration", () => {
     ]) {
       expect(PAGE_SOURCE, `still re-types ${token}`).not.toContain(token);
     }
+  });
+});
+
+/**
+ * D3: the merchant category is a closed list, built from the backend's
+ * vocabulary rather than from a copy of it.
+ *
+ * The defect this replaced: `merchant_category` was free text, it drove
+ * `is_crypto` and `merchant_risk_level`, and an unknown value scored both of
+ * them 0.0 — a score indistinguishable from a merchant the system understands
+ * and found safe. The backend now answers 422 for an unknown value, so the
+ * frontend has to offer exactly the accepted set.
+ *
+ * The assertion that matters most here is the one that would fail if the list
+ * were hand-copied: the options are compared against
+ * `MERCHANT_CATEGORIES`, the module the GENERATOR wrote. A literal list in the
+ * page would satisfy every other test in this file and drift silently the first
+ * time somebody added a category to the backend.
+ */
+describe("CreateTransactionPage — closed merchant category (D3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuthStore.mockImplementation(
+      (selector?: (state: AuthState) => unknown) => {
+        const state = makeAuthState();
+        return selector ? selector(state) : state;
+      },
+    );
+  });
+
+  it("renders one option per canonical category, plus the empty one", () => {
+    renderPage();
+    const select = screen.getByLabelText("Categoría (opcional)") as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value);
+    // The empty option first, then the vocabulary in order. Asserted against the
+    // imported constant rather than a copy, so a backend category that has not
+    // reached the frontend fails HERE and not in production.
+    expect(values).toEqual(["", ...MERCHANT_CATEGORIES]);
+  });
+
+  it("the category field is a select, not a text input", () => {
+    // The specific regression. A `<select>` cannot be typed into, which is the
+    // whole mechanism; an `<input>` with a `list` attribute would still accept
+    // any string and this would pass on the tag name alone.
+    renderPage();
+    const select = screen.getByLabelText("Categoría (opcional)");
+    expect(select.tagName).toBe("SELECT");
+    expect(select).not.toHaveAttribute("type");
+    expect(document.querySelector('input[name="merchant_category"]')).toBeNull();
+  });
+
+  it("the page does not declare its own copy of the vocabulary", () => {
+    // Three categories together is enough to look like a list and few enough to
+    // be a slice. A single stray mention ("retail") is not a copy.
+    const declared = MERCHANT_CATEGORIES.filter((c) =>
+      PAGE_SOURCE.includes(`"${c}"`),
+    );
+    expect(declared, "the page restates the vocabulary instead of importing it")
+      .toEqual([]);
+  });
+
+  it("the chosen category is what reaches the network", async () => {
+    let body: unknown;
+    server.use(
+      http.post("*/api/v1/transactions", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(SCORE_FIXTURE);
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+    await fillRequired(user);
+    await user.selectOptions(
+      screen.getByLabelText("Categoría (opcional)"),
+      "cryptocurrency",
+    );
+    await user.click(submitButton());
+
+    await waitFor(() => expect(body).not.toBeUndefined());
+    expect(body).toMatchObject({ merchant_category: "cryptocurrency" });
+  });
+
+  it("leaving the category empty is still a valid submission", async () => {
+    // The field is optional and the column is nullable. D3 closed the VALUE
+    // set; it did not make the field required, and a form that now demands a
+    // category for every purchase would be a regression dressed as a fix.
+    let body: unknown;
+    server.use(
+      http.post("*/api/v1/transactions", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(SCORE_FIXTURE);
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+    await fillRequired(user);
+    expect(
+      (screen.getByLabelText("Categoría (opcional)") as HTMLSelectElement).value,
+    ).toBe("");
+    await user.click(submitButton());
+
+    await waitFor(() => expect(body).not.toBeUndefined());
+    expect(body).toMatchObject({ merchant_category: "" });
   });
 });

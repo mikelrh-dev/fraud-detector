@@ -43,7 +43,12 @@ class TestFullScoringPipeline:
             "amount": 50000.0,
             "currency": "USD",
             "merchant_name": "Suspicious Electronics",
-            "merchant_category": "electronics",
+            # D3: this said "electronics", which is NOT in
+            # KNOWN_MERCHANT_CATEGORIES — an unknown category scoring
+            # merchant_risk_level = 0.0 and is_crypto = 0.0, and now a 422.
+            # "retail" is the canonical non-risky retailer and produces the same
+            # two features, so this test still measures the pipeline.
+            "merchant_category": "retail",
             "card_last4": "9999",
             "user_id": "00000000-0000-0000-0000-000000000001",
         }

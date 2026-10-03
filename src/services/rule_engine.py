@@ -10,9 +10,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.core.ml_constants import (
+    AMOUNT_MAGNITUDE_CAP,
+    AMOUNT_MAGNITUDE_POINTS,
+    HIGH_AMOUNT_THRESHOLD,
     MERCHANT_ADVERSARIAL_CATEGORIES,
     MERCHANT_REGULATED_CATEGORIES,
     MERCHANT_RISK_CATEGORIES,
+    merchant_category_from_name,
     normalize_category,
 )
 
@@ -34,15 +38,50 @@ def _as_text(value: Any) -> str:
     return str(value)
 
 
+def _magnitude_points(amount: float) -> float:
+    """Extra rule points for how far `amount` sits above the high-amount line.
+
+    D2. `high_amount` was a switch, so 1,001.00 EUR and 400,000.00 USD scored an
+    identical 35 — a coffee and a quarter of bitcoin were the same evidence. The
+    term is `log10(amount / threshold)` times a per-decade weight, capped, which
+    gives the three properties the response needs:
+
+    - **zero AT the threshold**, so crossing the line changes nothing and the
+      base weight keeps its meaning (log10(1) == 0);
+    - **strictly increasing**, so a larger amount is never cheaper than a
+      smaller one — the property `tests/test_model_amount_monotonicity.py`
+      asserts for the ML model and that this rule engine had no counterpart for;
+    - **capped**, so the rule cannot buy a `fraud` classification on its own at
+      any amount. See AMOUNT_MAGNITUDE_CAP for the arithmetic.
+
+    A non-finite `amount` reaches here as `inf` (the A12 untrusted-input
+    branch), where `log10(inf)` is `inf` and the cap is what makes the result a
+    number. `inf` is therefore scored at the ceiling, which is the honest
+    reading of "an amount we could not read": as much as this rule ever claims.
+    """
+    if not amount > HIGH_AMOUNT_THRESHOLD:
+        return 0.0
+    decades = math.log10(amount / HIGH_AMOUNT_THRESHOLD)
+    return min(decades * AMOUNT_MAGNITUDE_POINTS, AMOUNT_MAGNITUDE_CAP)
+
+
 class RuleEngine:
     """Evaluates transactions against deterministic fraud rules.
 
-    Each rule has a fixed weight. The total score is the sum of fired
-    rule weights, capped at 100.
+    Each rule has a fixed weight, and the total score is the sum of the fired
+    rule weights, capped at 100. ONE EXCEPTION, and it is deliberate rather than
+    a forgotten detail: `high_amount` has a fixed BASE weight plus an
+    amount-derived term (`_magnitude_points`), because D2 established that a
+    switch cannot tell a 1,001 EUR coffee from a 400,000 USD wire. The base
+    weight below is still the whole of the claim for a transaction just over the
+    threshold, so the table stays readable as the rulebook it is.
     """
 
     WEIGHTS: dict[str, float] = {
-        "high_amount": 35,  # Increased from 25 to catch mid-range fraud better
+        # Base weight, increased from 25 to catch mid-range fraud better. D2
+        # added a magnitude term ON TOP of this, not in place of it, so the
+        # number that means "over the line" is still the number below.
+        "high_amount": 35,
         "high_velocity": 25,
         "velocity_burst": 30,
         "unusual_merchant": 20,
@@ -50,9 +89,6 @@ class RuleEngine:
         "off_hours_crypto": 25,
         "near_fraud": 15,  # Graph: user ≤2 hops from known fraudster
     }
-
-    # Amount threshold above which the high_amount rule fires
-    HIGH_AMOUNT_THRESHOLD: float = 1000.0
 
     def evaluate(
         self,
@@ -105,7 +141,7 @@ class RuleEngine:
             amount = float(raw_amount)
 
         # 1. High amount: amount > 1000 (catches mid-range fraud, not just whale txns)
-        if amount > self.HIGH_AMOUNT_THRESHOLD:
+        if amount > HIGH_AMOUNT_THRESHOLD:
             fired.append("high_amount")
 
         # 2. High velocity: > 3 transactions in 5 minutes (same user)
@@ -121,8 +157,17 @@ class RuleEngine:
         # unknown-value counter and log stay in the feature engine — this runs
         # in the same pipeline on the same transaction, and counting in both
         # would double every event.
+        #
+        # D1: the same vocabulary now includes the merchant NAME, so `binance`
+        # with the category `retail` reaches this rule exactly as it reaches the
+        # feature engine's `is_crypto`. One vocabulary, two readers — a crypto
+        # merchant that the features scored as crypto and the rules scored as
+        # retail would be the same disagreement D7-3 fixed for aliases, one
+        # field over.
         category = normalize_category(transaction.get("merchant_category"))
-        if recent_txns > 1 and category in MERCHANT_RISK_CATEGORIES:
+        name_category = merchant_category_from_name(transaction.get("merchant_name"))
+        effective_category = name_category or category
+        if recent_txns > 1 and effective_category in MERCHANT_RISK_CATEGORIES:
             fired.append("velocity_burst")
 
         # 3. Unusual merchant: blacklisted, or an inherently adversarial category.
@@ -165,8 +210,8 @@ class RuleEngine:
             except (ValueError, TypeError):
                 pass
 
-        is_adversarial = category in MERCHANT_ADVERSARIAL_CATEGORIES
-        is_regulated = category in MERCHANT_REGULATED_CATEGORIES
+        is_adversarial = effective_category in MERCHANT_ADVERSARIAL_CATEGORIES
+        is_regulated = effective_category in MERCHANT_REGULATED_CATEGORIES
         night_hour = hour is not None and 0 <= hour < 6
         has_corroboration = recent_txns > 1 or night_hour or blacklisted
 
@@ -183,7 +228,7 @@ class RuleEngine:
         # weight (unusual_hours, 10) and velocity still stacks on top, which
         # lands a night-time pharmacy with rapid transactions in review rather
         # than in fraud.
-        if night_hour and category in MERCHANT_ADVERSARIAL_CATEGORIES:
+        if night_hour and effective_category in MERCHANT_ADVERSARIAL_CATEGORIES:
             fired.append("off_hours_crypto")
 
         # 6. Near fraud: user or card is ≤2 hops from known fraudster (graph network)
@@ -191,7 +236,15 @@ class RuleEngine:
         if graph_features.get("is_near_fraud"):
             fired.append("near_fraud")
 
-        total = float(sum(self.WEIGHTS[r] for r in fired))
+        # D2: `high_amount` is a magnitude, not a switch. The base weight stays in
+        # WEIGHTS because that is the base rule and the other rules share the
+        # table; the amount-derived part is added here so `fired` stays the same
+        # list of rule NAMES it has always been — a consumer reading
+        # `fired_rules` gets "high_amount fired", and the size of the claim lives
+        # in the score where every other rule's weight lives.
+        weights = dict(self.WEIGHTS)
+        weights["high_amount"] += _magnitude_points(amount)
+        total = float(sum(weights[r] for r in fired))
         total = min(total, 100.0)
 
         return total, fired

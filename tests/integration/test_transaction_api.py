@@ -96,7 +96,12 @@ class TestCreateTransaction:
                 "amount": 500.00,
                 "currency": "USD",
                 "merchant_name": "Grocery Store",
-                "merchant_category": "groceries",
+                # D3: this said "groceries", which is NOT in
+                # KNOWN_MERCHANT_CATEGORIES and is not an alias of "grocery" —
+                # an unknown category scoring merchant_risk_level = 0.0 and
+                # is_crypto = 0.0, and now a 422. "grocery" is the canonical
+                # spelling and produces the same two features.
+                "merchant_category": "grocery",
                 "card_last4": "1234",
                 "user_id": "00000000-0000-0000-0000-000000000001",
             },
@@ -157,6 +162,151 @@ class TestCreateTransaction:
             },
         )
         assert response.status_code == 401
+
+
+class TestMerchantCategoryIsClosed:
+    """D3: the field that decides the features is not free text.
+
+    `merchant_category` drove `is_crypto` and `merchant_risk_level` (D1, D7-3),
+    so whoever posted the payload chose which features fired. An unknown value was
+    worse than a wrong one: it matched no set, scored both features 0.0, and
+    produced a score indistinguishable from a genuinely safe merchant — with a
+    counter and a log line nobody was reading. The edge now refuses it.
+    """
+
+    def _payload(self, category: object) -> dict:
+        return {
+            "amount": 500.00,
+            "currency": "USD",
+            "merchant_name": "Grocery Store",
+            "merchant_category": category,
+            "card_last4": "1234",
+        }
+
+    @pytest.mark.parametrize(
+        "invented",
+        [
+            "zzyzx-plugh-frobnitz",
+            "electronics",
+            "groceries",
+            "retail store",
+            "Ecommerce",
+        ],
+    )
+    async def test_an_unknown_category_is_a_422(
+        self,
+        test_client: AsyncClient,
+        auth_headers: dict,
+        invented: str,
+    ) -> None:
+        response = await test_client.post(
+            "/api/v1/transactions",
+            json=self._payload(invented),
+            headers=auth_headers,
+        )
+        assert response.status_code == 422, response.text
+        errors = response.json()["detail"]
+        assert isinstance(errors, list)
+        assert any(e["loc"][-1] == "merchant_category" for e in errors), errors
+
+    async def test_the_rejection_names_the_vocabulary(
+        self, test_client: AsyncClient, auth_headers: dict
+    ) -> None:
+        """A 422 that does not say what IS accepted is a support ticket.
+
+        The message has to point at the constant, because the operator who has
+        to fix the caller cannot read `src/core/ml_constants.py` from a JSON
+        error body.
+        """
+        response = await test_client.post(
+            "/api/v1/transactions",
+            json=self._payload("zzyzx-plugh-frobnitz"),
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+        message = " ".join(e["msg"] for e in response.json()["detail"])
+        assert "KNOWN_MERCHANT_CATEGORIES" in message, message
+        assert "src/core/ml_constants.py" in message, message
+
+    @pytest.mark.parametrize(
+        "category",
+        [
+            "retail",
+            "grocery",
+            "cryptocurrency",
+            # Alias spellings must still pass. Rejecting them would throw away
+            # the D7-3 alias work, which exists precisely because real feeds send
+            # them — and the accepted input has to match what a legitimate
+            # producer sends.
+            "cripto",
+            "crypto-exchange",
+            "Crypto-Exchange",
+            "crypto exchange",
+            "CRYPTO",
+            "BTC",
+            "  BITCOIN  ",
+            # Blank and absent are an incomplete record, not an unknown
+            # category: the column is nullable and the field is optional.
+            "",
+            "   ",
+        ],
+    )
+    async def test_a_known_category_or_spellings_still_pass_validation(
+        self, test_client: AsyncClient, auth_headers: dict, category: str
+    ) -> None:
+        """The schema is constructed directly.
+
+        Not through the endpoint: the create handler needs a database session,
+        a velocity store and three collaborators, so a schema-level question
+        would be answered by a pile of mocks. `TransactionCreate` is the thing
+        that decides, and asserting on it says exactly what it decides.
+        """
+        from src.schemas.transaction import TransactionCreate
+
+        validated = TransactionCreate(
+            amount=500.0,
+            currency="USD",
+            merchant_name="Grocery Store",
+            merchant_category=category,
+            card_last4="1234",
+        )
+        assert validated.merchant_category == category, (
+            "the value is returned UNCHANGED, so the stored row is the string "
+            "the client sent; both engines normalize it themselves"
+        )
+
+    async def test_an_absent_category_is_not_an_error(self) -> None:
+        from src.schemas.transaction import TransactionCreate
+
+        validated = TransactionCreate(
+            amount=500.0,
+            currency="USD",
+            merchant_name="Grocery Store",
+            card_last4="1234",
+        )
+        assert validated.merchant_category is None
+
+    async def test_the_edge_is_not_the_only_line_of_defence(self) -> None:
+        """D3 validated the boundary; the engine keeps its own observation.
+
+        `FeatureEngine` is driven by batch and replay consumers that never pass
+        through `TransactionCreate`, so deleting the counter and the warning would
+        remove the only instrumentation those paths have — and it is the
+        instrumentation that explains WHY D1 exists.
+        """
+        from src.core.counters import snapshot
+        from src.services.feature_engine import FeatureEngine
+
+        before = snapshot().get("unknown_merchant_category", 0)
+        FeatureEngine().transform(
+            {
+                "amount": 500.0,
+                "merchant_name": "Grocery Store",
+                "merchant_category": "zzyzx-plugh-frobnitz",
+                "timestamp": "2026-10-01T14:00:00+00:00",
+            }
+        )
+        assert snapshot().get("unknown_merchant_category", 0) == before + 1
 
 
 class TestGetTransaction:
@@ -495,7 +645,12 @@ class TestCreateTransactionVelocity:
         "amount": 500.00,
         "currency": "USD",
         "merchant_name": "Grocery Store",
-        "merchant_category": "groceries",
+        # D3: this said "groceries", which is NOT in
+        # KNOWN_MERCHANT_CATEGORIES and is not an alias of "grocery" — an
+        # unknown category scoring merchant_risk_level = 0.0 and is_crypto =
+        # 0.0, and now a 422. "grocery" is the canonical spelling and produces
+        # the same two features.
+        "merchant_category": "grocery",
         "card_last4": "1234",
         "user_id": "00000000-0000-0000-0000-000000000001",
     }
@@ -593,7 +748,12 @@ class TestCreateTransactionShapEnqueue:
         "amount": 500.00,
         "currency": "USD",
         "merchant_name": "Grocery Store",
-        "merchant_category": "groceries",
+        # D3: this said "groceries", which is NOT in
+        # KNOWN_MERCHANT_CATEGORIES and is not an alias of "grocery" — an
+        # unknown category scoring merchant_risk_level = 0.0 and is_crypto =
+        # 0.0, and now a 422. "grocery" is the canonical spelling and produces
+        # the same two features.
+        "merchant_category": "grocery",
         "card_last4": "1234",
         "user_id": "00000000-0000-0000-0000-000000000001",
     }

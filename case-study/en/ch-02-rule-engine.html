@@ -65,11 +65,11 @@
             <tr><th>Rule</th><th>Weight</th><th>Trigger</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">high_amount</td><td class="weight">35</td><td>amount &gt; $1,000</td></tr>
+            <tr><td class="mono">high_amount</td><td class="weight">35&ndash;60</td><td>amount &gt; $1,000, plus 8 per order of magnitude above it</td></tr>
             <tr><td class="mono">velocity_burst</td><td class="weight">30</td><td>&gt; 1 txn in 5 min in a risky category</td></tr>
             <tr><td class="mono">high_velocity</td><td class="weight">25</td><td>&gt; 3 txns in 5 minutes</td></tr>
             <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>night hours (00–06) + adversarial category</td></tr>
-            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>blacklisted merchant, adversarial category, or regulated category with corroboration</td></tr>
+            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>blacklisted merchant, adversarial category or merchant name, or regulated category with corroboration</td></tr>
             <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>user &le; 2 hops from a known fraudster (graph)</td></tr>
             <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transaction between 00:00–06:00</td></tr>
           </tbody>
@@ -84,10 +84,30 @@
         different — the category itself is the claim, so it stands alone. Corroboration for a
         regulated merchant means velocity (&gt; 1 txn in 5 min), a night hour (00–06) or a blacklisted
         merchant name.</p>
-        <p>Note how the weights encode domain logic: amount alone (35) outweighs odd timing alone
-        (10), but night-hour crypto activity (25) jumps near the top because the combination is far
-        more suspicious than either factor individually. These numbers are tunable configuration —
-        analysts can recalibrate risk policy without touching code or retraining anything.</p>
+<p>Note how the weights encode domain logic: amount alone (35 base, up to 60 at the ceiling)
+        outweighs odd timing alone (10), but night-hour crypto activity (25) jumps near the top
+        because the combination is far more suspicious than either factor individually. These
+        numbers are tunable configuration - analysts can recalibrate risk policy without touching
+        code or retraining anything.</p>
+        <p><code>high_amount</code> is the one rule whose weight depends on the transaction, and it
+        is worth being explicit about why. As a switch it scored 1,001 and 400,000 identically, so
+        a quarter of a bitcoin at an exchange and a coffee were the same evidence - and a real
+        400,000 USD transaction at <code>binance</code> came out at 24.1/100, "legitimate". It now
+        weighs <code>35 + min(8 &times; log10(amount / 1000), 25)</code>: 35.33 at 1,100, 43 at
+        10,000, 55.82 at 400,000. The <code>+25</code> ceiling is derived rather than chosen. The
+        rule layer carries 0.60 of the ensemble and the strictest amount tier thresholds at 40, so
+        a rule score above 66.67 reaches <code>fraud</code> by itself; the ceiling keeps one rule
+        from spending the whole scale on its own and collapsing the difference between
+        "suspicious" and "clearly fraud".</p>
+        <p>That transaction failed for a second reason as well. <code>merchant_category</code> said
+        <code>retail</code>, so the two features that know what kind of merchant this is -
+        <code>merchant_risk_level</code> and <code>is_crypto</code> - were both 0.0, and the
+        merchant's own name was never consulted by anything. Both engines now read
+        <code>merchant_name</code> through one shared vocabulary, matched by token and
+        case-insensitively: <code>binance</code> matches "Binance Exchange", "BINANCE.COM" and
+        "Binance Berlin", while "BinanceCard" and "PreBinance" do not. A name hit resolves to a
+        category and goes through the same tier test above, so it can only raise the risk, never
+        lower it.</p>
       </div>
     </section>
 

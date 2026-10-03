@@ -1,5 +1,10 @@
 import { cloneElement } from "react";
-import type { InputHTMLAttributes, ReactElement, ReactNode } from "react";
+import type {
+  InputHTMLAttributes,
+  ReactElement,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "react";
 import { FIELD_ERROR, FIELD_HINT, FIELD_LABEL } from "../lib/ui";
 
 /**
@@ -9,11 +14,19 @@ import { FIELD_ERROR, FIELD_HINT, FIELD_LABEL } from "../lib/ui";
  * WHY THE `Pick` RATHER THAN `ReactElement`: `cloneElement`'s fallback
  * overload is `cloneElement<P>(element: ReactElement<P>, props?: Partial<P> &
  * Attributes)`, so a bare `children: ReactElement` means `P = unknown` and
- * `Partial<unknown>` is `{}` — the injected attributes would then be checked
+ * `Partial<unknown>` is `{}` - the injected attributes would then be checked
  * against nothing at all. `Pick` at least constrains the injected literal
  * against real DOM attribute names and types.
  *
- * WHAT IT DOES NOT DO — and this is the important part: pinning `P` does NOT
+ * THE UNION, AND WHY IT IS A UNION NOW. This picked from
+ * `InputHTMLAttributes<HTMLInputElement>` alone, which made `<Field>` unusable
+ * with a `<select>`, and D3 needed one: the merchant category became a closed
+ * list. `Pick` over a union keeps the "lifted from the DOM typings" property
+ * that the point of the `Pick` is - all three attributes are declared by both
+ * element types, and if the DOM typings ever stopped declaring one, the key
+ * would stop compiling here rather than being silently accepted.
+ *
+ * WHAT IT DOES NOT DO - and this is the important part: pinning `P` does NOT
  * make the compiler reject a child that cannot accept these attributes.
  * `JSX.Element` is `ReactElement<any, any>`, which is bidirectionally
  * assignable, so a component taking zero props type-checks clean. Verified.
@@ -23,13 +36,13 @@ import { FIELD_ERROR, FIELD_HINT, FIELD_LABEL } from "../lib/ui";
  * THE HOLE, stated plainly, because for components it is the whole surface:
  * three of four misuses fail SILENTLY. A control that destructures only the
  * props it knows about, instead of spreading the rest onto its DOM node, drops
- * all three attributes with no error. So does a component that takes no props
- * at all, and so does a Fragment. Only a non-element child throws. The tests
+ * all three attributes with no error. So does a component that takes no props at
+ * all, and so does a Fragment. Only a non-element child throws. The tests
  * assert the wiring reached the real DOM element, which is the only thing that
- * catches this — no type can.
+ * catches this - no type can.
  */
 type FieldControlProps = Pick<
-  InputHTMLAttributes<HTMLInputElement>,
+  InputHTMLAttributes<HTMLInputElement> | SelectHTMLAttributes<HTMLSelectElement>,
   "id" | "aria-invalid" | "aria-describedby"
 >;
 

@@ -317,7 +317,19 @@ class TestRuleEngineMerchantCategory:
 
 
 class TestRuleEngineMultipleRules:
-    """Multiple rules can fire cumulatively."""
+    """Multiple rules can fire cumulatively.
+
+    D2 CHANGED THREE OF THESE TOTALS, and the change is deliberate rather than a
+    tolerance loosened to stay green. `high_amount` is no longer a flat 35: it is
+    35 for crossing the $1,000 line plus 8 points per order of magnitude above it,
+    capped at +25 (see `src/core/ml_constants.py` and
+    `tests/test_rule_engine_amount_magnitude.py`, which states the whole curve and
+    the monotonicity contract that motivated it). Every amount in this class is
+    10,000, so each total moves by exactly the same, spelled-out amount:
+
+        10,000 / 1,000 = 10       log10(10) = 1        8 * 1 = 8.00
+        high_amount = 35 + 8.00 = 43.00               (was 35)
+    """
 
     def test_high_amount_and_velocity(self):
         """High amount + high velocity should fire both."""
@@ -334,7 +346,9 @@ class TestRuleEngineMultipleRules:
         score, fired = engine.evaluate(tx, context=context)
         assert "high_amount" in fired
         assert "high_velocity" in fired
-        assert score == 60  # 35 + 25 (high_amount raised from 25, R3-005)
+        # 43 (high_amount: 35 base + 8 for one decade above $1,000)
+        # + 25 (high_velocity) = 68
+        assert score == pytest.approx(68.0)
 
     @pytest.mark.parametrize("hour", [0, 3, 5, 6, 12, 23])
     def test_high_amount_and_velocity_holds_at_every_boundary_hour(self, hour):
@@ -358,8 +372,8 @@ class TestRuleEngineMultipleRules:
         expected_extra = 10 if hour < 6 else 0
         assert "high_amount" in fired
         assert "high_velocity" in fired
-        assert score == 60 + expected_extra, (
-            f"hour {hour:02d}: expected {60 + expected_extra}, got {score} "
+        assert score == pytest.approx(68.0 + expected_extra), (
+            f"hour {hour:02d}: expected {68.0 + expected_extra}, got {score} "
             f"(fired {fired})"
         )
 
@@ -382,9 +396,10 @@ class TestRuleEngineMultipleRules:
         assert "unusual_merchant" in fired
         assert "unusual_hours" in fired
         assert "off_hours_crypto" in fired
-        # 35 (high_amount) + 20 (unusual_merchant)
-        # + 10 (unusual_hours) + 25 (off_hours_crypto) = 90
-        assert score == 90
+        # 43 (high_amount: 35 base + 8 for one decade above $1,000)
+        # + 20 (unusual_merchant)
+        # + 10 (unusual_hours) + 25 (off_hours_crypto) = 98
+        assert score == pytest.approx(98.0)
 
     def test_all_six_rules_fire_capped(self):
         """All rules firing should be capped at 100."""
@@ -405,7 +420,8 @@ class TestRuleEngineMultipleRules:
             "home_country": "US",
         }
         score, fired = engine.evaluate(tx, context=context)
-        # Total possible: 35 + 25 + 30 + 20 + 10 + 25 = 145 (capped at 100)
+        # Total possible: 51 (high_amount: 35 base + 8 * log10(100)) + 25 + 30
+        # + 20 + 10 + 25 = 161 (capped at 100)
         assert len(fired) == 6
         assert score == 100  # capped
 

@@ -66,11 +66,11 @@
             <tr><th>Regla</th><th>Peso</th><th>Disparador</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">high_amount</td><td class="weight">35</td><td>importe &gt; $1,000</td></tr>
+            <tr><td class="mono">high_amount</td><td class="weight">35&ndash;60</td><td>importe &gt; $1,000, m&aacute;s 8 por cada orden de magnitud por encima</td></tr>
             <tr><td class="mono">velocity_burst</td><td class="weight">30</td><td>&gt; 1 txn en 5 min en categoría de riesgo</td></tr>
             <tr><td class="mono">high_velocity</td><td class="weight">25</td><td>&gt; 3 txns en 5 minutos</td></tr>
             <tr><td class="mono">off_hours_crypto</td><td class="weight">25</td><td>horario nocturno (00-06) + categoría adversarial</td></tr>
-            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>merchant en blacklist, categoría adversarial, o categoría regulada con corroboración</td></tr>
+            <tr><td class="mono">unusual_merchant</td><td class="weight">20</td><td>merchant en blacklist, categoría adversarial o nombre de merchant, o categoría regulada con corroboración</td></tr>
             <tr><td class="mono">near_fraud</td><td class="weight">15</td><td>usuario ≤ 2 saltos de un defraudador (grafo)</td></tr>
             <tr><td class="mono">unusual_hours</td><td class="weight">10</td><td>transacción entre 00:00-06:00</td></tr>
           </tbody>
@@ -85,11 +85,29 @@
         Un casino es distinto — la categoría misma es la evidencia, así que se sostiene sola. La
         corroboración para un merchant regulado es velocidad (&gt; 1 txn en 5 min), hora nocturna
         (00-06) o nombre de merchant en blacklist.</p>
-        <p>Los pesos codifican lógica de dominio a propósito: el importe por sí solo (35) pesa más que el
-        horario sospechoso por sí solo (10), pero crypto de madrugada (25) salta casi al tope porque la
-        combinación es mucho más sospechosa que cualquiera de los factores por separado. Estos
-        números son configuración ajustable — los analistas pueden recalibrar la política de riesgo
-        sin tocar código ni reentrenar nada.</p>
+        <p>Los pesos codifican lógica de dominio a propósito: el importe por sí solo (35 de base, hasta 60
+        con el techo) pesa más que el horario sospechoso por sí solo (10), pero crypto de madrugada
+        (25) salta casi al tope porque la combinación es mucho más sospechosa que cualquiera de los
+        factores por separado. Estos números son configuración ajustable — los analistas pueden
+        recalibrar la política de riesgo sin tocar código ni reentrenar nada.</p>
+        <p><code>high_amount</code> es la única regla cuyo peso depende de la transacción, y vale la
+        pena decir por qué. Como interruptor puntuaba 1,001 y 400,000 de forma idéntica, así que un
+        cuarto de bitcoin en un exchange y un café eran la misma evidencia — y una transacción real
+        de 400.000 USD en <code>binance</code> salió en 24,1/100, "legítimo". Ahora pesa
+        <code>35 + min(8 &times; log10(importe / 1000), 25)</code>: 35,33 en 1.100, 43 en 10.000,
+        55,82 en 400.000. El techo de <code>+25</code> está derivado, no elegido: la capa de reglas
+        pesa 0.60 en el ensemble y el tier de importe más estricto corta en 40, así que una
+        puntuación de regla por encima de 66.67 llega a <code>fraud</code> por sí sola; el techo
+        evita que una sola regla gaste toda la escala y destruya la distinción entre "sospechoso" y
+        "claramente fraude".</p>
+        <p>Esa transacción falló por una segunda razón. <code>merchant_category</code> decía
+        <code>retail</code>, así que las dos features que saben qué tipo de comercio es - las
+        únicas que lo saben - quedaron en 0.0, y el nombre del propio comercio no lo consultaba
+        nadie. Ahora ambos motores leen <code>merchant_name</code> a través de un único vocabulario
+        compartido, con coincidencia por token e insensible a mayúsculas: <code>binance</code>
+        encuentra "Binance Exchange", "BINANCE.COM" y "Binance Berlin", mientras que "BinanceCard"
+        y "PreBinance" no. Un acierto por nombre resuelve a una categoría y pasa por la misma
+        comprobación de nivel de arriba, así que solo puede subir el riesgo, nunca bajarlo.</p>
       </div>
     </section>
 

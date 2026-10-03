@@ -6,6 +6,8 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.core.ml_constants import KNOWN_MERCHANT_CATEGORIES, normalize_category
+
 #: The storage resolution of `Transaction.amount` (a Numeric(12, 2) column).
 #: Anything finer than this cannot survive a round trip through the database.
 AMOUNT_QUANTUM = Decimal("0.01")
@@ -79,7 +81,61 @@ class TransactionCreate(BaseModel):
 
     currency: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code")
     merchant_name: str = Field(..., min_length=1, max_length=255)
+
     merchant_category: str | None = Field(None, max_length=100)
+
+    @field_validator("merchant_category")
+    @classmethod
+    def _reject_a_category_outside_the_vocabulary(cls, value: str | None) -> str | None:
+        """D3: the field that decides the features is not free text.
+
+        `merchant_category` drives `is_crypto` and `merchant_risk_level` (D1,
+        D7-3), so whoever posts the payload chose which features fired. That is a
+        design flaw rather than a logic bug: `cryptocurrency` and `retail` are
+        both legitimate values and the same merchant can be honestly described
+        either way, so the score depended on a string rather than on the
+        transaction. An unknown value was worse than wrong — it matched no set,
+        scored both features 0.0, and produced a score indistinguishable from a
+        genuinely safe merchant. So the edge refuses it with a 422 and names the
+        vocabulary.
+
+        VALIDATED ON THE NORMALIZED FORM, NOT THE RAW STRING. `cripto`,
+        `crypto-exchange` and `BTC` all resolve to `cryptocurrency`, and
+        rejecting them would throw away the alias work D7-3 exists for — the
+        frontend and the corpus both emit spellings, and the accepted input must
+        match what a legitimate producer sends.
+
+        RETURNED UNCHANGED, NOT CANONICALIZED. What the client sent is what gets
+        stored and scored, and both engines already run `normalize_category`
+        themselves. Rewriting it here would make the stored row disagree with
+        the request that created it — the exact scored-vs-persisted divergence
+        the `amount` quantizer above exists to prevent, in the other direction.
+
+        EMPTY IS NOT AN ERROR. The column is nullable and the field is optional;
+        a blank value is an incomplete record, not an attack, and it normalizes
+        to `""` which is how every consumer already spells "no category".
+
+        THIS IS NOT THE ONLY LINE OF DEFENCE. The feature engine keeps its
+        unknown-category counter and warning, because the engine is also driven
+        by batch and replay consumers that never pass through this endpoint —
+        validating the edge does not authorise deleting the instrumentation that
+        explains D1.
+        """
+        if value is None:
+            return None
+        canonical = normalize_category(value)
+        if canonical == "":
+            return value
+        if canonical not in KNOWN_MERCHANT_CATEGORIES:
+            raise ValueError(
+                f"merchant_category {value!r} is not a known category "
+                f"(it normalizes to {canonical!r}). Accepted values are "
+                f"KNOWN_MERCHANT_CATEGORIES in src/core/ml_constants.py, plus "
+                f"any spelling CATEGORY_ALIASES normalizes onto one of them; "
+                f"the frontend selector is generated from the same set."
+            )
+        return value
+
     card_last4: str = Field(..., min_length=4, max_length=4, description="Last 4 digits of card")
     # DEPRECATED: user_id is ignored server-side (F2). The authenticated
     # user's identity is always used. Kept for backward compatibility with

@@ -80,15 +80,23 @@ la transacción es `legitimate`.
 
 | Regla | Peso | Disparador |
 |---|---|---|
-| `high_amount` | 35 | importe > $1,000 |
+| `high_amount` | 35 a 60 | importe > $1,000, más 8 por cada orden de magnitud por encima |
 | `velocity_burst` | 30 | > 1 txn en 5 min en categoría de riesgo |
 | `high_velocity` | 25 | > 3 txns en 5 minutos |
 | `off_hours_crypto` | 25 | horario nocturno (0–6) **y** categoría adversarial |
-| `unusual_merchant` | 20 | merchant en blacklist **o** categoría adversarial **o** categoría regulada con corroboración |
+| `unusual_merchant` | 20 | merchant en blacklist **o** categoría adversarial o nombre de merchant **o** categoría regulada con corroboración |
 | `near_fraud` | 15 | usuario a ≤ 2 saltos de un defraudador (grafo) |
 | `unusual_hours` | 10 | txn entre 00:00–06:00 |
 
 El total es la suma de los pesos disparados, con tope 100.
+
+`high_amount` es la única regla cuyo peso depende de la transacción. Era un interruptor:
+1,001 y 400,000 puntuaban los mismos 35, y un cuarto de bitcoin en un exchange era la misma
+evidencia que un café. Ahora vale `35 + min(8 * log10(importe / 1000), 25)`: 35.33 en 1.100,
+43 en 10.000, 55.82 en 400.000. El techo de `+25` está derivado, no elegido: con la capa de
+reglas ponderada 0.60 y el tier de importe más estricto con umbral 40, una puntuación de
+regla superior a 66.67 llega a `fraud` por sí sola, así que el techo evita que una sola
+regla destruya la distinción entre sospechoso y fraude claro.
 
 Las categorías de merchant están jerarquizadas, y el nivel decide cuánto vale la categoría por
 sí sola (`src/core/ml_constants.py`):
@@ -104,6 +112,16 @@ sí sola (`src/core/ml_constants.py`):
 
 La división es deliberada. Una única lista plana de "riesgo" cobraba 20 puntos de regla a cada
 compra en una farmacia y a cada remesa sin ninguna evidencia.
+
+`merchant_name` también se lee, en ambos motores y a través de un único vocabulario compartido
+(`KNOWN_MERCHANT_PHRASES`). La coincidencia es por token y sin distinguir mayúsculas, así que
+`binance` encuentra `"Binance Exchange"`, `"BINANCE.COM"` y `"Binance Berlin"`, mientras que
+`BinanceCard` y `PreBinance` no. Un acierto resuelve a una categoría canónica y pasa por la
+misma comprobación de nivel que la categoría: los niveles de arriba deciden cuánto vale, no la
+tabla de nombres. Una entrada solo puede subir el nivel, nunca bajarlo. `merchant_category` es
+un conjunto cerrado: el endpoint responde 422 a cualquier cosa fuera de
+`KNOWN_MERCHANT_CATEGORIES`, y el selector del frontend se genera desde esa misma constante, no
+desde una copia.
 
 ### Capa 2 — Modelo ML (XGBoost)
 

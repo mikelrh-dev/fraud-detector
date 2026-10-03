@@ -14,6 +14,7 @@ from src.core.counters import unknown_merchant_category
 from src.core.ml_constants import (
     KNOWN_MERCHANT_CATEGORIES,
     MERCHANT_RISK_CATEGORIES,
+    merchant_category_from_name,
     normalize_category,
 )
 
@@ -172,10 +173,39 @@ class FeatureEngine:
                     "KNOWN_MERCHANT_CATEGORIES.",
                     category,
                 )
-        f_merchant_risk = 1.0 if category in MERCHANT_RISK_CATEGORIES else 0.0
+
+        # D1: the merchant NAME decides these two features too.
+        #
+        # `merchant_name` was never consulted, so a real 400,000 USD transaction
+        # at `binance` carrying the category `retail` scored `is_crypto = 0.0` and
+        # `merchant_risk_level = 0.0` — two of the ten features, and the only
+        # ones that know what kind of merchant this is, decided by a field the
+        # caller filled in. A quarter of bitcoin at an exchange scored as a
+        # retail purchase.
+        #
+        # NAME FIRST, AND WHY. A name identifies a business; a category labels
+        # one. When the two disagree, the name is the more specific evidence, and
+        # it is the harder of the two to set casually — nobody picks "binance" to
+        # make a transaction look calm. The reverse precedence would let a
+        # benign category overrule a recognised venue.
+        #
+        # A name hit can only RAISE the tier, never lower it: it contributes a
+        # canonical category that the same MERCHANT_RISK_CATEGORIES set then
+        # reads, and a merchant this vocabulary has never heard of contributes
+        # nothing at all rather than something safe.
+        #
+        # The unknown-category counter above still fires on an unrecognised
+        # CATEGORY even when the name was recognised. They are separate facts:
+        # the counter measures how often the category field is outside the
+        # vocabulary, which is what D1's instrumentation needs to stay
+        # trustworthy, and D3 validates the field at the edge for HTTP callers
+        # without removing this path for the batch consumers that never reach it.
+        name_category = merchant_category_from_name(transaction.get("merchant_name"))
+        effective_category = name_category or category
+        f_merchant_risk = 1.0 if effective_category in MERCHANT_RISK_CATEGORIES else 0.0
 
         # 9. Is crypto
-        f_is_crypto = 1.0 if category == "cryptocurrency" else 0.0
+        f_is_crypto = 1.0 if effective_category == "cryptocurrency" else 0.0
 
         # 10. Amount is round number (multiple of 100)
         f_round = 1.0 if amount > 0 and amount % 100 == 0 else 0.0

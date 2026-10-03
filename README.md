@@ -79,15 +79,23 @@ threshold (`>=`, since that is the start of the band). Everything below is `legi
 
 | Rule | Weight | Trigger |
 |---|---|---|
-| `high_amount` | 35 | amount > $1,000 |
+| `high_amount` | 35 to 60 | amount > $1,000, plus 8 per order of magnitude above it |
 | `velocity_burst` | 30 | > 1 txn in 5 min in a risky category |
 | `high_velocity` | 25 | > 3 txns in 5 minutes |
-| `off_hours_crypto` | 25 | night hours (0–6) **and** an adversarial category |
-| `unusual_merchant` | 20 | blacklisted merchant **or** adversarial category **or** regulated category with corroboration |
-| `near_fraud` | 15 | user ≤ 2 hops from a known fraudster (graph) |
-| `unusual_hours` | 10 | txn between 00:00–06:00 |
+| `off_hours_crypto` | 25 | night hours (0-6) **and** an adversarial category |
+| `unusual_merchant` | 20 | blacklisted merchant **or** adversarial category or merchant name **or** regulated category with corroboration |
+| `near_fraud` | 15 | user = 2 hops from a known fraudster (graph) |
+| `unusual_hours` | 10 | txn between 00:00-06:00 |
 
 The total is the sum of fired weights, capped at 100.
+
+`high_amount` is the one rule whose weight depends on the transaction. It used to be a
+switch - 1,001 and 400,000 both scored 35 - and a quarter of a bitcoin at an exchange was
+the same evidence as a coffee. It is now `35 + min(8 * log10(amount / 1000), 25)`: 35.33 at
+1,100, 43 at 10,000, 55.82 at 400,000. The `+25` ceiling is derived, not chosen - with the
+rule layer weighted 0.60 and the strictest amount tier thresholding at 40, a rule score
+above 66.67 reaches `fraud` on its own, so the ceiling keeps one rule from collapsing the
+distinction between suspicious and clearly fraud.
 
 Merchant categories are tiered, and the tier decides how much the category alone is worth
 (`src/core/ml_constants.py`):
@@ -103,6 +111,15 @@ Merchant categories are tiered, and the tier decides how much the category alone
 
 The split is deliberate. One flat "risky" list charged 20 rule points to every pharmacy
 purchase and every remittance with no evidence at all.
+
+`merchant_name` is read too, by both engines and through one shared vocabulary
+(`KNOWN_MERCHANT_PHRASES`). Matching is token-based and case-insensitive, so `binance`
+matches `"Binance Exchange"`, `"BINANCE.COM"` and `"Binance Berlin"` while `BinanceCard`
+and `PreBinance` do not. A hit resolves to a canonical category and then goes through the
+same tier test as the category - the tiers above decide what it is worth, not the name
+table. An entry only ever raises the tier; it never lowers one. `merchant_category` is a
+closed set: the endpoint answers 422 for anything outside `KNOWN_MERCHANT_CATEGORIES`,
+and the frontend selector is generated from that same constant rather than from a copy.
 
 ### Layer 2 — ML Model (XGBoost)
 
