@@ -95,9 +95,11 @@
         cuarto de bitcoin en un exchange y un café eran la misma evidencia — y una transacción real
         de 400.000 USD en <code>binance</code> salió en 24,1/100, "legítimo". Ahora pesa
         <code>35 + min(8 &times; log10(importe / 1000), 25)</code>: 35,33 en 1.100, 43 en 10.000,
-        55,82 en 400.000. El techo de <code>+25</code> está derivado, no elegido: la capa de reglas
-        pesa 0.60 en el ensemble y el tier de importe más estricto corta en 40, así que una
-        puntuación de regla por encima de 66.67 llega a <code>fraud</code> por sí sola; el techo
+        55,82 en 400.000. El techo de <code>+25</code> está derivado, no elegido: el tier de
+        importe más estricto corta en 40, así que una puntuación de regla por encima de 66.67
+        llega a <code>fraud</code> por sí sola <em>en un importe del tier crítico</em>; por debajo
+        de 50.000,01 esa misma evidencia se degrada a <code>review</code> para un analista en
+        lugar de bloquear. El techo
         evita que una sola regla gaste toda la escala y destruya la distinción entre "sospechoso" y
         "claramente fraude".</p>
         <p>Esa transacción falló por una segunda razón. <code>merchant_category</code> decía

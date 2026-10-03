@@ -95,8 +95,10 @@
         400,000 USD transaction at <code>binance</code> came out at 24.1/100, "legitimate". It now
         weighs <code>35 + min(8 &times; log10(amount / 1000), 25)</code>: 35.33 at 1,100, 43 at
         10,000, 55.82 at 400,000. The <code>+25</code> ceiling is derived rather than chosen. The
-        rule layer carries 0.60 of the ensemble and the strictest amount tier thresholds at 40, so
-        a rule score above 66.67 reaches <code>fraud</code> by itself; the ceiling keeps one rule
+        strictest amount tier thresholds at 40, so
+        a rule score above 66.67 reaches <code>fraud</code> by itself <em>on a critical-tier
+        amount</em>; below 50,000.01 that same evidence is downgraded to <code>review</code> for
+        an analyst instead of a block. The ceiling keeps one rule
         from spending the whole scale on its own and collapsing the difference between
         "suspicious" and "clearly fraud".</p>
         <p>That transaction failed for a second reason as well. <code>merchant_category</code> said

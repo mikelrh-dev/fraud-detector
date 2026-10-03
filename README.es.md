@@ -76,6 +76,27 @@ tiers son semiabiertos `[min, max)`, así que no hay huecos en un límite. La ba
 arranca al 75% del umbral del tier (`>=`, porque ese es el comienzo de la banda). Por debajo,
 la transacción es `legitimate`.
 
+Ese `risk_score` se publica, se persiste y se muestra en la UI, pero **no** decide la
+clasificación. `ScoringService` enruta sobre las puntuaciones de cada capa:
+
+```
+fraud      : ml_score > threshold, OR (rule_score > threshold AND amount >= 50,000.01)
+review     : not fraud, and (rule_score > threshold OR ml_score > threshold * 0.75)
+legitimate : otherwise
+```
+
+El motivo es que los pesos arbitraban. Con ML en 0.25 del ensemble, un `ml_score` de 85 contra
+una capa de reglas silenciosa producía un `risk_score` de 21.25 y se clasificaba como
+`legitimate`: el veto del modelo quedaba multiplicado por el mismo peso que sostiene antes de
+compararse. `50,000.01` es el `min_amount` del tier crítico, leído de `settings.threshold_tiers`
+en lugar de repetirse como constante: por debajo de él, una transacción con evidencia fuerte de
+reglas va a `review` para un analista y nunca a bloqueo.
+
+Esas bandas necesitan ambas capas. Con el modelo caído no hay capa ML contra la que enrutar, así
+que una transacción degradada vuelve a las bandas de `risk_score` de arriba, con los pesos
+redistribuidos entre las capas que sí produjeron valor. Por tanto, la clasificación en modo
+degradado no cambia.
+
 ### Capa 1 — Motor de Reglas (determinista, tope 100)
 
 | Regla | Peso | Disparador |
@@ -93,9 +114,10 @@ El total es la suma de los pesos disparados, con tope 100.
 `high_amount` es la única regla cuyo peso depende de la transacción. Era un interruptor:
 1,001 y 400,000 puntuaban los mismos 35, y un cuarto de bitcoin en un exchange era la misma
 evidencia que un café. Ahora vale `35 + min(8 * log10(importe / 1000), 25)`: 35.33 en 1.100,
-43 en 10.000, 55.82 en 400.000. El techo de `+25` está derivado, no elegido: con la capa de
-reglas ponderada 0.60 y el tier de importe más estricto con umbral 40, una puntuación de
-regla superior a 66.67 llega a `fraud` por sí sola, así que el techo evita que una sola
+43 en 10.000, 55.82 en 400.000. El techo de `+25` está derivado, no elegido: el tier de
+importe más estricto corta en 40, así que una puntuación de
+regla superior a 66.67 llega a `fraud` por sí sola en un importe del tier crítico, así que el
+techo evita que una sola
 regla destruya la distinción entre sospechoso y fraude claro.
 
 Las categorías de merchant están jerarquizadas, y el nivel decide cuánto vale la categoría por

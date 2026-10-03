@@ -43,8 +43,27 @@ flowchart LR
     R --> E[EnsembleScorer]
     M --> E
     C --> E
-    E --> X[Classification]
+    E --> X[Routed classification]
 ```
+
+La clasificación se decide sobre las capas, no sobre `ensemble_score`:
+
+```
+fraud      : ml_score > threshold, OR (rule_score > threshold AND amount >= CRITICAL_FLOOR)
+review     : not fraud, and (rule_score > threshold OR ml_score > threshold * 0.75)
+legitimate : otherwise
+```
+
+`CRITICAL_FLOOR` es el `min_amount` del último tier (`critical`) de
+`settings.threshold_tiers`, leído de la configuración en `src/services/scoring_service.py`
+(`_critical_floor`) y no repetido como constante. `ensemble_score` se sigue calculando y
+persistiendo con `EnsembleScorer.combine`, pero ya no decide. Ver
+[[concepts/risk-classification]].
+
+Estas bandas requieren ambas capas. Si el modelo no está cargado no hay capa ML contra la que
+enrutar, así que una transacción degradada vuelve a las bandas de `ensemble_score`
+(`combine` redistribuyendo los pesos entre las capas que sí produjeron valor, y después
+`EnsembleScorer.classify`). La clasificación en modo degradado no cambia.
 
 ## Interpretation
 

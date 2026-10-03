@@ -778,10 +778,20 @@ class TestCreateTransactionShapEnqueue:
             "predict",
             lambda features: 80.0,
         )
+        # The seam moved. `compute_scores` used to hand the verdict to
+        # `EnsembleScorer.classify`; it now routes on the layer scores
+        # themselves (`ScoringService._classify_routed`), so forcing a verdict
+        # means forcing that decision rather than the ensemble's arithmetic.
+        # Only the *mocking* changed — these tests are about which stream a
+        # given classification produces, and every assertion below still says
+        # that. Forcing the verdict through the ensemble's `classify` instead
+        # would no longer work, because with ml 80 against threshold 70 the
+        # routed policy is `fraud` on its own and no patch of the ensemble
+        # could make it `review` or `legitimate`.
         monkeypatch.setattr(
-            transactions_api._ensemble_scorer,
-            "classify",
-            lambda score, threshold: classification,
+            transactions_api._scoring_service,
+            "_classify_routed",
+            lambda **layer_scores: classification,
         )
         # A19: the endpoint no longer publishes to Redis directly; it stages a
         # row in the same transaction. The property under test is unchanged —

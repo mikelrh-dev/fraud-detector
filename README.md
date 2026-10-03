@@ -75,6 +75,26 @@ A score must be **strictly greater** than the tier threshold to be `fraud`; the 
 half-open `[min, max)` so there is no gap at a boundary. `review` starts at 75% of the tier
 threshold (`>=`, since that is the start of the band). Everything below is `legitimate`.
 
+That `risk_score` is published, persisted and shown in the UI, but it does **not** decide
+the classification. `ScoringService` routes on the layer scores instead:
+
+```
+fraud      : ml_score > threshold, OR (rule_score > threshold AND amount >= 50,000.01)
+review     : not fraud, and (rule_score > threshold OR ml_score > threshold * 0.75)
+legitimate : otherwise
+```
+
+The reason is that the weights used to arbitrate. With ML at 0.25 of the ensemble, an
+`ml_score` of 85 against a quiet rule layer produced a `risk_score` of 21.25 and classified
+`legitimate` — the model's veto was multiplied down by the very weight it holds before being
+compared. `50,000.01` is the `min_amount` of the critical tier, read from
+`settings.threshold_tiers` rather than restated: below it, a rule-strong transaction is
+`review` for an analyst and never a block.
+
+Those bands need both layers. With the model down there is no ML layer to route against, so a
+degraded transaction falls back to the `risk_score` bands above, with the weights redistributed
+over the layers that did produce a value. Degraded classification is therefore unchanged.
+
 ### Layer 1 — Rule Engine (deterministic, capped at 100)
 
 | Rule | Weight | Trigger |
@@ -93,8 +113,8 @@ The total is the sum of fired weights, capped at 100.
 switch - 1,001 and 400,000 both scored 35 - and a quarter of a bitcoin at an exchange was
 the same evidence as a coffee. It is now `35 + min(8 * log10(amount / 1000), 25)`: 35.33 at
 1,100, 43 at 10,000, 55.82 at 400,000. The `+25` ceiling is derived, not chosen - with the
-rule layer weighted 0.60 and the strictest amount tier thresholding at 40, a rule score
-above 66.67 reaches `fraud` on its own, so the ceiling keeps one rule from collapsing the
+strictest amount tier thresholding at 40, a rule score above 66.67 on a critical-tier amount
+reaches `fraud` on its own, so the ceiling keeps one rule from collapsing the
 distinction between suspicious and clearly fraud.
 
 Merchant categories are tiered, and the tier decides how much the category alone is worth

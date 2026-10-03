@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from src.core.config import settings
 from src.core.counters import degraded_ml_layer
 from src.services.ensemble import EnsembleScorer
 from src.services.feature_engine import FeatureEngine
@@ -21,6 +22,47 @@ from src.services.ml_model import MLModelService
 from src.services.rule_engine import RuleEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _critical_floor() -> float:
+    """The amount at or above which rule evidence alone is enough to block.
+
+    Read from the last threshold tier rather than written down here: the floor
+    IS the critical tier's lower boundary, so the two cannot drift apart when
+    an operator reconfigures the tiers. Note the boundary is **50000.01**, not
+    50000 — the tiers are half-open `[min, max)` and the high tier runs up to
+    50000.01 inclusive, so 50000.00 is a high-tier amount and 50000.01 is the
+    first critical one.
+
+    Read at call time rather than at import so an env override of the tier
+    table takes effect the way it does in ``EnsembleScorer.get_threshold``.
+    """
+    return float(settings.threshold_tiers[-1]["min_amount"])
+
+
+def _meets_critical_floor(amount: object) -> bool:
+    """Whether `amount` reaches the critical floor. Total: never raises.
+
+    The routed policy compares the raw amount against the floor, and a raw amount
+    is the one value here that arrives from outside the type system: `amount >=
+    FLOOR` raises `TypeError` on a string, and on NaN it evaluates False while
+    `inf` evaluates True — so a broken amount would silently become either a
+    block or nothing, depending on which flavour of broken it was.
+
+    An amount that cannot be compared must make the gate False. Not True: "the
+    amount is critical" is a claim about a number, and an unreadable amount is
+    missing evidence for that claim rather than evidence for it. Closing the
+    gate leaves the route the rules already earned — `rule > threshold` on its
+    own is a `review` — which matches `EnsembleScorer.get_threshold`, already
+    failing closed on a non-finite amount.
+
+    `None` and unparseable strings land on 0.0 through `_to_float`, and 0.0 is
+    below every floor; a numeric string like `"60000"` is genuinely a critical
+    amount and is allowed through, because refusing it would be inventing a
+    different verdict for a value that does parse.
+    """
+    value = _to_float(amount)
+    return math.isfinite(value) and value >= _critical_floor()
 
 
 def _to_float(value: object) -> float:
@@ -83,6 +125,79 @@ class ScoringService:
             "avg_amount": _to_float(np.mean(values)) if values else 0.0,
             "std_amount": _to_float(np.std(values)) if len(values) > 1 else 0.0,
         }
+
+    def _classify_routed(
+        self,
+        rule_score: float,
+        ml_score: float | None,
+        context_score: float,
+        threshold: float,
+        amount: float,
+    ) -> str:
+        """Route on the layers, not on their weighted average.
+
+        R2. This replaces ``EnsembleScorer.classify(ensemble_score, threshold)``,
+        which made one number decide for three signals. The problem was that the
+        weights, not the evidence, ended up arbitrating:
+
+        - The model holds 0.25 of the ensemble, so ``ml_score`` 85 against a
+          quiet rule layer produced an ensemble of 21.25 against a threshold of
+          70 — ``legitimate``. The model's veto was multiplied down by the very
+          weight it holds before being compared. Here the layer is compared to
+          the threshold directly, so an ML-only signal can block.
+        - Symmetrically, rules scoring 100 on a 400k transfer were diluted to
+          64.49 and then had to clear a threshold calibrated for one number.
+          Here the rule layer clears the threshold on its own evidence, so long
+          as the amount is one where blocking is proportionate.
+
+        The bands:
+
+            fraud      ml > threshold, OR (rule > threshold AND amount >= FLOOR)
+            review     not fraud, and (rule > threshold OR ml > threshold * 0.75)
+            legitimate otherwise
+
+        The FLOOR is what keeps the rule branch proportionate: a rule-strong
+        purchase BELOW the critical amount is a `review` for an analyst, never a
+        block. That is the intended downgrade, and it is why the rule branch
+        cannot be a plain veto the way the ML branch is — the rules speak in
+        patterns and a pattern firing on a small purchase is not evidence that
+        the purchase itself is worth blocking.
+
+        DEGRADED: the bands above only apply when the model is up. ``ml_score``
+        is ``None`` when the artifact failed to load, and then there is no ML
+        layer to route against — the bands would be deciding with one layer
+        missing, which is a second scoring policy that only runs when the system
+        is already broken. So an absent layer falls back to exactly the shipped
+        path: the A15 ensemble (weights redistributed across the layers that did
+        produce a value) and the same threshold. Degraded verdicts are therefore
+        unchanged, which is the only defensible reading of "unchanged": the
+        routed policy is for when both layers are present, not a new behaviour
+        to discover during an outage.
+        """
+        if ml_score is None:
+            return self.ensemble_scorer.classify(
+                self.ensemble_scorer.combine(
+                    rule_score=rule_score,
+                    ml_score=None,
+                    context_score=context_score,
+                ),
+                threshold,
+            )
+
+        # A non-finite ml_score cannot be compared to anything. `NaN > x` is
+        # False, so leaving it unguarded would silently *drop* the veto —
+        # failing open on a layer that produced garbage. `EnsembleScorer.classify`
+        # already fails closed on a non-finite score; this keeps that stance.
+        ml_speaks = math.isfinite(ml_score)
+
+        rule_clears = rule_score > threshold
+        ml_clears = ml_speaks and ml_score > threshold
+
+        if ml_clears or (rule_clears and _meets_critical_floor(amount)):
+            return "fraud"
+        if rule_clears or (ml_speaks and ml_score > threshold * 0.75):
+            return "review"
+        return "legitimate"
 
     async def compute_scores(
         self,
@@ -155,7 +270,13 @@ class ScoringService:
             ml_score=ml_score,
             context_score=context_score,
         )
-        classification = self.ensemble_scorer.classify(ensemble_score, threshold)
+        classification = self._classify_routed(
+            rule_score=rule_score,
+            ml_score=ml_score,
+            context_score=context_score,
+            threshold=threshold,
+            amount=amount,
+        )
 
         # A15: the ML layer is absent from the arithmetic but its stored value
         # stays a float, because FraudScore.ml_score is a non-nullable column
