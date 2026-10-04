@@ -6,9 +6,17 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  Customized,
 } from "recharts";
 import { THEME, formatCompactTick } from "../lib/chart-theme";
-import { needsVisibleDots, type DailyAverage } from "../lib/trend";
+import {
+  countUnmeasuredDays,
+  findGapRuns,
+  gapRunSpan,
+  needsVisibleDots,
+  type DailyAverage,
+  type GapRun,
+} from "../lib/trend";
 import { ChartTooltip } from "./ChartTooltip";
 
 /**
@@ -30,6 +38,73 @@ export type { DailyAverage };
 
 interface ScoreTrendChartProps {
   data: DailyAverage[];
+}
+
+/**
+ * The recharts props this layer needs, all injected at render time by
+ * `<Customized>` and all optional here: recharts `cloneElement`s the component
+ * with its own internal chart state, so these arrive as props the JSX never
+ * passes. They are typed as optional rather than required because that is what
+ * they are, and a required prop would be a lie the component cannot satisfy when
+ * recharts draws nothing.
+ */
+interface GapBandLayerProps {
+  runs: GapRun[];
+  dates: string[];
+  xAxisMap?: Record<string, { scale: (value: string) => number }>;
+  offset?: { top: number; left: number; width: number; height: number };
+}
+
+/**
+ * Shades the days that were not measured.
+ *
+ * The point of this layer: `connectNulls={false}` correctly refuses to draw
+ * through a day with no transactions, but a refusal is invisible. Three
+ * isolated points and four blank columns is indistinguishable from a chart that
+ * failed to load, so the honest gaps were indistinguishable from an honest bug.
+ * This states the same fact in pixels.
+ *
+ * The geometry comes from the chart's own scale rather than from constants, so
+ * a band cannot drift away from the axis it shades, and recharts' own
+ * `ReferenceArea` is deliberately not used — it cannot cover day cells on this
+ * point-scale axis and drops single-day runs entirely. See `gapRunSpan` for the
+ * measurement that decided it.
+ */
+function GapBandLayer({ runs, dates, xAxisMap, offset }: GapBandLayerProps) {
+  const xScale = xAxisMap?.[0]?.scale;
+  if (!xScale || !offset || runs.length === 0) return null;
+
+  // One x per day, in window order, so run indices address the same day the
+  // data does.
+  const dayXs = dates.map((date) => xScale(date));
+  // `flatMap` rather than `map` + filter so a dropped span narrows the type
+  // instead of leaving a `span | null` to assert away.
+  const spans = runs.flatMap((run) => {
+    const span = gapRunSpan(run, dayXs, { left: offset.left, width: offset.width });
+    return span ? [{ run, span }] : [];
+  });
+  if (spans.length === 0) return null;
+
+  return (
+    <g data-testid="trend-gap-bands">
+      {spans.map(({ run, span }) => (
+        <rect
+          key={run.startIndex}
+          data-testid="trend-gap-band"
+          // The covered days, on the element itself: "no band over a measured
+          // day" is then checkable from the DOM instead of inferred from
+          // geometry that a scale change could invalidate.
+          data-gap-dates={dates.slice(run.startIndex, run.endIndex + 1).join(",")}
+          x={span.x}
+          y={offset.top}
+          width={span.width}
+          height={offset.height}
+          fill={THEME.gridSoft}
+          fillOpacity={0.55}
+        />
+      ))}
+    </g>
+  );
 }
 
 export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
@@ -56,6 +131,13 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
   // a live panel claiming nothing. The dots are the fallback that makes the one
   // measurement visible; they are NOT a claim that the trend is flat.
   const showDots = needsVisibleDots(data);
+
+  // The gaps, marked as gaps. `connectNulls={false}` below draws the truth and
+  // says nothing about why, which is what left isolated points looking like a
+  // failed panel.
+  const gapRuns = findGapRuns(data);
+  const unmeasuredDays = countUnmeasuredDays(data);
+  const dates = data.map((day) => day.date);
 
   return (
     <div className="bg-slate-900 rounded-lg p-4">
@@ -96,6 +178,11 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
             tickLine={false}
             tickFormatter={formatCompactTick}
           />
+          {/* Declared before the plotted series so the bands paint UNDER the
+              stroke and dots; SVG has no z-index, so document order is it. */}
+          <Customized
+            component={<GapBandLayer runs={gapRuns} dates={dates} />}
+          />
           <Tooltip
             cursor={{ stroke: THEME.gridSoft, strokeWidth: 1 }}
             content={<ChartTooltip valueFormatter={(v) => v.toFixed(1)} />}
@@ -128,6 +215,16 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
           />
         </AreaChart>
       </ResponsiveContainer>
+      {/* Chart metadata, under the plot and inside the card, so it reads as a
+          note about the axis rather than a stray label floating in the panel.
+          Absent when every day was measured: "0 de 7 días sin transacciones"
+          is true and says nothing a complete chart has not already shown. The
+          fully-unmeasured window returns above and never reaches this. */}
+      {unmeasuredDays > 0 && (
+        <p data-testid="trend-gap-caption" className="mt-2 text-xs text-slate-400">
+          {`${unmeasuredDays} de ${data.length} días sin transacciones`}
+        </p>
+      )}
     </div>
   );
 }

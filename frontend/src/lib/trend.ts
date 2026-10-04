@@ -76,6 +76,133 @@ export function needsVisibleDots(data: DailyAverage[]): boolean {
 }
 
 /**
+ * A maximal stretch of consecutive days that carry no measurement.
+ *
+ * A RUN, not a day: the reader needs to see "nothing happened across these four
+ * days" as one region. Shading each unmeasured day separately draws hairlines
+ * between them that read as four separate holes rather than one four-day one.
+ */
+export interface GapRun {
+  /** Index of the first unmeasured day in the stretch. */
+  startIndex: number;
+  /** Index of the last unmeasured day in the stretch (inclusive). */
+  endIndex: number;
+}
+
+/**
+ * Every maximal run of consecutive unmeasured days, in window order.
+ *
+ * This is the map that makes an honest gap legible. `connectNulls={false}`
+ * correctly refuses to draw a line across a day with no transactions, but a
+ * reader cannot tell that refusal from a broken panel — so the same fact has to
+ * be stated in pixels and in words instead.
+ *
+ * `!== null`, never a truthiness test, for the reason `longestMeasuredRun`
+ * already carries: a measured average of exactly 0 is a real reading, and
+ * treating it as unmeasured would put a band on top of a data point.
+ */
+export function findGapRuns(data: DailyAverage[]): GapRun[] {
+  const runs: GapRun[] = [];
+  let start = -1;
+  // One step past the end so a run that reaches the last day is still closed;
+  // `i < data.length` keeps that final step from reading past the array.
+  for (let i = 0; i <= data.length; i++) {
+    const unmeasured = i < data.length && data[i].avgScore === null;
+    if (unmeasured && start === -1) start = i;
+    if (!unmeasured && start !== -1) {
+      runs.push({ startIndex: start, endIndex: i - 1 });
+      start = -1;
+    }
+  }
+  return runs;
+}
+
+/**
+ * How many days in the window carry no measurement.
+ *
+ * Days, NOT runs — "3" here would describe the shape of the holes rather than
+ * how much of the window is missing, which is the number an analyst asking
+ * "how much of this week do I actually have?" wants.
+ */
+export function countUnmeasuredDays(data: DailyAverage[]): number {
+  return data.reduce(
+    (total, day) => (day.avgScore === null ? total + 1 : total),
+    0,
+  );
+}
+
+/** The plot rectangle recharts measured, in SVG pixels. */
+export interface PlotBounds {
+  left: number;
+  width: number;
+}
+
+/** One run's pixel span along the x axis. */
+export interface DaySpan {
+  x: number;
+  width: number;
+}
+
+/**
+ * Pixel span covering exactly the days of one gap run.
+ *
+ * WHY THIS IS COMPUTED BY HAND — recharts' `ReferenceArea` looks like the tool
+ * for this and silently is not, on this axis. A categorical XAxis resolves to a
+ * POINT scale (`bandwidth() === 0`), and `ReferenceArea` maps its bounds
+ * through `ScaleHelper.apply`:
+ *
+ *   - `x1` with `position: 'start'` → `scale(x1)` — the day CENTRE
+ *   - `x2` with `position: 'end'`   → `scale(x2) + bandwidth()` → `scale(x2)`
+ *
+ * so a run shades the space BETWEEN its days' centres and never covers the day
+ * cells, and a run of exactly ONE day collapses to a zero-width rect that
+ * recharts then discards entirely. Measured on recharts 2.15.4: `x1="d1"
+ * x2="d1"` rendered `<g class="recharts-reference-area"></g>` — empty — and a
+ * two-day run rendered width 121.67, which is one category step rather than
+ * two. Half-step numeric bounds do not rescue it either: d3's point scale will
+ * not extrapolate a number against a string domain, so those render nothing.
+ *
+ * A day cell is therefore `step` wide, centred on `dayXs[i]`, where `step` is
+ * the distance between adjacent day centres. `dayXs` comes from the chart's own
+ * scale (passed in by the caller) rather than being re-derived here, so the
+ * band cannot drift from the axis it is drawn over.
+ *
+ * Returns `null` — never a zero-width span — because a zero-width rect is
+ * discarded by the renderer, which is precisely how a one-day gap disappears
+ * while still looking like it was drawn.
+ */
+export function gapRunSpan(
+  run: GapRun,
+  dayXs: readonly number[],
+  plot: PlotBounds,
+): DaySpan | null {
+  const last = dayXs.length - 1;
+  const { startIndex, endIndex } = run;
+  if (startIndex < 0 || endIndex > last || startIndex > endIndex) return null;
+
+  const startX = dayXs[startIndex];
+  const endX = dayXs[endIndex];
+  if (!Number.isFinite(startX) || !Number.isFinite(endX)) return null;
+
+  // A one-day window has no step to read, so its cell is the whole plot.
+  const step =
+    dayXs.length > 1 ? (dayXs[last] - dayXs[0]) / (dayXs.length - 1) : plot.width;
+  const half = step / 2;
+
+  // Clamped to the plot, so a run on the first or last day is cut off at the
+  // axis instead of spilling a half-cell into the margin, where it would read
+  // as a rendering fault rather than as the edge of the window.
+  const min = plot.left;
+  const max = plot.left + plot.width;
+  const clamp = (value: number) => Math.min(Math.max(value, min), max);
+
+  const x = clamp(startX - half);
+  const width = clamp(endX + half) - x;
+  if (!(width > 0)) return null;
+  return { x, width };
+}
+
+/**
  * recharts' `ResponsiveContainer` measures its own box before drawing, and jsdom
  * has no layout to report — it renders an EMPTY div with no SVG at all. Verified
  * rather than assumed: an unmocked render of a chart component in this suite
