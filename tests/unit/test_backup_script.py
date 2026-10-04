@@ -347,3 +347,28 @@ def test_the_manifest_is_safe_to_keep_next_to_the_dumps():
     blob = repr(manifest).lower()
     for leak in ("password", "pgpassword", "secret", "token"):
         assert leak not in blob, f"the manifest leaks {leak!r}: {manifest!r}"
+
+
+def test_the_documented_entry_point_runs_as_a_script():
+    """`python scripts/backup_db.py --help` is the operator's first command.
+
+    Run as a subprocess, in its own process, because that is the only way to
+    prove the import path works: every other test imports `scripts.backup_db`
+    from an already-configured repo root, where a missing sys.path shim is
+    invisible and the documented command dies with ModuleNotFoundError.
+    """
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [sys.executable, str(root / "scripts" / "backup_db.py"), "--help"],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        timeout=180,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "--target-dir" in proc.stdout
+    assert "--retention" in proc.stdout

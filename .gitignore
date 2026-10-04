@@ -82,3 +82,11 @@ original/
 # of this project and is committed; this config is not -- it records window
 # sizes, pane layout and plugin state that belong to whoever has it open.
 docs/.obsidian/
+
+# Database dumps and analyst verdict exports are operator artifacts, never
+# repository content. `scripts/backup_db.py` defaults to ./backups and
+# `scripts/export_labels.py` to data/analyst_labels.csv; both carry user
+# ids, amounts, merchant names and reviewer ids, so a `git add .` must
+# never sweep them into a public repo.
+backups/
+data/analyst_labels.csv

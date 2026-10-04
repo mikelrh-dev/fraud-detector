@@ -112,7 +112,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import os
 import sys
+import tempfile
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
@@ -411,49 +413,63 @@ def write_label_csv(rows: Iterable[Mapping[str, Any]], out_path: str | Path) -> 
     path = Path(out_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(EXPORT_COLUMNS))
-        writer.writeheader()
+    # Atomic destination: rows stream into a sibling temp file and only a
+    # fully-validated run replaces the destination. A label outside the
+    # vocabulary raises mid-loop; without this, the already-flushed rows
+    # would remain as a truncated file indistinguishable in shape from a
+    # complete one. On error the temp file is removed and a previous
+    # complete export at `path` is left untouched.
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(EXPORT_COLUMNS))
+            writer.writeheader()
 
-        for row in rows:
-            label = row.get("analyst_label")
-            if label is None:
-                continue
-            # Compared against the enum member, not the literal "resolved":
-            # `AlertStatus` is a `str` enum, so this is true for both the raw
-            # column value and an ORM instance that has not been str()'d.
-            if row.get("status") != AlertStatus.RESOLVED:
-                continue
-            if label not in _LABEL_TO_IS_FRAUD:
-                raise ValueError(
-                    f"refusing to export analyst_label={label!r}; the documented "
-                    f"vocabulary is {tuple(ANALYST_LABEL_VALUES)}. A label this "
-                    f"script cannot read would be written as is_fraud=0, which "
-                    f"is a false positive recorded as fact."
-                )
+            for row in rows:
+                label = row.get("analyst_label")
+                if label is None:
+                    continue
+                # Compared against the enum member, not the literal "resolved":
+                # `AlertStatus` is a `str` enum, so this is true for both the raw
+                # column value and an ORM instance that has not been str()'d.
+                if row.get("status") != AlertStatus.RESOLVED:
+                    continue
+                if label not in _LABEL_TO_IS_FRAUD:
+                    raise ValueError(
+                        f"refusing to export analyst_label={label!r}; the documented "
+                        f"vocabulary is {tuple(ANALYST_LABEL_VALUES)}. A label this "
+                        f"script cannot read would be written as is_fraud=0, which "
+                        f"is a false positive recorded as fact."
+                    )
 
-            amount = row.get("amount")
-            writer.writerow({
-                "transaction_id": _text(row.get("transaction_id")),
-                "user_id": _text(row.get("user_id")),
-                # NUMERIC comes back from the driver as Decimal. `str()` on a
-                # Decimal keeps the two decimal places; routing it through
-                # `float` first would lose them and is what
-                # `tests/test_amount_precision.py` exists about.
-                "amount": "" if amount is None else str(amount),
-                "currency": _text(row.get("currency")),
-                "merchant_name": _text(row.get("merchant_name")),
-                "merchant_category": _text(row.get("merchant_category")),
-                "timestamp": _iso(row.get("timestamp")),
-                "is_fraud": _LABEL_TO_IS_FRAUD[label],
-                "analyst_label": label,
-                "alert_score": _text(row.get("alert_score")),
-                "alert_threshold": _text(row.get("alert_threshold")),
-                "reviewed_by": _text(row.get("reviewed_by")),
-                "reviewed_at": _iso(row.get("reviewed_at")),
-            })
-            written += 1
+                amount = row.get("amount")
+                writer.writerow({
+                    "transaction_id": _text(row.get("transaction_id")),
+                    "user_id": _text(row.get("user_id")),
+                    # NUMERIC comes back from the driver as Decimal. `str()` on a
+                    # Decimal keeps the two decimal places; routing it through
+                    # `float` first would lose them and is what
+                    # `tests/test_amount_precision.py` exists about.
+                    "amount": "" if amount is None else str(amount),
+                    "currency": _text(row.get("currency")),
+                    "merchant_name": _text(row.get("merchant_name")),
+                    "merchant_category": _text(row.get("merchant_category")),
+                    "timestamp": _iso(row.get("timestamp")),
+                    "is_fraud": _LABEL_TO_IS_FRAUD[label],
+                    "analyst_label": label,
+                    "alert_score": _text(row.get("alert_score")),
+                    "alert_threshold": _text(row.get("alert_threshold")),
+                    "reviewed_by": _text(row.get("reviewed_by")),
+                    "reviewed_at": _iso(row.get("reviewed_at")),
+                })
+                written += 1
+    except BaseException:
+        os.unlink(tmp_name)
+        raise
 
+    os.replace(tmp_name, path)
     return written
 
 

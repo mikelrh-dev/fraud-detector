@@ -492,6 +492,36 @@ class TestTheMappingStaysInsideTheRealVocabulary:
         with pytest.raises(ValueError):
             write_label_csv([_row(label="confirmed_fraudd")], tmp_path / "out.csv")
 
+    def test_a_refused_export_leaves_no_partial_file_behind(
+        self, tmp_path, both_verdicts
+    ):
+        """Atomic destination: a refusal must not truncate what was there.
+
+        Rows stream to a sibling temp file and only a fully-validated run
+        replaces the destination. Without this, the ValueError above fires
+        after earlier rows were already flushed, leaving a truncated CSV
+        indistinguishable in shape from a complete one.
+        """
+        out = tmp_path / "out.csv"
+        write_label_csv(both_verdicts, out)
+        before = out.read_bytes()
+
+        with pytest.raises(ValueError):
+            write_label_csv(
+                [
+                    _row(label="confirmed_fraud", transaction_id="txn-ok"),
+                    _row(label="confirmed_fraudd", transaction_id="txn-bad"),
+                ],
+                out,
+            )
+
+        assert out.read_bytes() == before, (
+            "the refused run replaced a complete export with a partial one"
+        )
+        assert list(tmp_path.glob("out.csv.*.tmp")) == [], (
+            "temp file leaked next to the destination"
+        )
+
     def test_the_script_never_calls_the_trainer(self):
         """Static, because the failure is a silent one.
 

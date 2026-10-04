@@ -32,6 +32,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Same operator-surface contract as scripts/export_labels.py: the documented
+# invocation is `python scripts/backup_db.py ...` from the repo root, and
+# without this shim that dies with `ModuleNotFoundError: No module named
+# 'src'` (imports resolve it, subprocess entry does not).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 # Seven daily dumps is a week of history. The number that actually matters for
 # data loss is the RPO, which is a property of how often this runs, not of how
 # many files we keep; see the runbook. Kept finite because an unbounded default
