@@ -129,7 +129,20 @@ class Settings(BaseSettings):
     # score under 5.0 would silently downgrade it to `review`.
     # `TestTheRuleBranchNeedsTheModelToAgree.test_case_a_clears_the_floor_with_margin`
     # pins the margin so the retrain fails the suite instead of the case.
-    ml_floor: float = 5.0
+    #
+    # Bounded to the [0, 100] score scale, because the field used to accept
+    # anything and both ends outside that scale fail SILENTLY rather than
+    # loudly:
+    #   * `<= 0` makes `ml_score >= floor` true for every transaction, including
+    #     one the model is actively calling ordinary — that is the pre-floor
+    #     rule-only blocking this gate exists to prevent, back with no log.
+    #   * `> 100` (or `inf`) makes the gate unreachable, disabling the amount
+    #     policy on the rule branch for good.
+    # Both are operator-typed env values, so they must fail at boot where the
+    # mistake is visible instead of at the first scored transaction. The bound
+    # is inclusive: 0.0 ("the model only has to have run") and 100.0 ("only a
+    # maximal score agrees") are legitimate configurations, not typos.
+    ml_floor: float = Field(5.0, ge=0.0, le=100.0)
 
     # Feature Flags
     fraud_detection_enabled: bool = True

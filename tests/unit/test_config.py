@@ -1,5 +1,8 @@
 """Tests for application configuration."""
 
+import pytest
+from pydantic import ValidationError
+
 from src.core.config import Settings, settings
 
 
@@ -66,3 +69,63 @@ def test_threshold_tiers_thresholds_decrease_with_amount():
 def test_ollama_timeout_default():
     """Ollama timeout should default to 30 seconds."""
     assert settings.ollama_timeout == 30
+
+
+# --- ml_floor domain ------------------------------------------------------
+#
+# `ml_floor` is compared against an `ml_score`, which the whole pipeline
+# reports on a 0-100 scale (`rule_score`/`ml_score` columns are documented as
+# 0-100, `EnsembleScorer.combine` clamps to [0, 100]). Its domain is therefore
+# exactly that scale, and the field shipped with no constraint on it.
+#
+# Both ends outside that domain fail silently rather than loudly, which is why
+# this is a boot-time validation concern and not a scoring-time one:
+#
+#   * `ML_FLOOR <= 0` makes `ml_score >= floor` true for EVERY transaction,
+#     including one whose model is actively reporting it as ordinary. That is
+#     the pre-floor rule-only blocking the floor exists to prevent (measured:
+#     `acme`/`retail` at 50,001 EUR, rule 48.59 vs threshold 40, ml 0.13), and
+#     it comes back with no log and no signal.
+#   * `ML_FLOOR > 100` (or `inf`) makes the agreement gate unreachable, so the
+#     amount-policy branch of the rule branch is switched off for good.
+#
+# Either one is an operator-typed env value, so it must fail at validation/boot
+# where the mistake is visible, not silently at the first scored transaction.
+
+
+@pytest.mark.parametrize("bad_value", [-1.0, -0.01, 100.01, 1000.0])
+def test_ml_floor_rejects_values_outside_the_score_scale(bad_value: float):
+    """Out-of-domain floors must be rejected, and name the offending field."""
+    with pytest.raises(ValidationError, match="ml_floor"):
+        Settings(ml_floor=bad_value)
+
+
+@pytest.mark.parametrize("bad_value", [-1.0, 100.01])
+def test_ml_floor_rejects_a_bad_env_override_at_boot(
+    bad_value: float, monkeypatch: pytest.MonkeyPatch
+):
+    """The deployment path is the env var, so validation must fire there too.
+
+    Boot-time rejection is the whole point: an operator who exports a nonsense
+    `ML_FLOOR` gets a refused start, not a service that quietly scores with it.
+    """
+    monkeypatch.setenv("ML_FLOOR", str(bad_value))
+    with pytest.raises(ValidationError, match="ml_floor"):
+        Settings()
+
+
+@pytest.mark.parametrize("good_value", [0.0, 5.0, 100.0])
+def test_ml_floor_accepts_the_score_scale_boundaries(good_value: float):
+    """The bounds are inclusive and the default sits inside the domain.
+
+    0.0 and 100.0 are legitimate configurations, not edge cases to reject:
+    0.0 means "the model only has to have run", 100.0 means "only a maximal
+    score counts as agreement". Closing either end would be inventing a policy
+    the operator did not ask for.
+    """
+    assert Settings(ml_floor=good_value).ml_floor == good_value
+
+
+def test_ml_floor_default_is_inside_the_validated_domain():
+    """The shipped default must survive its own constraint (it did not, before)."""
+    assert Settings().ml_floor == 5.0
