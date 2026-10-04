@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ReceiptLineArt, State } from "./State";
 import { classificationTone, classificationText } from "../lib/classification";
 import { formatMoney } from "../lib/money";
+import { formatScore } from "../lib/score";
 import { formatTimestamp } from "../lib/datetime";
 import { Badge } from "./Badge";
 import { RiskMeter } from "./RiskMeter";
@@ -209,8 +210,18 @@ export default function TransactionTable({
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <RiskMeter value={tx.risk_score} />
-                        <span className={`text-xs text-slate-400 w-6 ${NUMERIC_CELL}`}>
-                          {tx.risk_score ?? "—"}
+                        {/* `formatScore`, the same one-decimal form
+                            `TransactionsPage` already uses for the same field.
+                            This rendered the raw float: the backend stores an
+                            ensemble blend of three layers, so a row classified
+                            FRAUDE at 76.46 printed `76.45876543209877` here and
+                            `76.5` on the list page. Two screens, one record, two
+                            numbers — an analyst cross-checking the dashboard
+                            against the list could not tell they were the same
+                            score. `w-6` (1.5rem) was sized for at most two
+                            digits and clipped the third; `w-10` fits `100.0`. */}
+                        <span className={`text-xs text-slate-400 w-10 ${NUMERIC_CELL}`}>
+                          {formatScore(tx.risk_score)}
                         </span>
                       </div>
                     </td>

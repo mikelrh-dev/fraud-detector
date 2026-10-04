@@ -8,13 +8,25 @@ import {
   CartesianGrid,
 } from "recharts";
 import { THEME, formatCompactTick } from "../lib/chart-theme";
+import { needsVisibleDots, type DailyAverage } from "../lib/trend";
 import { ChartTooltip } from "./ChartTooltip";
 
-interface DailyAverage {
-  date: string;
-  /** null means "no transactions that day" — never 0, which reads as a real score. */
-  avgScore: number | null;
-}
+/**
+ * Re-exported so the existing importers of this module keep resolving.
+ *
+ * `DailyAverage` and the two predicates now live in `lib/trend.ts`, because they
+ * are pure data logic with no JSX and `lib/` is where this repo keeps that
+ * (`lib/score.ts`, `lib/classification.ts`, `lib/list-query.ts`). Keeping them
+ * here as well would have meant this file exporting three values beside its
+ * component, and every extra value export is a Fast-Refresh warning on a file
+ * that already carries one.
+ *
+ * `buildDailyAverages` stays HERE, which is the inconsistency a reader will
+ * notice: `tests/honest-data.test.ts` imports it from this path, and moving it
+ * would mean editing an existing test to accommodate a refactor. Recorded rather
+ * than done.
+ */
+export type { DailyAverage };
 
 interface ScoreTrendChartProps {
   data: DailyAverage[];
@@ -38,6 +50,12 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
       </div>
     );
   }
+
+  // A window with data in it but no two adjacent days has no stroke to draw, and
+  // `dot={false}` left it as a blank 200px panel with axes and no explanation —
+  // a live panel claiming nothing. The dots are the fallback that makes the one
+  // measurement visible; they are NOT a claim that the trend is flat.
+  const showDots = needsVisibleDots(data);
 
   return (
     <div className="bg-slate-900 rounded-lg p-4">
@@ -89,7 +107,14 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
             stroke={THEME.risk.warn}
             strokeWidth={2.5}
             fill="url(#trend-fill)"
-            dot={false}
+            // Dots only where the line cannot speak for itself. On a measured
+            // window they are omitted, which is why the switch above is a
+            // decision about the DATA rather than a styling constant.
+            dot={
+              showDots
+                ? { r: 4, strokeWidth: 2, stroke: THEME.pageBg, fill: THEME.risk.warn }
+                : false
+            }
             // Break the line across days with no data instead of interpolating
             // through a fabricated point. A zero here would render as a real
             // "risk 0" measurement.
@@ -107,13 +132,10 @@ export default function ScoreTrendChart({ data }: ScoreTrendChartProps) {
   );
 }
 
-export type { DailyAverage };
-
 /**
  * Build daily average scores from a list of transactions.
  * Groups by day, computes average risk_score for each day.
- */
-export function buildDailyAverages(
+ */export function buildDailyAverages(
   transactions: { risk_score: number | null; created_at: string }[],
   days = 7,
 ): DailyAverage[] {

@@ -93,3 +93,28 @@ export function classificationTextClass(
   if (tone === "neutral") return "text-slate-400";
   return PILL_BY_TONE[tone].split(" ").slice(0, 1).join(" ");
 }
+
+/**
+ * Legend-dot fill, by classification.
+ *
+ * Exists because the score histogram needed a verdict's colour and the honest
+ * options were both bad: derive it from the pill (which carries a `/10` alpha
+ * and would render as a barely-visible smudge at 8px), or write a fourth
+ * classification-to-colour map. This file is the declared single source for
+ * that relationship, so it is where the swatch belongs.
+ *
+ * Full-strength fills, unlike the pills: a legend dot and a stacked bar segment
+ * have to be the SAME colour or the legend stops describing the chart.
+ */
+const DOT_BY_TONE: Record<ClassificationTone, string> = {
+  clean: "bg-risk-clean",
+  warn: "bg-risk-warn",
+  critical: "bg-risk-critical",
+  neutral: "bg-slate-400",
+};
+
+export function classificationDotClass(
+  classification: string | null | undefined,
+): string {
+  return DOT_BY_TONE[classificationTone(classification)];
+}

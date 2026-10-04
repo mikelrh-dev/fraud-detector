@@ -111,13 +111,6 @@ export default function DashboardPage() {
     () => recentData?.items ?? [],
     [recentData],
   );
-  const scores = useMemo(
-    () =>
-      allTransactions
-        .map((t) => t.risk_score)
-        .filter((s): s is number => s !== null),
-    [allTransactions],
-  );
   const dailyAverages = useMemo(
     () => buildDailyAverages(allTransactions, 7),
     [allTransactions],
@@ -256,7 +249,7 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                <ScoreHistogram scores={scores} />
+                <ScoreHistogram transactions={allTransactions} />
                 <ScoreTrendChart data={dailyAverages} />
               </>
             )}
