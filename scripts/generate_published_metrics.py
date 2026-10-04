@@ -135,6 +135,21 @@ SUPERSEDED: dict[str, str] = {
 #: Each entry maps a manifest key to why it is measured but withheld. The
 #: documentation test skips these and asserts the exclusions are few and carry
 #: a reason, so this list cannot quietly grow into a loophole.
+#: Why the six decision-block figures below are withheld from the prose. One
+#: reason, six keys -- it is about the figure, not the block it sits in.
+#:
+#: The deployed-decision F1 is deliberately not quoted beside the model's. The
+#: ensemble holds 0.25 of the score, so the same rows produce a much lower F1
+#: once the rules and context arbitrate; printing "0.2012" in a README whose
+#: headline is the model's precision is how a deployment scoring 0.20 gets
+#: certified as the 0.77 model. The numbers are published in the manifest, which
+#: is where an operator reads them.
+_DECISION_WITHHELD = (
+    "deployed-decision F1, not the model figure; published here so the two are "
+    "never confused, withheld from prose so a lower score is not read as the "
+    "model's result"
+)
+
 NOT_PUBLISHED: dict[str, str] = {
     "train_split_reference_only.pr_auc": "in-sample, not a held-out result",
     "train_split_reference_only.roc_auc": "in-sample, not a held-out result",
@@ -145,6 +160,19 @@ NOT_PUBLISHED: dict[str, str] = {
     "held_out.precision_ci_n": "held-out sample size behind a withheld interval",
     "held_out.ece": "calibration of a corpus the prose describes, not tabulates",
     "test_split.brier": "reported by the harness, not claimed in the docs",
+    # The decision blocks are measured and published but NOT quoted in prose.
+    # One entry per block per split, and only the F1: that is the figure most
+    # likely to be read as `test_split.f1`, and the withheld-list cap is 15.
+    # The surrounding precision/recall/cells are published but unclaimed for the
+    # same reason -- they describe the deployed decision rather than the model,
+    # and a decision figure quoted as the model's is the exact defect these
+    # blocks were added to end.
+    "ensemble_shipped.test_split.f1": _DECISION_WITHHELD,
+    "ensemble_shipped.held_out.f1": _DECISION_WITHHELD,
+    "routed_policy.test_split.f1": _DECISION_WITHHELD,
+    "routed_policy.held_out.f1": _DECISION_WITHHELD,
+    "analyst_queue.test_split.f1": _DECISION_WITHHELD,
+    "analyst_queue.held_out.f1": _DECISION_WITHHELD,
 }
 
 
@@ -253,6 +281,119 @@ def _metrics_block(
     }
 
 
+def _decision_block(
+    service: MLModelService,
+    X: np.ndarray,
+    y: np.ndarray,
+    amounts: np.ndarray,
+    rows: list[dict],
+) -> dict[str, Any]:
+    """The deployed DECISION for one split, not the ML layer's opinion of it.
+
+    The manifest's `test_split` block above publishes the model's F1, and that
+    number is not the F1 of the system that rejects a transaction: the model
+    holds 0.25 of the ensemble, so its score is averaged against 0.75 of rules
+    and context before anything is compared to a threshold. Publishing only the
+    model figure is how a project ends up certifying F1 0.77 for a deployment
+    whose ensemble scores 0.20 -- both true, neither the same measurement.
+
+    So this calls `evaluate_model.report_decision_blocks`, which runs the real
+    `RuleEngine`, the real `EnsembleScorer` and the real
+    `ScoringService._classify_routed`, and returns three blocks:
+
+        ensemble_shipped  the weighted score at the amount-tiered threshold
+        routed_policy     the per-layer routing landed in 3db121c
+        analyst_queue     fraud OR review -- what actually reaches a human
+
+Every block publishes `legitimate_rows` with ONE meaning: rows whose label is 0,
+the denominator of `false_positive_rate` and of `fp + tn`. The routed blocks add
+`verdict_fraud` / `verdict_review` / `verdict_legitimate` for the policy's own
+verdict distribution, which is a different count over the same rows -- the policy
+flags legitimate traffic, so `verdict_legitimate` is the smaller number.
+
+    `rows` are the SAME noised rows `build_matrix` fed the feature engine, so
+    the rule layer and the ML layer are reading one corpus rather than two. Each
+    row also carries its own 5-minute velocity count, which is the quantity the
+    API reads before scoring, so the velocity rules fire here exactly as they
+    fire in production. The one caveat that travels with the numbers is the
+    fraud graph: a static CSV cannot hold one, so `near_fraud` never fires.
+    """
+    rule_scores, context_scores = E.rule_and_context_scores(rows)
+    decision = E.report_decision_blocks(
+        "manifest", y, amounts,
+        rule_scores=rule_scores,
+        ml_scores=np.array([service.predict(row) for row in X]),
+        context_scores=context_scores,
+        archetypes=None,
+    )
+
+    def publish(block: dict[str, Any], *, with_discrimination: bool) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "rows": int(block["rows"]),
+            "frauds": int(block["frauds"]),
+            "legitimate_rows": int(block["legitimate_rows"]),
+            "precision": _round(block["precision"], 4),
+            "recall": _round(block["recall"], 4),
+            "f1": _round(block["f1"], 4),
+            "tn": int(block["tn"]),
+            "fp": int(block["fp"]),
+            "fn": int(block["fn"]),
+            "tp": int(block["tp"]),
+            "flagged_rows": int(block["flagged_rows"]),
+            "false_positive_rate": _round(block["false_positive_rate"], 6),
+            "missed_frauds": int(block["fn"]),
+            "precision_ci": [
+                _round(v, 3) for v in E.wilson_interval(int(block["tp"]),
+                                                        int(block["tp"]) + int(block["fp"]))
+            ],
+            "precision_ci_n": int(block["tp"]) + int(block["fp"]),
+            "recall_ci": [
+                _round(v, 3) for v in E.wilson_interval(int(block["tp"]),
+                                                       int(block["tp"]) + int(block["fn"]))
+            ],
+            "recall_ci_n": int(block["tp"]) + int(block["fn"]),
+        }
+        if with_discrimination:
+            out.update({
+                "pr_auc": _round(block["pr_auc"], 4),
+                "roc_auc": _round(block["roc_auc"], 4),
+                "brier": _round(block["brier"], 4),
+                "ece": _round(block["ece"], 4),
+                "signed_gap": _round(block["signed_gap"], 4),
+                "mean_score": _round(block["mean_score"], 4),
+            })
+        else:
+            # Published as null, not omitted: a routed verdict is a label, so
+            # PR-AUC/ROC-AUC/Brier are undefined on it, and a consumer asking
+            # for them should get "undefined here" rather than a missing key
+            # that looks like an oversight.
+            out.update({"pr_auc": None, "roc_auc": None, "brier": None,
+                        "discrimination_undefined_reason": (
+                            "a routed verdict is a label, not a ranked score; "
+                            "PR-AUC/ROC-AUC/Brier are undefined on it"
+                        )})
+        return out
+
+    ensemble = publish(decision["ensemble"], with_discrimination=True)
+    routed = publish(decision["routed"], with_discrimination=False)
+    queue = publish(decision["analyst_queue"], with_discrimination=False)
+    # `legitimate_rows` is left exactly as `publish` wrote it, from
+    # `_binary_block`: rows whose LABEL is 0, in every block. It used to be
+    # overwritten here with the routed "legitimate" VERDICT count, so the same
+    # key read 9900 in the ensemble block and 9095 in the routed one -- two
+    # denominators under one name, and `false_positive_rate` sitting next to a
+    # figure it was not the rate against. The verdict distribution is published
+    # under its own keys instead.
+    for block, source in ((routed, decision["routed"]), (queue, decision["analyst_queue"])):
+        for key in ("verdict_fraud", "verdict_review", "verdict_legitimate"):
+            block[key] = int(source[key])
+    routed["fraud_rows"] = int(decision["routed"]["fraud_rows"])
+    routed["review_rows"] = int(decision["routed"]["review_rows"])
+    queue["queue_rows"] = int(decision["analyst_queue"]["queue_rows"])
+
+    return {"ensemble_shipped": ensemble, "routed_policy": routed, "analyst_queue": queue}
+
+
 def _cost_block(service: MLModelService) -> dict[str, Any]:
     """The cost sweep, priced on the same split `evaluate_cost.py` prices.
 
@@ -262,7 +403,7 @@ def _cost_block(service: MLModelService) -> dict[str, Any]:
     second split that could disagree.
     """
     transactions, y = T.load_synthetic_data(str(T.DATA_SYNTHETIC))
-    X, _, amounts, _ = E.build_matrix(transactions, y)
+    X, _, amounts, _, _ = E.build_matrix(transactions, y)
     row_index = np.arange(len(y))
     _, X_test, _, y_test, _, test_index = train_test_split(
         X, y, row_index,
@@ -405,13 +546,16 @@ def main() -> None:
         f"publishes prevalence alongside row counts; a silently different corpus "
         f"would publish both consistently and wrongly."
     )
-    X, _, amounts, arch = E.build_matrix(transactions, y)
+    X, _, amounts, arch, rows = E.build_matrix(transactions, y)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=E.TEST_SIZE, random_state=E.SPLIT_SEED, stratify=y
     )
-    amounts_train, amounts_test, arch_train, arch_test = train_test_split(
-        amounts, arch, test_size=E.TEST_SIZE, random_state=E.SPLIT_SEED, stratify=y
+    amounts_train, amounts_test, arch_train, arch_test, rows_train, rows_test = (
+        train_test_split(
+            amounts, arch, rows,
+            test_size=E.TEST_SIZE, random_state=E.SPLIT_SEED, stratify=y,
+        )
     )
 
     # The same invariants evaluate_model.py asserts before it reports anything.
@@ -445,12 +589,17 @@ def main() -> None:
     )
     archetypes_block = _archetype_block(service, X_test, y_test, amounts_test, list(arch_test))
 
+    print("decision blocks -- test split (ensemble, routed, analyst queue)")
+    test_decisions = _decision_block(service, X_test, y_test, amounts_test, list(rows_test))
+
     print("held-out corpus (unseen seed 20240101)")
     held_tx, held_y = T.generate_synthetic_data(n_samples=30000, fraud_rate=0.01, seed=20240101)
-    X_held, _, amounts_held, arch_held = E.build_matrix(held_tx, held_y)
+    X_held, _, amounts_held, arch_held, rows_held = E.build_matrix(held_tx, held_y)
     held_block = _metrics_block(
         "HELD-OUT CORPUS (unseen seed)", service, X_held, held_y, amounts_held, arch_held
     )
+    print("decision blocks -- held-out corpus")
+    held_decisions = _decision_block(service, X_held, held_y, amounts_held, list(rows_held))
 
     print("cost sweep")
     cost_block = _cost_block(service)
@@ -491,6 +640,49 @@ def main() -> None:
         "held_out": held_block,
         "train_split_reference_only": train_block,
         "test_split_archetypes": archetypes_block,
+        # The DECISION, published beside the model that feeds it. `test_split`
+        # above is the ML layer's F1 at the production threshold; these three
+        # are what the same rows produce once the ensemble weights and the
+        # routed policy are applied. They are separate keys rather than extra
+        # fields on `test_split` because they are different quantities with
+        # different denominators, and merging them is how "F1 0.77" came to
+        # stand in for a deployed system scoring 0.20.
+        "ensemble_shipped": {
+            "note": (
+                "EnsembleScorer.combine over the production weights "
+                "(rule 0.60 / ml 0.25 / context 0.15), graded at the "
+                "amount-tiered threshold. Velocity is per row (the same "
+                "5-minute count the API reads before scoring), so the velocity "
+                "rules fire here as they fire in production. The one missing "
+                "layer is the fraud graph: a static CSV cannot hold one, so "
+                "near_fraud never fires."
+            ),
+            "test_split": test_decisions["ensemble_shipped"],
+            "held_out": held_decisions["ensemble_shipped"],
+        },
+        "routed_policy": {
+            "note": (
+                "ScoringService._classify_routed, the per-layer routing landed "
+                "in 3db121c: fraud if ml > threshold OR (rule > threshold AND "
+                "amount >= the critical floor); review if not fraud and (rule > "
+                "threshold OR ml > threshold * 0.75); legitimate otherwise. "
+                "Discrimination metrics are null by construction -- a routed "
+                "verdict is a label, not a ranked score."
+            ),
+            "test_split": test_decisions["routed_policy"],
+            "held_out": held_decisions["routed_policy"],
+        },
+        "analyst_queue": {
+            "note": (
+                "What reaches a human: the routed policy's fraud OR review "
+                "verdicts. A review is not a fraud verdict, but it is a row an "
+                "analyst is asked to look at, so its precision is the number "
+                "that decides whether the queue is worth staffing. Same single "
+                "missing layer as the other two decision blocks: no fraud graph."
+            ),
+            "test_split": test_decisions["analyst_queue"],
+            "held_out": held_decisions["analyst_queue"],
+        },
         "cost": cost_block,
         "superseded": {
             "note": (
@@ -515,6 +707,20 @@ def main() -> None:
     print(f"\nwrote {OUTPUT_PATH.relative_to(REPO_ROOT)}")
     print(f"  test split  PR-AUC {test_block['pr_auc']}  ROC-AUC {test_block['roc_auc']}")
     print(f"  held-out    PR-AUC {held_block['pr_auc']}  ROC-AUC {held_block['roc_auc']}")
+    for label, decisions in (("test split", test_decisions), ("held-out", held_decisions)):
+        ens = decisions["ensemble_shipped"]
+        routed = decisions["routed_policy"]
+        queue = decisions["analyst_queue"]
+        print(f"  {label} DECISION (row velocity present; no fraud graph in this corpus)")
+        print(f"    ml only    F1 {test_block['f1'] if label.startswith('test') else held_block['f1']}"
+              "   <- the model figure above; NOT the deployed decision")
+        print(f"    ensemble   precision {ens['precision']}  recall {ens['recall']}  "
+              f"F1 {ens['f1']}  FP {ens['fp']}  FN {ens['fn']}")
+        print(f"    routed     precision {routed['precision']}  recall {routed['recall']}  "
+              f"F1 {routed['f1']}  FP {routed['fp']}  FN {routed['fn']}  "
+              f"(fraud {routed['fraud_rows']} review {routed['review_rows']})")
+        print(f"    queue      rows {queue['queue_rows']} of {queue['rows']}  "
+              f"precision {queue['precision']}  recall {queue['recall']}  F1 {queue['f1']}")
     print(f"  cost        optimal at 10x {cost_block['optimal_threshold_at_10x']}  "
           f"sweep {cost_block['sweep_high']} -> {cost_block['sweep_low']}  "
           f"model cost at 500x {cost_block['model_cost_at_500x']}")

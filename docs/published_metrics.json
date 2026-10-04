@@ -411,6 +411,211 @@
       "fp_rate": 0.0
     }
   },
+  "ensemble_shipped": {
+    "note": "EnsembleScorer.combine over the production weights (rule 0.60 / ml 0.25 / context 0.15), graded at the amount-tiered threshold. Velocity is per row (the same 5-minute count the API reads before scoring), so the velocity rules fire here as they fire in production. The one missing layer is the fraud graph: a static CSV cannot hold one, so near_fraud never fires.",
+    "test_split": {
+      "rows": 10000,
+      "frauds": 100,
+      "legitimate_rows": 9900,
+      "precision": 0.1247,
+      "recall": 0.52,
+      "f1": 0.2012,
+      "tn": 9535,
+      "fp": 365,
+      "fn": 48,
+      "tp": 52,
+      "flagged_rows": 417,
+      "false_positive_rate": 0.036869,
+      "missed_frauds": 48,
+      "precision_ci": [
+        0.096,
+        0.16
+      ],
+      "precision_ci_n": 417,
+      "recall_ci": [
+        0.423,
+        0.615
+      ],
+      "recall_ci_n": 100,
+      "pr_auc": 0.3195,
+      "roc_auc": 0.8892,
+      "brier": 0.0442,
+      "ece": 0.1105,
+      "signed_gap": -0.1105,
+      "mean_score": 12.0464
+    },
+    "held_out": {
+      "rows": 30000,
+      "frauds": 288,
+      "legitimate_rows": 29712,
+      "precision": 0.0997,
+      "recall": 0.4132,
+      "f1": 0.1606,
+      "tn": 28637,
+      "fp": 1075,
+      "fn": 169,
+      "tp": 119,
+      "flagged_rows": 1194,
+      "false_positive_rate": 0.036181,
+      "missed_frauds": 169,
+      "precision_ci": [
+        0.084,
+        0.118
+      ],
+      "precision_ci_n": 1194,
+      "recall_ci": [
+        0.358,
+        0.471
+      ],
+      "recall_ci_n": 288,
+      "pr_auc": 0.3026,
+      "roc_auc": 0.8729,
+      "brier": 0.0437,
+      "ece": 0.1096,
+      "signed_gap": -0.1096,
+      "mean_score": 11.9168
+    }
+  },
+  "routed_policy": {
+    "note": "ScoringService._classify_routed, the per-layer routing landed in 3db121c: fraud if ml > threshold OR (rule > threshold AND amount >= the critical floor); review if not fraud and (rule > threshold OR ml > threshold * 0.75); legitimate otherwise. Discrimination metrics are null by construction -- a routed verdict is a label, not a ranked score.",
+    "test_split": {
+      "rows": 10000,
+      "frauds": 100,
+      "legitimate_rows": 9900,
+      "precision": 0.4057,
+      "recall": 0.71,
+      "f1": 0.5164,
+      "tn": 9796,
+      "fp": 104,
+      "fn": 29,
+      "tp": 71,
+      "flagged_rows": 175,
+      "false_positive_rate": 0.010505,
+      "missed_frauds": 29,
+      "precision_ci": [
+        0.336,
+        0.48
+      ],
+      "precision_ci_n": 175,
+      "recall_ci": [
+        0.615,
+        0.79
+      ],
+      "recall_ci_n": 100,
+      "pr_auc": null,
+      "roc_auc": null,
+      "brier": null,
+      "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
+      "verdict_fraud": 175,
+      "verdict_review": 910,
+      "verdict_legitimate": 8915,
+      "fraud_rows": 175,
+      "review_rows": 910
+    },
+    "held_out": {
+      "rows": 30000,
+      "frauds": 288,
+      "legitimate_rows": 29712,
+      "precision": 0.4135,
+      "recall": 0.7222,
+      "f1": 0.5259,
+      "tn": 29417,
+      "fp": 295,
+      "fn": 80,
+      "tp": 208,
+      "flagged_rows": 503,
+      "false_positive_rate": 0.009929,
+      "missed_frauds": 80,
+      "precision_ci": [
+        0.371,
+        0.457
+      ],
+      "precision_ci_n": 503,
+      "recall_ci": [
+        0.668,
+        0.771
+      ],
+      "recall_ci_n": 288,
+      "pr_auc": null,
+      "roc_auc": null,
+      "brier": null,
+      "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
+      "verdict_fraud": 503,
+      "verdict_review": 2674,
+      "verdict_legitimate": 26823,
+      "fraud_rows": 503,
+      "review_rows": 2674
+    }
+  },
+  "analyst_queue": {
+    "note": "What reaches a human: the routed policy's fraud OR review verdicts. A review is not a fraud verdict, but it is a row an analyst is asked to look at, so its precision is the number that decides whether the queue is worth staffing. Same single missing layer as the other two decision blocks: no fraud graph.",
+    "test_split": {
+      "rows": 10000,
+      "frauds": 100,
+      "legitimate_rows": 9900,
+      "precision": 0.0793,
+      "recall": 0.86,
+      "f1": 0.1451,
+      "tn": 8901,
+      "fp": 999,
+      "fn": 14,
+      "tp": 86,
+      "flagged_rows": 1085,
+      "false_positive_rate": 0.100909,
+      "missed_frauds": 14,
+      "precision_ci": [
+        0.065,
+        0.097
+      ],
+      "precision_ci_n": 1085,
+      "recall_ci": [
+        0.779,
+        0.915
+      ],
+      "recall_ci_n": 100,
+      "pr_auc": null,
+      "roc_auc": null,
+      "brier": null,
+      "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
+      "verdict_fraud": 175,
+      "verdict_review": 910,
+      "verdict_legitimate": 8915,
+      "queue_rows": 1085
+    },
+    "held_out": {
+      "rows": 30000,
+      "frauds": 288,
+      "legitimate_rows": 29712,
+      "precision": 0.0759,
+      "recall": 0.8368,
+      "f1": 0.1391,
+      "tn": 26776,
+      "fp": 2936,
+      "fn": 47,
+      "tp": 241,
+      "flagged_rows": 3177,
+      "false_positive_rate": 0.098815,
+      "missed_frauds": 47,
+      "precision_ci": [
+        0.067,
+        0.086
+      ],
+      "precision_ci_n": 3177,
+      "recall_ci": [
+        0.79,
+        0.875
+      ],
+      "recall_ci_n": 288,
+      "pr_auc": null,
+      "roc_auc": null,
+      "brier": null,
+      "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
+      "verdict_fraud": 503,
+      "verdict_review": 2674,
+      "verdict_legitimate": 26823,
+      "queue_rows": 3177
+    }
+  },
   "cost": {
     "transactions_per_day": 50000.0,
     "false_positive_cost": 1.0,
@@ -560,6 +765,18 @@
   "not_published": {
     "note": "Measured but deliberately withheld from the prose. The documentation test does not require these to appear, and it fails if this list grows without a reason attached.",
     "values": {
+      "analyst_queue.held_out.f1": "deployed-decision F1, not the model figure; published here so the two are never confused, withheld from prose so a lower score is not read as the model's result",
+      "analyst_queue.test_split.f1": "deployed-decision F1, not the model figure; published here so the two are never confused, withheld from prose so a lower score is not read as the model's result",
+      "ensemble_shipped.held_out.f1": "deployed-decision F1, not the model figure; published here so the two are never confused, withheld from prose so a lower score is not read as the model's result",
+      "ensemble_shipped.test_split.f1": "deployed-decision F1, not the model figure; published here so the two are never confused, withheld from prose so a lower score is not read as the model's result",
+      "held_out.ece": "calibration of a corpus the prose describes, not tabulates",
+      "held_out.precision_ci.0": "held-out interval bound; the published interval is the test split's",
+      "held_out.precision_ci.1": "held-out interval bound; the published interval is the test split's",
+      "held_out.precision_ci_n": "held-out sample size behind a withheld interval",
+      "held_out.recall_ci.0": "held-out interval bound; the published interval is the test split's",
+      "held_out.recall_ci.1": "held-out interval bound; the published interval is the test split's",
+      "routed_policy.held_out.f1": "deployed-decision F1, not the model figure; published here so the two are never confused, withheld from prose so a lower score is not read as the model's result",
+      "routed_policy.test_split.f1": "deployed-decision F1, not the model figure; published here so the two are never confused, withheld from prose so a lower score is not read as the model's result",
       "test_split.brier": "reported by the harness, not claimed in the docs",
       "train_split_reference_only.pr_auc": "in-sample, not a held-out result",
       "train_split_reference_only.roc_auc": "in-sample, not a held-out result"
