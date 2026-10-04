@@ -70,7 +70,10 @@ export default function DashboardPage() {
     refetchInterval: 30_000,
   });
 
-  // Recent transactions list (first page for histogram + trend)
+  // Recent transactions feed the histogram and the trend. The window is 100
+  // rows, NOT RECENT_PAGE_SIZE (10, the paginated table below) - the endpoint
+  // caps `page_size` at 100, so 100 is every row these two charts can see.
+  // They therefore describe the newest 100 transactions, not all history.
   const {
     data: recentData,
     isLoading: recentLoading,
