@@ -663,9 +663,13 @@ def main() -> None:
         "routed_policy": {
             "note": (
                 "ScoringService._classify_routed, the per-layer routing landed "
-                "in 3db121c: fraud if ml > threshold OR (rule > threshold AND "
-                "amount >= the critical floor); review if not fraud and (rule > "
-                "threshold OR ml > threshold * 0.75); legitimate otherwise. "
+                "in 3db121c and given an ML-agreement floor in 2910fa2: fraud if "
+                "ml > threshold OR (rule > threshold AND amount >= the critical "
+                "floor AND ml_score >= the ML floor); review if not fraud and "
+                "(rule > threshold OR ml > threshold * 0.75); legitimate "
+                "otherwise. The ML floor is a third condition on the RULE branch "
+                "only, so a loud model still blocks on its own and a rule branch "
+                "cannot override a model calling the transaction ordinary. "
                 "Discrimination metrics are null by construction -- a routed "
                 "verdict is a label, not a ranked score."
             ),

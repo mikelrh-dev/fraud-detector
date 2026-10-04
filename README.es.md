@@ -27,7 +27,7 @@ Cada transacción recibe un score de riesgo 0–100, una clasificación (`legiti
 - **Audit trail inmutable** con checksums SHA-256 en cada decisión de scoring y acción de analista
 - **Auth JWT** (access + refresh + blacklist), acceso por roles (user/admin), rate limiting por ruta
 - **Dashboard React 19** con tendencias de score, tarjetas SHAP y flujo de trabajo de alertas
-- **1242 tests de backend** (unitarios + integración) y 789 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker). `pytest tests/ -q` informa la cifra de backend como **1205 pasados, 30 omitidos, 7 xfail**; `cd frontend && npm test` informa la de frontend como 789 pasados
+- **1501 tests de backend** (unitarios + integración) y 801 tests de frontend, CI con 5 jobs (ruff, mypy, pytest, ESLint, vitest, build smoke de Docker). `pytest tests/ -q` informa la cifra de backend como **1463 pasados, 31 omitidos, 7 xfail**; `cd frontend && npm test` informa la de frontend como 801 pasados
 
 ## Arquitectura
 
@@ -80,7 +80,8 @@ Ese `risk_score` se publica, se persiste y se muestra en la UI, pero **no** deci
 clasificación. `ScoringService` enruta sobre las puntuaciones de cada capa:
 
 ```
-fraud      : ml_score > threshold, OR (rule_score > threshold AND amount >= 50,000.01)
+fraud      : ml_score > threshold, OR (rule_score > threshold AND amount >= 50,000.01
+                                      AND ml_score >= ML_FLOOR)
 review     : not fraud, and (rule_score > threshold OR ml_score > threshold * 0.75)
 legitimate : otherwise
 ```
@@ -91,6 +92,14 @@ una capa de reglas silenciosa producía un `risk_score` de 21.25 y se clasificab
 compararse. `50,000.01` es el `min_amount` del tier crítico, leído de `settings.threshold_tiers`
 en lugar de repetirse como constante: por debajo de él, una transacción con evidencia fuerte de
 reglas va a `review` para un analista y nunca a bloqueo.
+
+`ML_FLOOR` es el suelo de acuerdo del modelo (`settings.ml_floor`, 5.0 hoy) y es la tercera
+condición de la rama de reglas. Es una barra de "el modelo ha opinionado", no de confianza: 5 sobre
+100 es una señal débil y cuenta como opinión. Sin él el suelo de importe sería el único freno de un
+bloqueo dirigido por reglas, así que una transacción que el modelo puntuó con 0.13 bloquearía solo
+por la palabra de las reglas. La asimetría es el diseño — solo limita la rama de **reglas**, porque
+`ml_score > threshold` por sí solo sigue bloqueando: eso es el modelo desautorizando a las reglas, y
+el suelo existe para descontar un modelo que no tiene nada que decir, no uno que habla fuerte.
 
 Esas bandas necesitan ambas capas. Con el modelo caído no hay capa ML contra la que enrutar, así
 que una transacción degradada vuelve a las bandas de `risk_score` de arriba, con los pesos
@@ -349,6 +358,7 @@ Si el artefacto falta o no se puede leer, la API igualmente arranca y puntúa, a
 | GET | `/api/v1/alerts` | user |
 | POST | `/api/v1/alerts/{id}/review` | user |
 | POST | `/api/v1/alerts/{id}/false-positive` | user |
+| POST | `/api/v1/alerts/{id}/confirm-fraud` | user |
 | POST | `/api/v1/alerts/{id}/revert` | user |
 
 ### Reportes · Monitoreo · Auditoría
@@ -398,7 +408,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (consumidores Redis Streams)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 páginas, 24 componentes, vitest + MSW)
-├── tests/                  # unitarios + integración (1242 tests de backend)
+├── tests/                  # unitarios + integración (1501 tests de backend)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # notebooks de exploración/entrenamiento con PaySim
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -409,7 +419,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (1242 tests — `pytest tests/ -q` imprime 1205 pasados, 30 omitidos, 7 xfail)
+# Backend (1501 tests — `pytest tests/ -q` imprime 1463 pasados, 31 omitidos, 7 xfail)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # solo unitarios
 pytest tests/integration -v     # solo integración — se ejecuta con db y redis SIMULADOS (ver conftest)
@@ -503,4 +513,4 @@ Proyecto de portfolio de [mikelrh-dev](https://github.com/mikelrh-dev) que demue
 - ML en producción: feature engineering alineado entre entrenamiento y serving, explicabilidad SHAP, monitoreo de drift, triggers de reentrenamiento
 - Pipelines async confiables: Redis Streams, consumer groups, reintentos, DLQ
 - Seguridad: JWT con refresh + blacklist, RBAC, rate limiting, audit trail inmutable con SHA-256
-- Disciplina de testing: 1242 tests de backend (`pytest tests/ -q`) + suite vitest de frontend (789 tests), CI de 5 jobs
+- Disciplina de testing: 1501 tests de backend (`pytest tests/ -q`) + suite vitest de frontend (801 tests), CI de 5 jobs

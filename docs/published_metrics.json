@@ -477,26 +477,26 @@
     }
   },
   "routed_policy": {
-    "note": "ScoringService._classify_routed, the per-layer routing landed in 3db121c: fraud if ml > threshold OR (rule > threshold AND amount >= the critical floor); review if not fraud and (rule > threshold OR ml > threshold * 0.75); legitimate otherwise. Discrimination metrics are null by construction -- a routed verdict is a label, not a ranked score.",
+    "note": "ScoringService._classify_routed, the per-layer routing landed in 3db121c and given an ML-agreement floor in 2910fa2: fraud if ml > threshold OR (rule > threshold AND amount >= the critical floor AND ml_score >= the ML floor); review if not fraud and (rule > threshold OR ml > threshold * 0.75); legitimate otherwise. The ML floor is a third condition on the RULE branch only, so a loud model still blocks on its own and a rule branch cannot override a model calling the transaction ordinary. Discrimination metrics are null by construction -- a routed verdict is a label, not a ranked score.",
     "test_split": {
       "rows": 10000,
       "frauds": 100,
       "legitimate_rows": 9900,
-      "precision": 0.4057,
+      "precision": 0.8161,
       "recall": 0.71,
-      "f1": 0.5164,
-      "tn": 9796,
-      "fp": 104,
+      "f1": 0.7594,
+      "tn": 9884,
+      "fp": 16,
       "fn": 29,
       "tp": 71,
-      "flagged_rows": 175,
-      "false_positive_rate": 0.010505,
+      "flagged_rows": 87,
+      "false_positive_rate": 0.001616,
       "missed_frauds": 29,
       "precision_ci": [
-        0.336,
-        0.48
+        0.722,
+        0.884
       ],
-      "precision_ci_n": 175,
+      "precision_ci_n": 87,
       "recall_ci": [
         0.615,
         0.79
@@ -506,45 +506,45 @@
       "roc_auc": null,
       "brier": null,
       "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
-      "verdict_fraud": 175,
-      "verdict_review": 910,
+      "verdict_fraud": 87,
+      "verdict_review": 998,
       "verdict_legitimate": 8915,
-      "fraud_rows": 175,
-      "review_rows": 910
+      "fraud_rows": 87,
+      "review_rows": 998
     },
     "held_out": {
       "rows": 30000,
       "frauds": 288,
       "legitimate_rows": 29712,
-      "precision": 0.4135,
-      "recall": 0.7222,
-      "f1": 0.5259,
-      "tn": 29417,
-      "fp": 295,
-      "fn": 80,
-      "tp": 208,
-      "flagged_rows": 503,
-      "false_positive_rate": 0.009929,
-      "missed_frauds": 80,
+      "precision": 0.812,
+      "recall": 0.7049,
+      "f1": 0.7546,
+      "tn": 29665,
+      "fp": 47,
+      "fn": 85,
+      "tp": 203,
+      "flagged_rows": 250,
+      "false_positive_rate": 0.001582,
+      "missed_frauds": 85,
       "precision_ci": [
-        0.371,
-        0.457
+        0.759,
+        0.856
       ],
-      "precision_ci_n": 503,
+      "precision_ci_n": 250,
       "recall_ci": [
-        0.668,
-        0.771
+        0.65,
+        0.755
       ],
       "recall_ci_n": 288,
       "pr_auc": null,
       "roc_auc": null,
       "brier": null,
       "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
-      "verdict_fraud": 503,
-      "verdict_review": 2674,
+      "verdict_fraud": 250,
+      "verdict_review": 2927,
       "verdict_legitimate": 26823,
-      "fraud_rows": 503,
-      "review_rows": 2674
+      "fraud_rows": 250,
+      "review_rows": 2927
     }
   },
   "analyst_queue": {
@@ -577,8 +577,8 @@
       "roc_auc": null,
       "brier": null,
       "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
-      "verdict_fraud": 175,
-      "verdict_review": 910,
+      "verdict_fraud": 87,
+      "verdict_review": 998,
       "verdict_legitimate": 8915,
       "queue_rows": 1085
     },
@@ -610,8 +610,8 @@
       "roc_auc": null,
       "brier": null,
       "discrimination_undefined_reason": "a routed verdict is a label, not a ranked score; PR-AUC/ROC-AUC/Brier are undefined on it",
-      "verdict_fraud": 503,
-      "verdict_review": 2674,
+      "verdict_fraud": 250,
+      "verdict_review": 2927,
       "verdict_legitimate": 26823,
       "queue_rows": 3177
     }

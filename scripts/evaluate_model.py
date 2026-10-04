@@ -968,9 +968,12 @@ AND THE DECISION IS NOT THE MODEL
     is the whole point. The model holds 0.25 of the ensemble; the other 0.75
     is rules and context, so a model that ranks well can still be averaged
     into a verdict nobody would have chosen.
-  - The ensemble and routed blocks are LOWER BOUNDS. This corpus has no
-    velocity window and no fraud graph, so three rules cannot fire and the
-    context layer is a real 0.0 that still holds its 0.15 of the weight.
+  - The one layer these blocks are missing is the fraud GRAPH. A static corpus
+    cannot hold one, so near_fraud cannot fire. Velocity is NOT missing: each
+    row carries its own 5-minute count -- the same quantity the API reads
+    before scoring -- so the velocity rules fire here as they fire in
+    production and the context layer is a derived value, not a hard 0.0. Read
+    these blocks as the deployed policies measured with one layer absent.
 """)
     print(BANNER)
 

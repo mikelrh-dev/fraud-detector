@@ -27,7 +27,7 @@ Every transaction gets a 0–100 risk score, a classification (`legitimate | rev
 - **Immutable audit trail** with SHA-256 checksums on every scoring decision and analyst action
 - **JWT auth** (access + refresh + blacklist), role-based access (user/admin), per-route rate limiting
 - **React 19 dashboard** with score trends, SHAP cards and alert workflow
-- **1242 backend tests** (unit + integration) and 789 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build). `pytest tests/ -q` reports the backend figure as **1205 passed, 30 skipped, 7 xfailed**; `cd frontend && npm test` reports the frontend figure as 789 passed
+- **1501 backend tests** (unit + integration) and 801 frontend tests, CI with 5 jobs (ruff, mypy, pytest, ESLint, vitest, Docker smoke build). `pytest tests/ -q` reports the backend figure as **1463 passed, 31 skipped, 7 xfailed**; `cd frontend && npm test` reports the frontend figure as 801 passed
 
 ## Architecture
 
@@ -79,7 +79,8 @@ That `risk_score` is published, persisted and shown in the UI, but it does **not
 the classification. `ScoringService` routes on the layer scores instead:
 
 ```
-fraud      : ml_score > threshold, OR (rule_score > threshold AND amount >= 50,000.01)
+fraud      : ml_score > threshold, OR (rule_score > threshold AND amount >= 50,000.01
+                                      AND ml_score >= ML_FLOOR)
 review     : not fraud, and (rule_score > threshold OR ml_score > threshold * 0.75)
 legitimate : otherwise
 ```
@@ -90,6 +91,14 @@ The reason is that the weights used to arbitrate. With ML at 0.25 of the ensembl
 compared. `50,000.01` is the `min_amount` of the critical tier, read from
 `settings.threshold_tiers` rather than restated: below it, a rule-strong transaction is
 `review` for an analyst and never a block.
+
+`ML_FLOOR` is the model's agreement floor (`settings.ml_floor`, 5.0 today) and it is the third
+condition on the rule branch. It is a *has the model spoken* bar, not a confidence bar: 5 out of
+100 is a weak signal and counts as an opinion. Without it the amount floor would be the only brake
+on a rule-driven block, so a transaction the model scored at 0.13 blocks on the rules' word alone.
+The asymmetry is the design — it gates the **rule** branch only, because `ml_score > threshold` on
+its own still blocks: that is the model overruling the rules, and the floor exists to discount a
+model with nothing to say, not a loud one.
 
 Those bands need both layers. With the model down there is no ML layer to route against, so a
 degraded transaction falls back to the `risk_score` bands above, with the weights redistributed
@@ -344,6 +353,7 @@ If the artifact is missing or unreadable the API still starts and scores, contri
 | GET | `/api/v1/alerts` | user |
 | POST | `/api/v1/alerts/{id}/review` | user |
 | POST | `/api/v1/alerts/{id}/false-positive` | user |
+| POST | `/api/v1/alerts/{id}/confirm-fraud` | user |
 | POST | `/api/v1/alerts/{id}/revert` | user |
 
 ### Reports · Monitoring · Audit
@@ -392,7 +402,7 @@ fraud-detector/
 │   │                       #   llm, drift_service, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (Redis Streams consumers)
 ├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 24 components, vitest + MSW)
-├── tests/                  # unit + integration (1242 backend tests)
+├── tests/                  # unit + integration (1501 backend tests)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # PaySim exploration / training notebooks
 ├── docker/                 # Dockerfiles (api, frontend) + nginx.conf
@@ -403,7 +413,7 @@ fraud-detector/
 ## Testing
 
 ```bash
-# Backend (1242 tests — `pytest tests/ -q` prints 1205 passed, 30 skipped, 7 xfailed)
+# Backend (1501 tests — `pytest tests/ -q` prints 1463 passed, 31 skipped, 7 xfailed)
 pytest tests/ -v --cov=src --cov-report=term
 pytest tests/unit -v            # unit only
 pytest tests/integration -v     # integration only — runs against MOCKED db and redis (see conftest)
@@ -494,4 +504,4 @@ Portfolio project by [mikelrh-dev](https://github.com/mikelrh-dev) demonstrating
 - ML in production: feature engineering aligned between training and serving, SHAP explainability, drift monitoring, retraining triggers
 - Reliable async pipelines: Redis Streams, consumer groups, retries, DLQ
 - Security: JWT with refresh + blacklist, RBAC, rate limiting, immutable SHA-256 audit trail
-- Testing discipline: 1242 backend tests (`pytest tests/ -q`) + frontend vitest suite (789 tests), 5-job CI
+- Testing discipline: 1501 backend tests (`pytest tests/ -q`) + frontend vitest suite (801 tests), 5-job CI

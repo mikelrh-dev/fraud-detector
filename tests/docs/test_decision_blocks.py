@@ -1,8 +1,10 @@
-"""RED-phase regression tests for the two Phase-2 manifest defects.
+"""Regression tests for the two Phase-2 manifest defects.
 
-Lives OUTSIDE the repo on purpose: acceptance criterion 4 requires
-`git status --short` to show only the three dirty files, so these cannot be
-landed yet. They are the TDD red-green evidence for this fix.
+Lives INSIDE the repo, in `tests/docs/`, alongside
+`test_published_metrics.py` and therefore collected by a plain
+`pytest tests/` run. These were written RED outside the tree while the
+manifest fix was still in flight; they landed with the fix, so the
+red-green evidence they were written for is now the passing suite itself.
 
 Run from the repo root:
     .venv\Scripts\python.exe -m pytest <this file> -v
@@ -21,18 +23,22 @@ from src.services.scoring_service import ScoringService
 # ---------------------------------------------------------------- fixtures --
 
 # A tiny labelled corpus. 4 legit rows (y == 0).sum() == 4, two of them frauds
-# false positives by policy design:
+# false positives by policy design. The thresholds are the production
+# amount-tiered ones: 70 for the four small amounts, 50 for the two large ones.
+# Measured with the shipped policy, row by row:
 #
 #   row 1  legit, rule 90 > threshold 70, amount 200 well under the critical
 #          floor -> REVIEW. Labelled legitimate, routed to an analyst.
 #   row 4  fraud, ml 80 > threshold 50                  -> FRAUD.
-#   row 5  fraud, rule 55 > threshold 50 but amount 6000 < floor,
-#          ml 30 < 50                                   -> LEGITIMATE.
+#   row 5  fraud, ml 95 > threshold 50                  -> FRAUD.
+#   rows 0, 2, 3  quiet rule, ml 5 (at ML_FLOOR, not over it)
+#                                             -> LEGITIMATE.
 #
-# So the label-zero count is 4 while the routed "legitimate" count is rows
-# 0, 2, 3, 5 -> 4... which collides. Row 5 is therefore given a rule score that
-# reaches review, making the routed legitimate count 3 and the two quantities
-# genuinely different. Without that collision the defect is invisible here.
+# So the label-zero count is 4 while the routed "legitimate" count is 3
+# (rows 0, 2, 3) -- genuinely different, which is what the defect-1 tests
+# below need. Row 5 earning fraud on the model's own score is what keeps the
+# two apart: had it been routed LEGITIMATE the counts would both read 4 and
+# the defect would be invisible here.
 Y = np.array([0, 0, 0, 0, 1, 1])
 AMOUNTS = np.array([100.0, 200.0, 300.0, 400.0, 5000.0, 6000.0])
 RULE = np.array([10.0, 90.0, 10.0, 10.0, 55.0, 55.0])
