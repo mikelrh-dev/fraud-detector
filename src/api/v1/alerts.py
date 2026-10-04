@@ -189,6 +189,10 @@ async def false_positive_alert_endpoint(
 
     previous_status = alert.status.value if hasattr(alert.status, "value") else alert.status
     alert.status = AlertStatus.RESOLVED
+    # The verdict, recorded alongside the status it implies. Before this
+    # existed, `resolved` was reachable only from this endpoint, so a
+    # confirmed fraud and a false positive were the same row.
+    alert.analyst_label = "false_positive"
     alert.reviewed_by = uuid.UUID(current_user["user_id"])
     alert.reviewed_at = datetime.now(tz=timezone.utc)
     await db.flush()
@@ -196,6 +200,61 @@ async def false_positive_alert_endpoint(
     await _audit_service.create_entry(
         db=db,
         action_type="false_positive",
+        transaction_id=alert.transaction_id,
+        user_id=uuid.UUID(current_user["user_id"]),
+        previous_status=previous_status,
+        new_status="resolved",
+        details={"alert_id": str(alert.id), "reason": payload.reason},
+    )
+
+    return AlertResponse(
+        id=alert.id,
+        transaction_id=alert.transaction_id,
+        status=alert.status.value,
+        score=alert.score,
+        threshold=alert.threshold,
+        classification=alert.classification,
+        reviewed_by=alert.reviewed_by,
+        reviewed_at=alert.reviewed_at,
+        created_at=alert.created_at,
+    )
+
+
+@router.post("/{alert_id}/confirm-fraud", response_model=AlertResponse)
+async def confirm_fraud_alert_endpoint(
+    alert_id: uuid.UUID,
+    payload: AlertActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> AlertResponse:
+    """Mark an alert as confirmed fraud (resolved).
+
+    The mirror image of `false-positive`: same ownership check, same
+    attribution, same audit entry, opposite verdict. It exists because
+    `resolved` previously meant exactly one thing, so an analyst who correctly
+    confirmed a fraud had nowhere to put that fact -- and the only labelled
+    examples the database could ever hold would have been false positives.
+    """
+    result = await db.execute(select(FraudAlert).where(FraudAlert.id == alert_id))
+    alert = result.scalar_one_or_none()
+    if alert is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alert not found",
+        )
+
+    await _check_alert_ownership(db, alert, current_user)
+
+    previous_status = alert.status.value if hasattr(alert.status, "value") else alert.status
+    alert.status = AlertStatus.RESOLVED
+    alert.analyst_label = "confirmed_fraud"
+    alert.reviewed_by = uuid.UUID(current_user["user_id"])
+    alert.reviewed_at = datetime.now(tz=timezone.utc)
+    await db.flush()
+
+    await _audit_service.create_entry(
+        db=db,
+        action_type="confirm_fraud",
         transaction_id=alert.transaction_id,
         user_id=uuid.UUID(current_user["user_id"]),
         previous_status=previous_status,

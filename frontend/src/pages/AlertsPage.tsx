@@ -5,6 +5,7 @@ import {
   listAlerts,
   reviewAlert,
   markFalsePositive,
+  confirmFraud,
   revertBlock,
 } from "../api/alerts";
 import { Sidebar } from "../components/Sidebar";
@@ -34,7 +35,7 @@ import {
 // Classification colour and label come from lib/classification. This page used
 // to carry its own map that was missing `pending` entirely, so an unrecognised
 // classification silently fell through to a fourth, undocumented colour.
-type AlertAction = "review" | "false_positive" | "revert";
+type AlertAction = "review" | "false_positive" | "confirm_fraud" | "revert";
 
 /**
  * The status values a link may carry. Unlike the transactions filter, the
@@ -113,6 +114,8 @@ export default function AlertsPage() {
           return reviewAlert(alertId, reason);
         case "false_positive":
           return markFalsePositive(alertId, reason);
+        case "confirm_fraud":
+          return confirmFraud(alertId, reason);
         case "revert":
           return revertBlock(alertId, reason);
       }
@@ -330,6 +333,32 @@ export default function AlertsPage() {
                               }
                               tone="info"
                             />
+                            {/* The third outcome, and the one the row was
+                                missing. Both existing controls end in
+                                "resolved", and the only labelled examples the
+                                backend could hold were false positives — so
+                                an analyst who correctly confirmed a fraud had
+                                nothing to press, and a correct confirmation
+                                left the row looking unexamined.
+
+                                `tone="risk"` reuses the existing `warn` colour
+                                ramp rather than minting one. Confirming fraud
+                                is not destructive and shares nothing with
+                                "reverting" semantically, so the two are
+                                deliberately NOT given the same tone: `warn` on
+                                an undo would misdescribe it. This is a stand-in
+                                for a real risk ramp, and the honest note is
+                                that the design system's risk colours already
+                                have three steps (`risk-clean`, `risk-warn`,
+                                `risk-critical`) and none of them means
+                                "confirmed malicious" here. */}
+                            <ActionButton
+                              label="Confirmar Fraude"
+                              onClick={() =>
+                                openActionDialog(alert.id, "confirm_fraud")
+                              }
+                              tone="risk"
+                            />
                             <ActionButton
                               label="Falso Pos."
                               onClick={() =>
@@ -464,6 +493,22 @@ export default function AlertsPage() {
                                         openActionDialog(alert.id, "review")
                                       }
                                       tone="info"
+                                    />
+                                    {/* Same control as the mobile card above.
+                                        Rendered in both modes because the
+                                        desktop table is a SEPARATE branch of
+                                        the JSX, not a media query on one
+                                        subtree — which is why every action on
+                                        this page appears twice in the source.
+                                        Omitting it here would leave the
+                                        confirm control unreachable on
+                                        desktop. */}
+                                    <ActionButton
+                                      label="Confirmar Fraude"
+                                      onClick={() =>
+                                        openActionDialog(alert.id, "confirm_fraud")
+                                      }
+                                      tone="risk"
                                     />
                                     <ActionButton
                                       label="Falso Pos."
@@ -607,7 +652,9 @@ export default function AlertsPage() {
               ? "Revisar Alerta"
               : actionType === "false_positive"
                 ? "Marcar como Falso Positivo"
-                : "Revertir Alerta"
+                : actionType === "confirm_fraud"
+                  ? "Confirmar Fraude"
+                  : "Revertir Alerta"
           }
           onConfirm={confirmAction}
           onCancel={() => setActionAlertId(null)}
@@ -717,9 +764,10 @@ export default function AlertsPage() {
 /**
  * Action semantics → semantic token tone (no raw palette colors):
  * info = neutral workflow step (review), clean = resolving positively
- * (false positive), warn = undoing with caution (revert).
+ * (false positive), warn = undoing with caution (revert), risk = the analyst
+ * has decided this transaction IS fraud (confirm).
  */
-type ActionTone = "info" | "clean" | "warn";
+type ActionTone = "info" | "clean" | "warn" | "risk";
 
 function ActionButton({
   label,
@@ -747,6 +795,12 @@ function ActionButton({
     clean:
       "bg-risk-clean/10 text-risk-clean hover:bg-risk-clean/20 border-risk-clean/30",
     warn: "bg-risk-warn/10 text-risk-warn hover:bg-risk-warn/20 border-risk-warn/30",
+    // `risk-critical` rather than `risk-warn`, because this is the only
+    // control on the page that means "this IS the bad outcome" and reusing
+    // `warn` would make "confirm fraud" and "undo" the same colour. That is a
+    // semantic collision, not a style preference: an analyst scanning the
+    // queue reads tone before label.
+    risk: "bg-risk-critical/10 text-risk-critical hover:bg-risk-critical/20 border-risk-critical/30",
   };
 
   return (

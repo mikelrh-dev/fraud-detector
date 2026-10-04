@@ -80,6 +80,30 @@ export async function markFalsePositive(
 }
 
 /**
+ * Mark an alert as confirmed fraud.
+ *
+ * The mirror of `markFalsePositive`. It exists because the queue offered only
+ * "look at it" and "it's wrong": an analyst who correctly confirmed a fraud
+ * had no control to press, so a correct confirmation and an alert nobody
+ * examined left the row indistinguishable.
+ *
+ * `action` must be exactly `confirm_fraud` — the backend validates it against
+ * `^(review|false_positive|confirm_fraud|revert)$`, so any other spelling is a
+ * 422 raised by the body parser and reads as a broken route rather than a
+ * wrong enum member.
+ */
+export async function confirmFraud(
+  alertId: string,
+  reason?: string,
+): Promise<Alert> {
+  const response = await apiClient.post<Alert>(
+    `/alerts/${alertId}/confirm-fraud`,
+    { action: "confirm_fraud", reason },
+  );
+  return response.data;
+}
+
+/**
  * Revert an alert action (reopen).
  */
 export async function revertBlock(
