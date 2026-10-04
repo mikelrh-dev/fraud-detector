@@ -42,7 +42,15 @@ class MerchantEmbeddingService:
             model_name: HuggingFace model identifier (default: lightweight all-MiniLM-L6-v2)
         """
         try:
-            self.model = SentenceTransformer(model_name)
+            # Declared Optional because the except branch below sets None, and
+            # because a model that fails to load leaves the service unavailable
+            # rather than raising. Until sentence-transformers 3.x this attribute
+            # was untyped (no py.typed marker), so mypy inferred Any here and the
+            # None assignment went unchecked; 3.4.1 ships py.typed, which turned
+            # this pre-existing wrong declaration into a real type error. The
+            # runtime contract is unchanged: is_available() and get_embedding()
+            # already handle the None case.
+            self.model: SentenceTransformer | None = SentenceTransformer(model_name)
             self.model_name = model_name
             logger.info(
                 "MerchantEmbeddingService initialized with model: %s", model_name

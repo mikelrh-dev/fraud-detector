@@ -60,7 +60,24 @@ numpy==1.26.4
 scipy>=1.11,<2.0
 pandas==2.2.0
 shap==0.46.0
-sentence-transformers==2.2.2
+# 3.4.1, not 2.2.2: the old pin cannot import in this stack. 2.2.2 does
+# `from huggingface_hub import ... cached_download`, and `cached_download` is
+# gone from huggingface_hub before the version this stack actually resolves to
+# (0.36.2), so `src.services.merchant_embedding_service` died at import and
+# fraud-detector-embedding-worker crash-looped on every start.
+#
+# Pinning huggingface_hub instead is provably impossible, not merely awkward:
+# the transformers release this stack resolves to requires huggingface-hub
+# >=0.34.0, and `cached_download` is already absent at 0.34.0. The window where
+# 2.2.2 can import does not exist, so upgrading sentence-transformers is the
+# only fix that leaves the rest of the file untouched.
+#
+# 3.4.1 is the verified landing spot, not the frontier: its wheel imports none
+# of the removed hub APIs, and its dependency metadata fits the already-pinned
+# torch/transformers/hub stack. 4.x/5.x/6.x were not taken — they would move
+# transformers and torch too, which is a larger blast radius than this crash
+# justifies. Checked the wheel, not the release notes.
+sentence-transformers==3.4.1
 networkx==3.3
 
 # Utils
