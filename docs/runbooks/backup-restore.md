@@ -221,3 +221,33 @@ re-verified afterwards (26 transactions, unchanged).
    whose restore path has not been walked is a claim, not a control.
 6. **Retention is filename-based**, so an unrelated `.sql` file in the backup
    directory will eventually be rotated away.
+
+## Live row counts after the demo-history seed (2026-10-04)
+
+The drill log above records what the restored database contained **at drill
+time**. That record is a historical measurement of one exercise and is left
+exactly as written. Do not reconcile it against the numbers below: the drill ran
+against a scratch stack earlier the same day, and the dev database has moved on
+since — both from this seed and from ordinary activity.
+
+What the seed itself contributed, and what the dev database held immediately
+after it:
+
+| table | contributed by the seed | total on the dev database |
+|---|---|---|
+| `transactions` | +70 | 114 |
+| `users` | +1 (`demo-history@frauddetector.dev`) | 8 |
+| `fraud_scores` | +70 | 104 |
+| `fraud_alerts` | +12 | 22 |
+| `llm_reports` | 0 | 24 |
+| `audit_entries` | 0 | 65 |
+
+The 70 seeded transactions belong to the marker account
+`demo-history@frauddetector.dev`, so scoping to that account alone gives
+`transactions` 70, `fraud_scores` 70, `fraud_alerts` 12 — the difference between
+that and each total is pre-existing data plus unrelated activity since the
+drill, not seed output. `llm_reports` and `audit_entries` are untouched by the
+seed by design; their totals grew from other work.
+
+**If a future drill quotes counts, quote the counts it measured.** Do not
+reconcile them against either column above.
