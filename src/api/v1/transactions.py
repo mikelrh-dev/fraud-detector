@@ -313,8 +313,17 @@ async def create_and_score_transaction(
     )
     db.add(fraud_score)
 
-    # 7. Create alert if fraud
-    if classification == "fraud":
+    # 7. Create an alert for anything an analyst has to look at
+    # The gate is "not legitimate", not "is fraud". A `review` verdict is a
+    # grey-zone decision this endpoint already acts on - it flags the
+    # transaction, applies 3DS/SMS friction and stages a SHAP attribution -
+    # so withholding the alert row left the work assigned and nothing to work
+    # from: the review band was reachable only by filtering the transaction
+    # list by status. The queue is the screen built for that job, and it was
+    # empty for exactly the band the routed policy sends ~10% of traffic to.
+    # `legitimate` still creates nothing, which is the half that keeps the
+    # queue a queue.
+    if classification in ("fraud", "review"):
         alert = FraudAlert(
             transaction_id=txn.id,
             status=AlertStatus.OPEN,
