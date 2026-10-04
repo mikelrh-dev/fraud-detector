@@ -6,6 +6,101 @@ import secrets
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The signing secrets production must be given, keyed by field name.
+#
+# The env-var name is what an operator types, so it is what belongs in the error
+# message: the previous wording named the Python fields (`jwt_secret_key`), which
+# is a second lookup away from the variable actually missing from the box.
+_REQUIRED_PRODUCTION_SECRETS = {
+    "jwt_secret_key": "JWT_SECRET_KEY",
+    "api_secret_key": "API_SECRET_KEY",
+}
+
+_GENERATE_SECRET_HINT = (
+    'Generate each with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+)
+
+# Values that are a placeholder wearing a secret's shape.
+#
+# Two tiers, because the cost of each mistake differs. The exact set only
+# rejects a value that IS the placeholder: `JWT_SECRET_KEY=secret` is not a
+# secret, and no real secret equals "secret" either, so the comparison cannot
+# misfire on generated material. The substring tier exists for the values that
+# embed a placeholder inside something longer — `change_me_in_production` is the
+# literal value shipped in `.env.example`.
+#
+# False positives are the risk worth naming: a real secret is
+# `secrets.token_urlsafe(32)`, 43 characters drawn from [A-Za-z0-9_-], so the
+# shortest marker below ("insecure", 7 chars) appearing inside one has a
+# probability around 1e-11. A minimum-length rule would catch far more
+# placeholders, but that is an operator policy this guard was not asked to make;
+# it stays a deliberate omission until someone decides the policy rather than
+# inheriting it from a length heuristic.
+_PLACEHOLDER_SECRETS_EXACT = frozenset(
+    {
+        "secret",
+        "secretkey",
+        "secretkeyhere",
+        "password",
+        "pass",
+        "key",
+        "example",
+        "examplekey",
+        "examplekey123",
+        "supersecret",
+        "jwtsecret",
+        "jwtsecretkey",
+        "apisecret",
+        "apisecretkey",
+        "todo",
+        "fixme",
+        "none",
+        "null",
+        "nil",
+        "default",
+        "test",
+        "dev",
+        "development",
+        "local",
+        "debug",
+    }
+)
+
+_PLACEHOLDER_SECRETS_SUBSTRINGS = (
+    "changeme",
+    "replaceme",
+    "yoursecret",
+    "placeholder",
+    "insecure",
+    "notasecret",
+    "dummysecret",
+    "devsecret",
+    "localsecret",
+    "testsecret",
+    "samplekey",
+    "examplekey",
+    "donotuse",
+    "donotcommit",
+    "mustchange",
+)
+
+
+def _is_placeholder_secret(value: str) -> bool:
+    """Is this secret missing in everything but name?
+
+    Empty and whitespace-only count: `JWT_SECRET_KEY=` is what `.env.example`
+    ships, and a shell heredoc that fails to expand a variable leaves the same
+    thing behind. Comparing after stripping case and the separators an operator
+    reflexively sprinkles through a placeholder (`change-me`, `change_me`,
+    `Change Me`) collapses those variants onto one value.
+    """
+    if not value.strip():
+        return True
+    normalized = "".join(c for c in value.lower() if c not in "-_ \t\r\n")
+    if normalized in _PLACEHOLDER_SECRETS_EXACT:
+        return True
+    return any(marker in normalized for marker in _PLACEHOLDER_SECRETS_SUBSTRINGS)
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -13,19 +108,49 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     def _check_production_secrets(self) -> None:
-        """R1-005: production must inject secrets explicitly via env.
+        """R1-005: production must inject real secrets explicitly via env.
 
         Dev defaults are ephemeral random values; in production they would
         silently differ between workers and rotate on every restart.
+
+        Two failures are distinguished, because they are two different problems
+        with two different fixes:
+
+        * **absent** — the variable was never set, so the ephemeral default was
+          used. Detected via `model_fields_set`.
+        * **not a secret** — the variable WAS set, to nothing or to a
+          placeholder. `model_fields_set` cannot see this: pydantic records the
+          field as set the moment it assigns it, and an empty string is still
+          an assignment. Measured, with `ENVIRONMENT=production` and
+          `JWT_SECRET_KEY=`: booted, `jwt_secret_key` of length 0. An empty
+          HMAC key is not a weak key, it is no key — anyone can mint a valid
+          token. So presence is not checked here; the value is.
         """
         if self.environment != "production":
             return
-        injected = {"jwt_secret_key", "api_secret_key"} & self.model_fields_set
-        missing = {"jwt_secret_key", "api_secret_key"} - injected
+        injected = set(_REQUIRED_PRODUCTION_SECRETS) & self.model_fields_set
+        missing = set(_REQUIRED_PRODUCTION_SECRETS) - injected
         if missing:
             raise ValueError(
                 "Production environment requires explicit env injection of: "
-                + ", ".join(sorted(missing))
+                + ", ".join(sorted(_REQUIRED_PRODUCTION_SECRETS[f] for f in missing))
+                + ". "
+                + _GENERATE_SECRET_HINT
+            )
+
+        placeholders = sorted(
+            _REQUIRED_PRODUCTION_SECRETS[field]
+            for field, var_name in _REQUIRED_PRODUCTION_SECRETS.items()
+            if _is_placeholder_secret(getattr(self, field))
+        )
+        if placeholders:
+            raise ValueError(
+                "Production refused to boot: "
+                + ", ".join(placeholders)
+                + " is empty or a placeholder, which is not a signing key. "
+                + _GENERATE_SECRET_HINT
+                + ". Development keeps its ephemeral default; this check is "
+                "production-only."
             )
 
     def __init__(self, **kwargs) -> None:
