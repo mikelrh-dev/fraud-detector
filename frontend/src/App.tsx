@@ -30,6 +30,7 @@ const TransactionDetail = lazy(() => import("./pages/TransactionDetail"));
 const AlertsPage = lazy(() => import("./pages/AlertsPage"));
 const TransactionsPage = lazy(() => import("./pages/TransactionsPage"));
 const CreateTransactionPage = lazy(() => import("./pages/CreateTransactionPage"));
+const ConflictQueuePage = lazy(() => import("./pages/ConflictQueuePage"));
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -145,6 +146,18 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <AlertsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* The conflict queue. Its own top-level path rather than a filter on
+              `/transactions`, because the disagreement is a relationship
+              between two scores and not a state a transaction is IN — see
+              ConflictQueuePage for the full argument. */}
+          <Route
+            path="/conflicts"
+            element={
+              <ProtectedRoute>
+                <ConflictQueuePage />
               </ProtectedRoute>
             }
           />

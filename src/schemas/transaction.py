@@ -184,6 +184,22 @@ class TransactionResponse(BaseModel):
     status: str
     risk_score: float | None = None
     classification: str | None = None
+    # The two layer scores, on the LIST path only. `TransactionResponse` is
+    # shared with the detail path, and the detail path already exposes both
+    # inside `scoring` (a `ScoreBreakdown` read from the same row), so these
+    # stay null there rather than repeating the same two numbers under a second
+    # name in one payload.
+    #
+    # They exist because the conflict queue is unreadable without them: a
+    # disagreement is a claim about two numbers, and the list response carried
+    # only their weighted blend, so the one screen whose entire subject is the
+    # gap between the layers could not show the gap. Null means "this
+    # transaction has no score row", which is NOT the same as a layer having run
+    # and produced 0.0 — the product records that distinction through
+    # `layers_used` on the scoring path (A15) and a zero here would invent a
+    # reading.
+    rule_score: float | None = None
+    ml_score: float | None = None
     scoring: ScoreBreakdown | None = None
     user_id: uuid.UUID
     created_at: datetime

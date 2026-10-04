@@ -1,12 +1,16 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { BellRinging, List, Receipt, SignOut, SquaresFour } from "@phosphor-icons/react";
+import { BellRinging, GitDiff, List, Receipt, SignOut, SquaresFour } from "@phosphor-icons/react";
 import { useAuthStore } from "../store/authStore";
 import { BrandShield } from "./BrandShield";
 
 interface SidebarProps {
-  activeItem: "dashboard" | "transactions" | "alerts";
+  // `conflicts` is a fourth top-level destination rather than a filter inside
+  // `transactions`, so it takes its own key. `isActive` below is exact-match
+  // except for one hardcoded prefix rule, which is why adding a key here is the
+  // whole of wiring it up.
+  activeItem: "dashboard" | "transactions" | "alerts" | "conflicts";
 }
 
 interface NavItemProps {
@@ -25,6 +29,11 @@ const navItems = [
   { key: "dashboard" as const, label: "Dashboard", icon: <SquaresFour size={16} />, path: "/dashboard" },
   { key: "transactions" as const, label: "Transacciones", icon: <Receipt size={16} />, path: "/transactions" },
   { key: "alerts" as const, label: "Alertas", icon: <BellRinging size={16} />, path: "/alerts" },
+  // The queue's label is the heading the page renders, so the nav entry and
+  // the `h1` are the same words — an analyst who reads one has read the other.
+  // `GitDiff` rather than a warning glyph: nothing here has gone wrong yet,
+  // which is the whole point of the screen.
+  { key: "conflicts" as const, label: "Cola de Conflictos", icon: <GitDiff size={16} />, path: "/conflicts" },
 ];
 
 function NavItem({ icon, label, isActive, onClick }: NavItemProps) {

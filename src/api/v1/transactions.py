@@ -43,6 +43,7 @@ from src.schemas.transaction import (
     TransactionResponse,
 )
 from src.services.audit import AuditService
+from src.services.conflict_queue import conflict_ids_subquery
 from src.services.ensemble import EnsembleScorer
 from src.services.feature_engine import FeatureEngine
 from src.services.graph_service import FraudGraphService
@@ -460,6 +461,13 @@ async def list_transactions_endpoint(
     user_id: uuid.UUID | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    conflict: bool = Query(
+        False,
+        description=(
+            "Restrict to the conflict queue: transactions whose rule and ML "
+            "layers disagreed. Read-only; changes no score and no verdict."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> TransactionListResponse:
@@ -467,6 +475,13 @@ async def list_transactions_endpoint(
 
     Non-admin users are always scoped to their own transactions; requesting
     another user's id is rejected outright (R1-003).
+
+    `conflict=true` narrows the result set to the transactions where the two
+    scoring layers disagreed, as a SUBQUERY on the same page and count
+    statements — one parameter rather than a second endpoint, because a
+    dedicated route would have to re-implement pagination, the count, the
+    owner scoping and the batched score read that this path already has.
+    `services/conflict_queue.py` owns the definition.
     """
     if not _is_admin(current_user):
         own_id = _current_user_uuid(current_user)
@@ -504,6 +519,18 @@ async def list_transactions_endpoint(
     if date_to:
         count_query = count_query.where(Transaction.created_at <= date_to)
 
+    # The conflict filter goes onto BOTH statements. R4 is the precedent: this
+    # endpoint once counted the whole table and filtered the page, which is a
+    # counter that lies, and a filter that reached only the page would be the
+    # same bug in a new place. `conflict_ids_subquery` is a subquery rather than
+    # a JOIN because `fraud_scores` has no unique constraint on
+    # `transaction_id`, and a JOIN could fan one transaction out across its
+    # score rows and inflate the count along with the page.
+    if conflict:
+        conflict_ids = conflict_ids_subquery()
+        query = query.where(Transaction.id.in_(conflict_ids))
+        count_query = count_query.where(Transaction.id.in_(conflict_ids))
+
     total = (await db.execute(count_query)).scalar_one()
 
     # Stable ordering: created_at DESC with id DESC as tiebreaker
@@ -532,6 +559,12 @@ async def list_transactions_endpoint(
                 classification=(
                     _classification_str(score.classification) if score else None
                 ),
+                # Both layers on the list path, for the conflict queue to be
+                # reviewable. Straight off the same batched row the ensemble
+                # came from, so this costs no query and cannot disagree with
+                # `risk_score`.
+                rule_score=score.rule_score if score else None,
+                ml_score=score.ml_score if score else None,
                 created_at=t.created_at,
                 updated_at=t.updated_at,
             )

@@ -59,8 +59,16 @@ export const handlers = [
   http.get("*/api/v1/transactions", ({ request }) => {
     const url = new URL(request.url);
     const page = Number(url.searchParams.get("page") || 1);
-    const items = Array.from({ length: 10 }, (_, i) => {
+    // `conflict=true` narrows to the transactions whose two layers disagreed.
+    // Honoured here rather than ignored, so a page that forgets the filter gets
+    // an obviously wrong fixture rather than a plausible one — and so this
+    // handler stays a model of the endpoint rather than a subset of it.
+    const conflictsOnly = url.searchParams.get("conflict") === "true";
+    const candidates = Array.from({ length: 10 }, (_, i) => {
       const isReview = i % 3 === 0;
+      // Disagreement in both directions, alternating, so a fixture consumer
+      // sees the full population and not just one shape of it.
+      const rulesLoud = i % 2 === 0;
       return {
         id: `tx-${page}-${i}`,
         amount: 100 + i * 500,
@@ -70,6 +78,8 @@ export const handlers = [
         card_last4: "1234",
         status: isReview ? "flagged" : "approved",
         risk_score: isReview ? 62 : 15,
+        rule_score: rulesLoud ? 85 : 12,
+        ml_score: rulesLoud ? 27.5 : 91,
         classification: isReview ? "review" : "legitimate",
         scoring: null,
         user_id: "00000000-0000-0000-0000-000000000001",
@@ -77,7 +87,14 @@ export const handlers = [
         updated_at: new Date().toISOString(),
       };
     });
-    return HttpResponse.json({ items, total: 50, page, page_size: 10 });
+    const agreeing = candidates.filter((tx) => (tx.rule_score > 40) === (tx.ml_score > 40));
+    const items = conflictsOnly ? candidates.filter((tx) => !agreeing.includes(tx)) : candidates;
+    return HttpResponse.json({
+      items,
+      total: conflictsOnly ? items.length : 50,
+      page,
+      page_size: 10,
+    });
   }),
 
   http.get("*/api/v1/transactions/:id", ({ params }) => {

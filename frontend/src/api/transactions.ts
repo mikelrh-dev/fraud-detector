@@ -15,6 +15,27 @@ export interface Transaction {
   status: string;
   risk_score: number | null;
   classification: string | null;
+  /**
+   * The two layer scores, present on the LIST response and always null on the
+   * detail response.
+   *
+   * They exist because the conflict queue is unreadable without them: a
+   * disagreement is a claim about two numbers, and the list carried only their
+   * weighted blend, so the one screen whose subject is the gap between the
+   * layers could not show the gap.
+   *
+   * `null` means "this transaction has no score row" and is NOT the same as a
+   * layer having run and produced 0.0. The backend does not invent a zero,
+   * because the product already records that distinction deliberately (A15: an
+   * absent ML layer is reported through `layers_used`, never by nulling the
+   * score), and a fabricated 0 here would be read as a measurement.
+   *
+   * Required rather than optional: the backend sends both on every
+   * `TransactionResponse`, null included, so there is no wire state in which
+   * they are absent — only states in which they are null.
+   */
+  rule_score: number | null;
+  ml_score: number | null;
   scoring?: {
     rule_score: number;
     ml_score: number; // backend guarantees non-nullable float
@@ -107,6 +128,15 @@ export interface TransactionFilters {
   user_id?: string;
   date_from?: string;
   date_to?: string;
+  /**
+   * Restrict to the conflict queue — transactions whose rule and ML layers
+   * disagreed. Read-only on the server: it changes no score and no verdict.
+   *
+   * A boolean rather than a string, and omitted when falsy, so the plain
+   * transaction list and the queue share one endpoint and one serialiser
+   * instead of two that can drift.
+   */
+  conflict?: boolean;
 }
 
 /**
@@ -122,6 +152,7 @@ export async function listTransactions(
   if (filters.user_id) params.set("user_id", filters.user_id);
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
+  if (filters.conflict) params.set("conflict", "true");
 
   const response = await apiClient.get<TransactionListResponse>(
     `/transactions?${params.toString()}`,
