@@ -104,6 +104,33 @@ class Settings(BaseSettings):
     # Ollama
     ollama_timeout: int = 30
 
+    # ML agreement floor for the rule branch of the routed policy.
+    #
+    # `_classify_routed` blocks on rule evidence ALONE only when
+    # `rule_score > threshold AND amount >= critical_floor`. Without a condition
+    # on the model, that branch could override the model asserting the
+    # transaction was ordinary: measured, `acme`/`retail` at 50,001 EUR scores
+    # rule 48.59 against a threshold of 40 and ml 0.13, and the rules alone
+    # blocked it.
+    #
+    # 5.0 is not a confidence bar, it is a "has the model spoken" bar. 5 out of
+    # 100 is a very weak signal and it is enough; anything below it is the model
+    # reporting that it found nothing, and blocking over that is a block on the
+    # rules' authority alone.
+    #
+    # It gates the RULE branch only. `ml > threshold` alone still blocks, because
+    # that is the model overruling the rules and this floor exists precisely to
+    # discount a model with nothing to say. It also does not touch the degraded
+    # path: with no model there is nothing to agree with, and the shipped
+    # ensemble decides.
+    #
+    # FRAGILITY: the flagship rule-driven fraud (400k USD to `binance` at 03:00)
+    # scores ml 17.96 and so clears this by 12.96. A retrain that pulled that
+    # score under 5.0 would silently downgrade it to `review`.
+    # `TestTheRuleBranchNeedsTheModelToAgree.test_case_a_clears_the_floor_with_margin`
+    # pins the margin so the retrain fails the suite instead of the case.
+    ml_floor: float = 5.0
+
     # Feature Flags
     fraud_detection_enabled: bool = True
     velocity_store_enabled: bool = True

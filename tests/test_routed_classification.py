@@ -13,16 +13,37 @@ the weight, so ml_score 85 against a quiet rule layer produced an ensemble of
 
 `compute_scores` now routes on the layers themselves:
 
-    fraud      : ml > threshold, OR (rule > threshold AND amount >= FLOOR)
+    fraud      : ml > threshold, OR (rule > threshold AND amount >= AMOUNT_FLOOR
+                                                AND ml_score >= ML_FLOOR)
     review     : not fraud, and (rule > threshold OR ml > threshold * 0.75)
     legitimate : otherwise
 
-`FLOOR` is the `min_amount` of the last (critical) tier in
+`AMOUNT_FLOOR` is the `min_amount` of the last (critical) tier in
 `settings.threshold_tiers`, read from settings rather than repeated here: the
 floor IS that tier boundary, so a tier edit moves both together or the
 "critical" and the floor disagree by construction. Note it is **50000.01**,
 not 50000 - the tiers are half-open `[min, max)` and the high tier reaches
 50000.01 inclusive.
+
+`ML_FLOOR` (5.0, `settings.ml_floor`) is the second brake on that same branch,
+and it guards the rule branch ONLY - `ml > threshold` alone still blocks. The
+argument is the same one the amount floor makes, applied to the model instead of
+the amount: the amount floor says a pattern firing on a small purchase is not
+evidence for a block, and the ML floor says neither is a block that overrides
+the model calling the transaction ordinary. It is a "has the model spoken" bar
+rather than a confidence bar - 5 out of 100 is a weak signal and counts as an
+opinion. Measured: `acme`/`retail` at 50,001 EUR is rule 48.59 / ml 0.13, and
+before this gate the rules alone blocked it.
+
+Two routed cases changed verdict when the floor landed, both because their model
+score is under it, and both re-expressed in place with the old expectation and
+the reason recorded:
+
+- `test_case_b_the_same_wire_in_daylight` (ml 0.19): `fraud` -> `review`.
+- `test_the_floor_boundary_at_49999_and_50001` (ml 0.13): the 50,001 parameter
+  can no longer use the deployed model, because the ML gate would close before
+  the amount boundary was reached and the pair would stop testing a boundary. It
+  now stubs the model above the floor so the amount stays the only variable.
 
 THAT POLICY ONLY APPLIES WHEN THE MODEL IS UP. With `ml_score is None` there
 is no ML layer to route against, so `_classify_routed` returns the shipped
@@ -103,6 +124,15 @@ def critical_floor() -> float:
     threshold it guards are the same boundary by construction.
     """
     return float(settings.threshold_tiers[-1]["min_amount"])
+
+
+def ml_floor() -> float:
+    """The ml_score at or above which the model is allowed to agree with rules.
+
+    Read at call time, like ``critical_floor`` above, so an env override of
+    ``ML_FLOOR`` takes effect instead of being frozen at import.
+    """
+    return float(settings.ml_floor)
 
 
 @pytest.fixture(scope="module")
@@ -204,10 +234,24 @@ class TestRuleStrongIsFraudOnlyAboveTheFloor:
     def test_case_b_the_same_wire_in_daylight(self, scoring: ScoringService) -> None:
         """The reported transaction: rule 75.82, no night-hour bonus.
 
-        The margin matters more than the total. At weight 0.60 the rule layer
-        needs more than 40 / 0.60 = 66.67 to carry this on the ensemble alone;
-        75.82 clears it, so this case survived the old logic too. It is pinned
-        because the routed policy must not *regress* a case that already worked.
+        RE-EXPRESSED: was `fraud`, now `review`.
+
+        Old expectation: `fraud`. The rule layer cleared the critical threshold of
+        40 on a 400,000 USD amount, and the amount was critical, so the rule
+        branch blocked on rules alone.
+
+        New expectation: `review`. The rule evidence is unchanged — 75.82, and it
+        still clears the threshold — but the model reads 0.19, below the
+        `ML_FLOOR` of 5.0. So the model is reporting the transaction as ordinary
+        and the rule branch is no longer allowed to overrule it.
+
+        This downgrade is the ACCEPTED cost of the floor, and it is why the
+        expectation moved rather than the policy being weakened. `review` is not
+        a soft no: the transaction still reaches a human through the analyst
+        queue, which is what a 400,000 USD wire to a crypto exchange deserves
+        even when the model is uninformative about it. The full rationale lives
+        in `TestTheRuleBranchNeedsTheModelToAgree.test_case_b_is_reviewed_because_the_model_did_not_agree`;
+        this entry keeps the historical pin that the case was once a block.
         """
         result = _score(
             scoring,
@@ -220,9 +264,19 @@ class TestRuleStrongIsFraudOnlyAboveTheFloor:
         )
         assert result.rule_score == pytest.approx(75.82, abs=0.05), (
             f"rule score moved to {result.rule_score:.2f}; this case was chosen "
-            f"because 75.82 clears 40 / 0.60 with room to spare"
+            f"because 75.82 clears the critical threshold of 40"
         )
-        assert result.classification == "fraud"
+        assert result.ml_score < ml_floor(), (
+            f"ml is {result.ml_score:.2f}, at or above the floor of "
+            f"{ml_floor():.2f}; the rule branch would block again and this "
+            f"expectation would need re-examining for a real reason"
+        )
+        assert result.classification == "review", (
+            f"rule {result.rule_score:.2f} / ml {result.ml_score:.2f} on a "
+            f"critical-tier amount came out {result.classification!r}. A model "
+            f"scoring under the floor must downgrade the rule branch to `review`, "
+            f"not let it block."
+        )
 
 
 class TestRuleStrongBelowTheFloorIsReview:
@@ -275,22 +329,45 @@ class TestRuleStrongBelowTheFloorIsReview:
         ],
     )
     def test_the_floor_boundary_at_49999_and_50001(
-        self, scoring: ScoringService, amount: float, expected: str
+        self, amount: float, expected: str
     ) -> None:
         """One rule score, two amounts, two different verdicts.
 
-        `acme`/`retail` at 14:00 with no velocity scores 48.59 on the rules,
-        which is above BOTH thresholds in play — 45 in the high tier at 49,999
-        and 40 in the critical tier at 50,001 — so the only thing separating the
-        two verdicts is the floor. Without this pair the boundary could move a
-        cent in either direction and nothing would notice.
+        RE-EXPRESSED: the 50,001 case no longer runs against the deployed model.
 
-        Note the shipped ensemble classified BOTH of these `legitimate`
-        (29.19 against thresholds of 45 and 40). The rules were above the
-        threshold the whole time; the weighted average had buried them.
+        Old expectation: 49,999 -> `review`, 50,001 -> `fraud`, both measured
+        through the real model.
+
+        New expectation: the same pair, but with a STUBBED model scoring 10.0 —
+        above the `ML_FLOOR` of 5.0 — instead of the deployed artifact.
+
+        Why the model had to change. This pair exists to prove one thing: that
+        the AMOUNT floor is what separates the two verdicts. With the deployed
+        model the case cannot demonstrate that any more. The real ml score for
+        `acme`/`retail` is 0.13, which is below the ML floor, so the ML gate now
+        closes BEFORE the amount is ever consulted and both amounts come out
+        `review`. That would have satisfied a lazy re-expression — change the
+        expectation to `review`, stay green — while deleting the guard entirely:
+        a boundary that pins `review` on both sides is not pinning a boundary.
+
+        Stubbing the model restores exactly the property the test was built on.
+        The model now has an opinion, so it stops being the variable, and the
+        amount becomes the only thing left that can differ. Everything else is
+        still production: the rule engine, the feature engine, the tier lookup
+        and the routing are all the real ones, so 48.59 is still measured rather
+        than asserted. `_StubML` is used for the same reason in
+        `TestMlStrongRuleQuietIsNotVetoed` — no corpus row produces the layer
+        combination a boundary test needs, and inventing a transaction to get
+        there would test the corpus instead of the routing.
+
+        The 10.0 is not arbitrary: it is low enough to be a weak opinion (so the
+        test cannot accidentally pass because the model turned out loud) and
+        high enough to clear the floor. If `ML_FLOOR` ever moves above it, both
+        parameters fail as `review` and the pair stops being a boundary test —
+        which is the correct outcome, because the guard really would be gone.
         """
         result = _score(
-            scoring,
+            ScoringService(ml_service=_StubML(10.0)),
             {
                 "amount": amount,
                 "merchant_name": "acme",
@@ -300,6 +377,11 @@ class TestRuleStrongBelowTheFloorIsReview:
             history={"avg_amount": 100.0, "std_amount": 10.0},
         )
         assert result.rule_score == pytest.approx(48.59, abs=0.05)
+        assert result.ml_score >= ml_floor(), (
+            f"the stubbed model reads {result.ml_score:.2f}, below the floor of "
+            f"{ml_floor():.2f}, so the ML gate closes first and this pair stops "
+            f"testing the AMOUNT boundary at all"
+        )
         assert result.ml_score < result.threshold * 0.75, (
             "the case isolates the rule layer; a loud model would confound it"
         )
@@ -309,6 +391,293 @@ class TestRuleStrongBelowTheFloorIsReview:
             f"floor {critical_floor():,.2f} and came out "
             f"{result.classification!r}, not {expected!r}"
         )
+
+
+class TestTheRuleBranchNeedsTheModelToAgree:
+    """Rules plus a critical amount block only if the model said something too.
+
+    THE ML FLOOR. Before this, the rule branch was `rule > threshold AND amount
+    >= FLOOR`, and the model had no say in it at all. That made the floor the
+    only thing standing between the rules and a block — so a transaction the
+    model scored at 0.13 out of 100, on no evidence it could find, was blocked on
+    the rules' word alone. Measured: `acme`/`retail` at 50,001 EUR scores rule
+    48.59 and ml 0.13.
+
+    That is the shape of a disagreement, and the policy has to be able to see it.
+    The model is not required to *confirm* — 5.0 out of 100 is a very weak signal
+    and it is enough. It is required to have *spoken*: below the floor the model
+    is asserting the transaction is ordinary, and a block that overrides a flat
+    "ordinary" is a block on the rules' authority alone, which is the situation
+    the whole routed policy was built to end.
+
+    The floor is a floor and NOT a second threshold. It does not scale with the
+    amount tier, it does not change the review band, and it does not touch the
+    ML branch: `ml > threshold` alone still blocks, because that IS the model
+    speaking loudly and the floor exists precisely to ignore a model that has
+    nothing to say.
+
+    It is also a property of the ROUTED policy only. A degraded pass
+    (`ml_score is None`) has no model to agree or disagree, so it keeps the
+    shipped ensemble verdict — pinned by `TestTheFloorDoesNotLeakIntoDegraded`.
+    """
+
+    #: rule 100 against a critical threshold of 40 on a critical-tier amount:
+    #: the rule gate is open and the amount gate is open, which leaves
+    #: `ml_score` as the ONLY remaining condition on the fraud branch. That makes
+    #: these the cleanest available probes of the floor — nothing else can
+    #: produce a `fraud` here, so a `fraud` means the floor let it through and a
+    #: `review` means the floor stopped it.
+    _AMOUNT_GATE_OPEN = {
+        "rule_score": 100.0,
+        "context_score": 0.0,
+        "threshold": 40.0,
+        "amount": 400_000.0,
+    }
+
+    @pytest.mark.parametrize(
+        ("offset", "expected"),
+        [(-0.01, "review"), (0.0, "fraud")],
+        ids=["just-below-the-floor", "exactly-at-the-floor"],
+    )
+    def test_the_floor_boundary_is_inclusive(self, offset: float, expected: str) -> None:
+        """Both sides of the line, one hundredth apart.
+
+        `>=` and `>` differ on exactly one value, `ML_FLOOR` itself, so a suite
+        that only tests 4.99 and 6.0 cannot tell which one the policy uses. A
+        `>` where `>=` was meant would quietly reclassify every transaction whose
+        model score lands exactly on the floor, which is the one row a boundary
+        test exists to protect.
+
+        The upper case is also the control for the whole class: if the floor were
+        implemented as a hard block on the rule branch, `exactly-at-the-floor`
+        would come out `review` too, and the two would be indistinguishable from
+        a floor that is simply stuck shut.
+        """
+        ml_score = ml_floor() + offset
+        verdict = ScoringService()._classify_routed(
+            ml_score=ml_score, **self._AMOUNT_GATE_OPEN
+        )
+        assert verdict == expected, (
+            f"ml {ml_score:.2f} against a floor of {ml_floor():.2f} (rule 100, "
+            f"threshold 40, 400,000 EUR) produced {verdict!r}, not {expected!r}. "
+            f"The floor is inclusive: a model scoring exactly the floor has "
+            f"spoken, and one point below it has not."
+        )
+
+    def test_a_floor_that_blocked_everything_would_not_be_caught_above(
+        self,
+    ) -> None:
+        """The floor gates the rule branch and only the rule branch.
+
+        ml 85 against a threshold of 70 with a completely silent rule layer is
+        the model speaking loudly on its own, and the amount here is 500 EUR —
+        nowhere near the critical floor. Neither gate is open, so a floor
+        applied to the ML branch instead of the rule branch would turn this into
+        `review`, and the class above would still be green.
+        """
+        verdict = ScoringService()._classify_routed(
+            rule_score=0.0,
+            ml_score=85.0,
+            context_score=0.0,
+            threshold=70.0,
+            amount=500.0,
+        )
+        assert verdict == "fraud", (
+            f"ml 85 against a threshold of 70 produced {verdict!r}. The ML "
+            f"branch is the model overruling the rules, and the floor is a "
+            f"condition on the RULES agreeing with the model, not the reverse."
+        )
+
+    def test_case_a_clears_the_floor_with_margin(self, scoring: ScoringService) -> None:
+        """The quarter-bitcoin case must not come within 13 points of the line.
+
+        CASE_A: rule 100, ml 17.96, threshold 40. This is the transaction the
+        whole routed policy exists to protect, and it is also the case most
+        exposed to a floor — it is rule-driven, so the floor is aimed straight at
+        it. It clears by 12.96.
+
+        Asserted as a margin rather than as a verdict, because a verdict is a
+        knife edge: any retrain that moved this model score from 17.96 to 4.99
+        would leave the assertion above still passing for every other case while
+        quietly downgrading the flagship fraud to a review. A margin fails loudly
+        and early, and it fails on the retrain rather than on the transaction.
+        """
+        result = _score(
+            scoring,
+            {
+                "amount": 400_000.0,
+                "merchant_name": "binance",
+                "merchant_category": "retail",
+                "timestamp": NIGHT_0300,
+            },
+            history={"avg_amount": 200.0, "std_amount": 150.0,
+                     "tx_count_last_5min": 0, "tx_count_last_1h": 0},
+        )
+        margin = result.ml_score - ml_floor()
+        assert result.classification == "fraud", (
+            f"rule {result.rule_score:.2f} / ml {result.ml_score:.2f} on a "
+            f"critical-tier amount came out {result.classification!r} against a "
+            f"floor of {ml_floor():.2f}"
+        )
+        assert margin >= 10.0, (
+            f"CASE_A clears the ML floor by only {margin:.2f} points "
+            f"(ml {result.ml_score:.2f} vs floor {ml_floor():.2f}). Under 10 the "
+            f"flagship rule-driven fraud is one retrain away from being "
+            f"downgraded to a review, and nothing else in the suite would say so."
+        )
+
+    def test_case_b_is_reviewed_because_the_model_did_not_agree(
+        self, scoring: ScoringService
+    ) -> None:
+        """The reported transaction, and the cost this policy knowingly pays.
+
+        CASE_B: the same 400,000 USD wire to `binance`, in daylight. The rules
+        read 75.82 — they still clear the critical threshold of 40 — but the
+        model reads 0.19 out of 100 and the amount is critical. Before the floor
+        this was `fraud`; now it is `review`.
+
+        That downgrade is ACCEPTED and is the point of the change, so the test
+        asserts it rather than defending against it. It is worth being explicit
+        about what is being traded: this is a 400,000 USD transfer to a crypto
+        exchange, and `review` means an analyst sees it instead of the pipeline
+        blocking it automatically. The floor buys precision at the price of
+        recall, and this case is what that costs.
+
+        What makes it acceptable is that the case stays VISIBLE and stays
+        CHALLENGED. It does not become `legitimate`, so it still reaches a human
+        through the same channel `review` reaches a human through, and the alert
+        row it creates is the analyst-visible one. A transaction that is merely
+        downgraded to review has lost a block, not lost a review.
+        """
+        result = _score(
+            scoring,
+            {
+                "amount": 400_000.0,
+                "merchant_name": "binance",
+                "merchant_category": "retail",
+                "timestamp": DAY_1400,
+            },
+        )
+        assert result.rule_score > result.threshold, (
+            f"rule score is {result.rule_score:.2f} against threshold "
+            f"{result.threshold:.2f}; the case only means anything while the "
+            f"rules still clear the threshold on their own"
+        )
+        assert result.ml_score < ml_floor(), (
+            f"ml is {result.ml_score:.2f}, which clears the floor of "
+            f"{ml_floor():.2f}; this case no longer exercises the floor"
+        )
+        assert result.classification == "review", (
+            f"rule {result.rule_score:.2f} on a critical-tier amount with the "
+            f"model at {result.ml_score:.2f} came out "
+            f"{result.classification!r}, not 'review'. A rule-driven block on a "
+            f"model that scored the transaction near zero is exactly what the "
+            f"floor exists to stop, and it must downgrade to `review` — never to "
+            f"`legitimate`, which would drop the transaction from the queue."
+        )
+
+    def test_a_quiet_model_does_not_promote_a_below_floor_purchase_to_fraud(
+        self, scoring: ScoringService
+    ) -> None:
+        """The control on the H-type case: two gates, and the new one is the second.
+
+        900 EUR of gambling at 03:00: rule 85 against a threshold of 70, model
+        0.18. It was already `review` before the floor, for the amount reason —
+        900 is nowhere near 50,000.01 — so this is not a test of the floor. It is
+        here to pin that the floor did not become the ONLY thing holding this back
+        and that the amount gate still works, since the two gates now sit side by
+        side and a future edit could easily disturb one while fixing the other.
+        """
+        result = _score(
+            scoring,
+            {
+                "amount": 900.0,
+                "merchant_name": "Grand Casino",
+                "merchant_category": "gambling",
+                "timestamp": NIGHT_0300,
+            },
+            _context(recent_transactions=2),
+            {"avg_amount": 200.0, "std_amount": 100.0},
+        )
+        assert result.classification == "review"
+
+
+class TestTheFloorDoesNotLeakIntoDegraded:
+    """The floor belongs to the routed policy, not to the fallback.
+
+    When the artifact fails to load there is no model, so there is nothing to
+    agree or disagree with anything. Applying the floor then would be a second
+    scoring policy that only ever executes while the system is broken — and it
+    would be a *silent* one, because the degraded path is precisely the path
+    nobody is watching.
+
+    The dangerous direction is the one that loses fraud. CASE_B degraded is the
+    exact transaction the floor downgrades in the healthy path, and with no model
+    to consult the shipped ensemble still calls it `fraud` at 60.66 against a
+    threshold of 40. If the floor leaked in, that would become `review` and a
+    400,000 USD crypto transfer would stop blocking on precisely the night the
+    model artifact is missing.
+    """
+
+    def test_a_degraded_case_b_is_still_fraud(self) -> None:
+        """The same transaction, the model absent: the ensemble verdict stands."""
+        result = _score(
+            ScoringService(ml_service=_UnavailableML()),
+            {
+                "amount": 400_000.0,
+                "merchant_name": "binance",
+                "merchant_category": "retail",
+                "timestamp": DAY_1400,
+            },
+        )
+        assert "ml" not in result.layers_used
+        assert result.classification == "fraud", (
+            f"degraded CASE_B came out {result.classification!r} (ensemble "
+            f"{result.ensemble_score:.2f} against threshold "
+            f"{result.threshold:.2f}). The shipped ensemble calls this fraud; "
+            f"the ML floor is a condition of the ROUTED policy and there is no "
+            f"model score for it to judge when the layer is absent."
+        )
+
+    def test_the_floor_never_touches_a_degraded_pass(self) -> None:
+        """Structural: no `ml_score`, no floor. Stated over the whole fallback.
+
+        The equivalence test in
+        `TestAnAbsentModelLayerKeepsTheShippedEnsemble` already pins the fallback
+        against the ensemble over a spread of inputs; this re-states it at the
+        seam, so that an edit which moved the floor check ABOVE the `None` guard
+        would fail here with a clear message instead of only failing as a changed
+        verdict somewhere further down.
+        """
+        service = ScoringService()
+        scorer = EnsembleScorer()
+        for rule_score, context_score, threshold, amount in (
+            (100.0, 0.0, 40.0, 400_000.0),
+            (75.82, 0.0, 40.0, 400_000.0),
+            (48.59, 0.0, 40.0, 50_001.0),
+            (85.0, 20.0, 70.0, 900.0),
+        ):
+            expected = scorer.classify(
+                scorer.combine(
+                    rule_score=rule_score,
+                    ml_score=None,
+                    context_score=context_score,
+                ),
+                threshold,
+            )
+            routed = service._classify_routed(
+                rule_score=rule_score,
+                ml_score=None,
+                context_score=context_score,
+                threshold=threshold,
+                amount=amount,
+            )
+            assert routed == expected, (
+                f"degraded rule={rule_score} threshold={threshold} routed to "
+                f"{routed!r} but the shipped ensemble says {expected!r}. The "
+                f"floor guard must stay behind the `ml_score is None` early "
+                f"return."
+            )
 
 
 class TestMlStrongRuleQuietIsNotVetoed:

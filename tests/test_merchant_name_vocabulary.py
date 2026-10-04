@@ -529,13 +529,18 @@ class TestTheFindingIsClosed:
             )
         )
 
-    def test_the_reported_transaction_scores_as_fraud_not_legitimate(self, service) -> None:
+    def test_the_reported_transaction_scores_as_review_not_legitimate(self, service) -> None:
         """Rule score, ML score and ensemble, for the transaction in the plan.
 
         400,000 is above the last tier boundary of 50,000, so the fraud threshold
         is 40. For the rule layer to carry the transaction there on its own it
         needs more than 40 / 0.60 = 66.67, and 35 (base) + 20.82 (magnitude) +
         20 (adversarial merchant) = 75.82 clears it.
+
+        Since the ML floor landed, a rule-strong transaction the model does not
+        agree with (ml 1.18 < floor 5.0) routes to `review` — challenged and
+        analyst-visible — instead of auto-blocking. Same verdict as C-B in
+        test_routed_classification.py for the same wire: never `legitimate`.
         """
         transaction = {
             "amount": 400_000.0,
@@ -556,7 +561,7 @@ class TestTheFindingIsClosed:
             "the ML layer was absent, so this measured the degraded ensemble "
             "rather than the production one"
         )
-        assert result.classification == "fraud", (
+        assert result.classification == "review", (
             f"the reported transaction still classifies as "
             f"{result.classification!r} at ensemble {result.ensemble_score:.2f} "
             f"(rule {result.rule_score:.2f}, ml {result.ml_score:.2f})"

@@ -40,6 +40,16 @@ def _critical_floor() -> float:
     return float(settings.threshold_tiers[-1]["min_amount"])
 
 
+def _ml_floor() -> float:
+    """The ml_score at or above which the model is allowed to agree with rules.
+
+    Read from settings at call time, matching `_critical_floor`: an operator
+    override of `ML_FLOOR` has to take effect the way a tier override does, not
+    be frozen at import.
+    """
+    return float(settings.ml_floor)
+
+
 def _meets_critical_floor(amount: object) -> bool:
     """Whether `amount` reaches the critical floor. Total: never raises.
 
@@ -152,7 +162,8 @@ class ScoringService:
 
         The bands:
 
-            fraud      ml > threshold, OR (rule > threshold AND amount >= FLOOR)
+            fraud      ml > threshold, OR (rule > threshold AND amount >= AMOUNT_FLOOR
+                                          AND ml_score >= ML_FLOOR)
             review     not fraud, and (rule > threshold OR ml > threshold * 0.75)
             legitimate otherwise
 
@@ -162,6 +173,21 @@ class ScoringService:
         cannot be a plain veto the way the ML branch is — the rules speak in
         patterns and a pattern firing on a small purchase is not evidence that
         the purchase itself is worth blocking.
+
+        ML_FLOOR is the same argument applied to the model instead of the
+        amount. The amount floor says "a pattern firing on a small purchase is
+        not evidence"; the ML floor says "and a block that overrides the model
+        calling the transaction ordinary is not evidence either". Without it the
+        amount floor is the ONLY brake on a rule-driven block, so a transaction
+        the model scored at 0.13 — measured, `acme`/`retail` at 50,001 EUR —
+        blocks on the rules' word alone. It is a "has the model spoken" bar, not
+        a confidence bar: 5 out of 100 is a weak signal and is enough to count
+        as an opinion.
+
+        It gates the rule branch and NOT the ML branch, and the asymmetry is the
+        design: `ml > threshold` alone still blocks, because that is the model
+        overruling the rules, and the floor exists to discount a model with
+        nothing to say rather than to discount a loud one.
 
         DEGRADED: the bands above only apply when the model is up. ``ml_score``
         is ``None`` when the artifact failed to load, and then there is no ML
@@ -192,8 +218,21 @@ class ScoringService:
 
         rule_clears = rule_score > threshold
         ml_clears = ml_speaks and ml_score > threshold
-
-        if ml_clears or (rule_clears and _meets_critical_floor(amount)):
+        # The ML floor is a third condition on the RULE branch only. Without it,
+        # that branch can block over the model reporting the transaction as
+        # ordinary: measured, `acme`/`retail` at 50,001 EUR is rule 48.59
+        # against a threshold of 40 with ml 0.13, and the rules alone blocked it.
+        #
+        # Note the order. `_meets_critical_floor` runs first because it is the
+        # cheaper and more decisive gate, and `ml_score >= floor` last because it
+        # is the only one of the three that can be true for a transaction whose
+        # model is actively saying "nothing to see here". A non-finite
+        # ml_score fails this comparison — `NaN >= x` is False — so a layer that
+        # produced garbage loses its vote instead of casting a blank one, which
+        # is the same fail-closed stance as `ml_speaks` above.
+        if ml_clears or (
+            rule_clears and _meets_critical_floor(amount) and ml_score >= _ml_floor()
+        ):
             return "fraud"
         if rule_clears or (ml_speaks and ml_score > threshold * 0.75):
             return "review"
