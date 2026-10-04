@@ -109,13 +109,31 @@ label volume rather than from this script existing.
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import csv
+import sys
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.models.fraud_alert import ANALYST_LABEL_VALUES, AlertStatus
+# Added before the `src` imports so the file runs as a script from any working
+# directory, exactly as `scripts/init_db.py` and `scripts/seed_demo_data.py`
+# do. Without it, `python scripts/export_labels.py --help` -- the first command
+# an operator will ever run -- dies with `ModuleNotFoundError: No module named
+# 'src'`. The tests import this module from the repo root, so they would never
+# have caught it; `tests/test_export_labels_cli.py` runs it as a subprocess
+# precisely to keep that honest.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from src.core.database import async_session_maker
+from src.models.fraud_alert import ANALYST_LABEL_VALUES, AlertStatus, FraudAlert
+from src.models.transaction import Transaction
 
 #: The header, in order. Pinned by `test_columns_are_exactly_the_documented_set`
 #: so neither an added nor a renamed column can happen without a test change.
@@ -144,6 +162,197 @@ _LABEL_TO_IS_FRAUD = {
     "confirmed_fraud": "1",
     "false_positive": "0",
 }
+
+
+#: Where the export lands when the operator does not say. `data/` already holds
+#: this project's other CSV (`data/synthetic_transactions.csv`, written by the
+#: trainer), so it needs no new convention and no .gitignore entry.
+DEFAULT_OUT_PATH = Path("data") / "analyst_labels.csv"
+
+#: The alert states that count as a settled verdict. See `AlertStatus`.
+_TERMINAL = AlertStatus.RESOLVED.value
+
+_FILTER_NOTE = """\
+WHAT GETS EXPORTED
+  Only alerts whose status is 'resolved' AND whose analyst_label is not NULL.
+  Both gates are terminal-state gates and both must hold:
+
+    * NULL label means nobody judged the row, so there is no verdict to
+      project onto is_fraud.
+    * Status must be 'resolved'. 'revert' moves an alert back to 'open' and
+      deliberately LEAVES analyst_label in place, so a reverted row still
+      carries a verdict somebody took back. Its label alone cannot tell you
+      that; the status can.
+
+  So 'open' and 'reviewed' rows are excluded even when they carry a label. An
+  analyst_label outside the vocabulary raises instead of being written as
+  is_fraud=0 -- a false positive recorded as fact is the worst possible output.
+
+THIS FILE IS NOT A TRAINING CORPUS
+  The trainer (scripts/train_xgboost_aligned.py) deliberately refuses this
+  output. Its loader raises unless a corpus carries the corpus_schema stamp the
+  trainer itself wrote. This export does NOT write that column and does NOT set
+  it. Stamping it would assert that a corpus of analyst verdicts has been
+  checked against a schema nobody has checked it against, re-opening the hole
+  the refusal exists to close. Pointing the trainer at this file is the one
+  mistake this command invites, because the columns line up almost exactly.
+"""
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """The operator-facing argument surface.
+
+    `--help` carries the two contracts an operator cannot infer from the output
+    file: what is filtered out, and that the trainer will refuse the result.
+    Both are in the epilog rather than in per-flag help so that `--help` reads
+    as one explanation rather than three fragments.
+    """
+    parser = argparse.ArgumentParser(
+        prog="export_labels.py",
+        description=(
+            "Export resolved analyst verdicts from fraud_alerts as a labelled CSV. "
+            "Reads the database and writes a file. Does not retrain anything and "
+            "does not shell out."
+        ),
+        epilog=_FILTER_NOTE,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_OUT_PATH,
+        help=(
+            "Path of the CSV to write; parent directories are created. "
+            f"Default: {DEFAULT_OUT_PATH.as_posix()}"
+        ),
+    )
+    parser.add_argument(
+        "--db-url",
+        default=None,
+        help=(
+            "SQLAlchemy async URL to read from. Defaults to the application's "
+            "configured database (DB_USER/DB_PASSWORD/DB_HOST/DB_PORT/DB_NAME, "
+            "or the .env file). Supply one to export from another database, "
+            "e.g. a read replica or a snapshot."
+        ),
+    )
+    return parser
+
+
+def _select_resolved_alerts() -> Any:
+    """Build the SELECT behind the export.
+
+    Every CSV column is projected under the name the writer reads, and two
+    columns are projected that the CSV does NOT contain:
+
+        * `status` is not an exported column. It is the second terminal-state
+          gate, and `write_label_csv` drops any row whose status is not
+          resolved. A query that omitted it would produce a header-only file
+          that looks like an empty database.
+        * `Transaction.id` is the CSV's `transaction_id`, which lives on the
+          alert as a foreign key.
+
+    The WHERE clause is the first gate, and it is deliberately NOT a third one.
+    It filters on label-not-null and terminal status -- the same two rules
+    `write_label_csv` applies -- and adds nothing. In particular it does not
+    restrict `analyst_label` to `ANALYST_LABEL_VALUES`: an unreadable label has
+    to reach the writer to be raised there, and a query that silently dropped
+    it would turn a loud refusal into a quiet omission. Soft-deleted rows are
+    likewise left in, because soft delete does not un-judge a transaction that
+    an analyst already decided on.
+
+    Ordering is by review time then id so two runs over an unchanged database
+    produce byte-identical files, which is what makes the export diffable.
+    """
+    return (
+        select(
+            Transaction.id.label("transaction_id"),
+            Transaction.user_id.label("user_id"),
+            Transaction.amount.label("amount"),
+            Transaction.currency.label("currency"),
+            Transaction.merchant_name.label("merchant_name"),
+            Transaction.merchant_category.label("merchant_category"),
+            Transaction.created_at.label("timestamp"),
+            FraudAlert.analyst_label.label("analyst_label"),
+            FraudAlert.score.label("alert_score"),
+            FraudAlert.threshold.label("alert_threshold"),
+            FraudAlert.reviewed_by.label("reviewed_by"),
+            FraudAlert.reviewed_at.label("reviewed_at"),
+            FraudAlert.status.label("status"),
+        )
+        .join(FraudAlert, FraudAlert.transaction_id == Transaction.id)
+        .where(
+            FraudAlert.analyst_label.is_not(None),
+            FraudAlert.status == _TERMINAL,
+        )
+        .order_by(FraudAlert.reviewed_at, Transaction.id)
+    )
+
+
+async def _resolved_alert_rows(session: Any) -> list[dict[str, Any]]:
+    """Fetch the rows the writer will filter again. Read-only; never commits."""
+    result = await session.execute(_select_resolved_alerts())
+    return [dict(mapping) for mapping in result.mappings()]
+
+
+def _session_maker_for(db_url: str | None) -> tuple[Any, Any]:
+    """Return `(session_maker, engine_to_dispose)`.
+
+    With no `--db-url` the application's own `async_session_maker` is reused, so
+    the script connects with the same pool settings, timeouts and credentials
+    as the API instead of standing up a second, differently-configured pool.
+    With one, a throwaway `NullPool` engine is built and disposed afterwards: a
+    one-shot export should not leave a pool sitting on a database it was only
+    asked to read.
+
+    Async rather than sync: `AGENTS.md` mandates async everywhere and
+    `scripts/seed_demo_data.py` is the house pattern for scripts that touch
+    rows. `scripts/init_db.py`'s synchronous engine is DDL-only.
+    """
+    if db_url is None:
+        return async_session_maker, None
+    engine = create_async_engine(db_url, poolclass=NullPool)
+    return async_sessionmaker(engine, expire_on_commit=False), engine
+
+
+async def main(argv: Iterable[str] | None = None) -> int:
+    """Run the export. Returns the number of rows written.
+
+    The row count, not an exit code: zero rows is a real answer ("nobody has
+    resolved a labelled alert yet") and not a failure, so it must not be
+    reported as one. The count is also what the tests assert against. The
+    `__main__` block deliberately discards it, because a non-zero return would
+    become a non-zero process exit.
+
+    The `ValueError` from an unreadable label is deliberately NOT caught: it
+    propagates so the operator gets a traceback and a non-zero exit rather than
+    a file that quietly omits rows.
+    """
+    args = build_parser().parse_args(list(argv) if argv is not None else None)
+    session_maker, owned_engine = _session_maker_for(args.db_url)
+
+    try:
+        async with session_maker() as session:
+            rows = await _resolved_alert_rows(session)
+            written = write_label_csv(rows, args.out)
+    finally:
+        if owned_engine is not None:
+            await owned_engine.dispose()
+
+    print(f"Wrote {written} resolved verdict(s) to {args.out}")
+    if written == 0:
+        # An empty export is indistinguishable from a broken one unless the
+        # script says which it was.
+        print(
+            "No resolved, labelled alerts found. The file has a header and no "
+            "rows -- that is a real answer, not a failure."
+        )
+    else:
+        print(
+            "The trainer refuses this file by design; it is not a training "
+            "corpus."
+        )
+    return written
 
 
 def _iso(value: Any) -> str:
@@ -246,3 +455,16 @@ def write_label_csv(rows: Iterable[Mapping[str, Any]], out_path: str | Path) -> 
             written += 1
 
     return written
+
+
+# LAST IN THE FILE, deliberately. An `if __name__ == "__main__"` block executes
+# where it sits, so placed above the definitions it calls `main()` while
+# `write_label_csv` is still unbound and the script dies with `NameError` on a
+# real run -- while every test that IMPORTS this module passes, because the
+# block never runs. `tests/test_export_labels_cli.py` runs the command in a
+# subprocess to keep that honest.
+if __name__ == "__main__":  # pragma: no cover - exercised via subprocess
+    # The row count is not an exit code, so it is discarded. An exception
+    # escaping here -- an unreadable label, an unreachable database -- is what
+    # makes the command fail.
+    asyncio.run(main())
