@@ -13,6 +13,7 @@ Features:
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 import redis.asyncio as redis
@@ -38,18 +39,58 @@ MAX_RETRIES = 3
 RECOVERY_INTERVAL = 60  # Check for stuck messages every 60 seconds
 BACKOFF_CAP_SECONDS = 60  # Upper bound for retry backoff (R4-004)
 
+#: Liveness beacon. Written ONLY after an attribution is committed, so its
+#: presence means "this worker produced something, recently" and nothing else.
+#: `/health/workers` reads it and compares it against recent fraud/review
+#: traffic; without it a worker that acks everything while computing nothing is
+#: indistinguishable from a healthy one (the A18 class of defect).
+#:
+#: The literal is duplicated in `src/api/v1/health.py`, which is how this
+#: codebase already shares Redis names between a worker and the health endpoint
+#: (`STREAM_NAME` is duplicated in `health.py`'s stream table the same way).
+#: Keeping it out of `src/core` avoids having the API import this module, and
+#: with it `src.services.shap_service`, just to read a string.
+LIVENESS_KEY = "shap:health:last_attribution_ts"
+
 
 def _backoff_delay(retry_count: int) -> int:
     """Exponential backoff before re-enqueueing a failed message."""
     return min(2**retry_count, BACKOFF_CAP_SECONDS)
 
 
+async def _stamp_liveness(redis_client: Any | None) -> None:
+    """Record that this worker just produced a real attribution.
+
+    Unix epoch seconds, matching the clock the API compares against.
+
+    Failures here are logged and swallowed, never propagated. The attribution is
+    already committed and durable at this point; re-queuing it would recompute a
+    result that exists and would report the fault as a SHAP failure, hiding the
+    real cause (Redis) behind a lie. A missing beacon is the correct outcome of
+    a failed beacon write — the health check will read it as stale or absent,
+    which is true.
+    """
+    if redis_client is None:
+        return
+    try:
+        await redis_client.set(LIVENESS_KEY, int(time.time()))
+    except Exception as exc:
+        logger.warning("Could not stamp SHAP liveness beacon: %s", exc)
+
+
 async def process_shap_message(
     message: dict[str, Any],
     db: Any,
     shap_service: ShapService,
+    redis_client: Any | None = None,
 ) -> bool:
     """Process a single SHAP request from the stream.
+
+    ``redis_client`` is optional so a caller without a live connection (and the
+    existing tests) keeps working; when present, a committed attribution stamps
+    ``LIVENESS_KEY``. It is optional-by-construction, not optional-in-practice:
+    ``_process_message_with_retry`` always passes the real client, because that
+    is the path production takes.
 
     Returns:
         True if processed (success or permanent failure — no re-enqueue),
@@ -87,6 +128,20 @@ async def process_shap_message(
                 session.add(attr)
 
             await session.commit()
+
+        # Liveness beacon — SUCCESS PATH ONLY, and only after the commit.
+        #
+        # Placement is the whole point, not an afterthought:
+        #
+        # - After the commit, because the key asserts a row exists. Stamping it
+        #   first would let a failed commit leave a timestamp promising an
+        #   attribution that was never written, and the beacon would certify the
+        #   exact silence it exists to detect.
+        # - Only here, because the skip and failure paths below must not touch
+        #   it. A beacon updated on every attempt measures "the worker is alive",
+        #   which was never the question: the worker was demonstrably alive while
+        #   `shap_attributions` held 0 rows against 26 fraud/review transactions.
+        await _stamp_liveness(redis_client)
 
         logger.info(
             "SHAP computed for transaction %s: %d features",
@@ -194,7 +249,9 @@ async def _process_message_with_retry(
 
         # Try to process
         async with async_session_maker() as db:
-            success = await process_shap_message(message_data, db, shap_service)
+            success = await process_shap_message(
+                message_data, db, shap_service, redis_client
+            )
 
         if success:
             # Success: ACK and remove from pending
