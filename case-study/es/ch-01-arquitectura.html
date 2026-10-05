@@ -56,7 +56,7 @@
           <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
 
           <!-- Layer 1: Rule Engine -->
-          <g class="diagram-node" data-target="ch-02-rule-engine.html" data-tip="Capa 1 · 7 reglas deterministas · pesos 10-35 · tope 100">
+          <g class="diagram-node" data-target="ch-02-rule-engine.html" data-tip="Capa 1 · 7 reglas deterministas · pesos 10-60 · tope 100">
             <title>01 Arquitectura - Caso de Estudio Fraud Detector</title>
             <rect x="30" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
             <text x="150" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Motor de Reglas</text>
@@ -164,12 +164,18 @@
           risk_score = 0.60 × rule_score + 0.25 × ml_score + 0.15 × context_score<br>
           <span class="f-comment">// pesos configurables por entorno, sin reentrenar para ajustarlos</span>
         </div>
-        <p>El score final se compara contra un umbral dinámico (Capítulo 5) para clasificar cada
-        transacción como <strong class="tone-clean">legítima</strong>,
+        <p>El <code>risk_score</code> combinado es lo que se publica, se muestra y se persiste — pero
+        <strong>no</strong> decide el veredicto. La clasificación se enruta: <code>rule_score</code>
+        y <code>ml_score</code> se comparan directamente contra el umbral dinámico (Capítulo 5), de
+        modo que cada capa habla por sí misma en lugar de verse primero multiplicada por el peso que
+        ella misma tiene. Una transacción es
+        <strong class="tone-clean">legítima</strong>,
         <strong class="tone-warn">requiere revisión</strong>, o
-        <strong class="tone-critical">fraude</strong>. Las transacciones marcadas se persisten y se
-        envían a workers asíncronos que las enriquecen con informes LLM, atribuciones SHAP y análisis
-        de embeddings del merchant — sin bloquear nunca la respuesta de la API.</p>
+        <strong class="tone-critical">fraude</strong>, y como el enrutamiento compara las capas en
+        lugar de su media, una señal solo del modelo puede bloquear por sí misma. Las transacciones
+        marcadas se persisten y se envían a workers asíncronos que las enriquecen con informes LLM,
+        atribuciones SHAP y análisis de embeddings del merchant — sin bloquear nunca la respuesta de
+        la API.</p>
       </div>
     </section>
 

@@ -90,8 +90,20 @@
           <div class="formula">
             docker compose up -d --build<br>
             docker compose exec api python scripts/init_db.py<br>
-            docker compose exec api python scripts/seed_demo_data.py
+            docker compose exec api python scripts/seed_demo_data.py<br>
+            docker compose exec api python scripts/seed_demo_history.py
           </div>
+          <p>Hacen falta los dos seeders, y el segundo es el que se olvida.
+          <code>seed_demo_data.py</code> crea las cuentas de demo y filas de <code>Transaction</code>,
+          pero una transacción solo lleva <code>risk_score</code> cuando existe un
+          <code>FraudScore</code> — y el gráfico de tendencia descarta toda fila cuyo score sea nulo.
+          Si ejecutas solo el primero, la tendencia de 7 días abre con días sueltos separados por
+          columnas vacías. <code>seed_demo_history.py</code> retrodata siete días de transacciones y
+          escribe un <code>FraudScore</code> real para cada una, obtenido de
+          <code>ScoringService.compute_scores</code> con las entradas de esa misma fila: ningún score,
+          clasificación o umbral se escribe como literal. La velocidad se queda honestamente en cero,
+          porque una fila retrodatada no tiene ventana en Redis; el historial sembrado ejercita las
+          reglas de importe, merchant y horario, no las de velocidad.</p>
           <div class="table-scroll">
           <table class="data-table">
             <thead>

@@ -31,9 +31,9 @@ The dashboard SHALL display a paginated, filterable, and sortable list of all tr
 
 #### Scenario: Pagination
 
-- GIVEN more than 50 transactions exist
+- GIVEN more than 10 transactions exist
 - WHEN the dashboard loads
-- THEN only the first 50 transactions are displayed
+- THEN only the first 10 transactions are displayed
 - AND pagination controls allow navigation to subsequent pages
 
 ### Requirement: Transaction Detail View
@@ -77,15 +77,23 @@ The dashboard SHALL allow analysts to take actions on flagged transactions: reve
 
 - GIVEN a transaction classified as "fraud"
 - WHEN an analyst marks it as false positive with a reason
-- THEN the transaction classification is updated to "false_positive"
+- THEN the alert's `analyst_label` is set to "false_positive"
+- AND the transaction classification is left unchanged: `FraudClassification` is
+  `legitimate | review | fraud` and an analyst decision does not rewrite it
 - AND the action is logged with analyst ID, timestamp, and reason
+
+`analyst_label` holds `confirmed_fraud | false_positive`. It is a fact about the
+reviewed alert, not a fourth classification, which is why widening
+`FraudClassification` to carry it would have been wrong.
 
 #### Scenario: Revert a blocked transaction
 
 - GIVEN a transaction that was blocked due to fraud classification
 - WHEN an analyst with appropriate permissions reverts the block
-- THEN the transaction status changes to "reverted"
-- AND the revert action is logged in the audit trail
+- THEN the ALERT status returns to "open"
+- AND the transaction status is left unchanged: `TransactionStatus` is
+  `pending | approved | flagged | blocked` and has no "reverted" member
+- AND the revert action is logged in the audit trail, recording the previous alert status
 
 #### Scenario: Analyst cannot action without reason
 
@@ -97,9 +105,14 @@ The dashboard SHALL allow analysts to take actions on flagged transactions: reve
 
 The dashboard SHALL provide visual representations of fraud scoring data using charts.
 
+Both charts are fed by ONE request for the newest transactions, capped at 100 rows
+by the list endpoint (`le=100`), with no date filter applied. The trend window is
+therefore a hard-coded constant, not a user selection, and a day the corpus does
+not cover renders as an explicitly shaded gap rather than being interpolated away.
+
 #### Scenario: Score distribution chart
 
-- GIVEN transactions scored in the last 30 days
+- GIVEN transactions scored within the newest 100 rows returned by the list endpoint
 - WHEN the dashboard renders the scoring overview
 - THEN a histogram shows the distribution of ensemble scores
 
@@ -107,7 +120,8 @@ The dashboard SHALL provide visual representations of fraud scoring data using c
 
 - GIVEN daily aggregated fraud scores exist
 - WHEN the user views the trend chart
-- THEN a line chart shows average fraud score per day over the selected period
+- THEN a line chart shows average fraud score per day over a hard-coded 7-day window
+- AND the dashboard offers no period selector, so there is no period to select
 
 ### Requirement: Authentication Integration
 

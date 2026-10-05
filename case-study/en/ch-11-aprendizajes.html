@@ -88,8 +88,20 @@
           <div class="formula">
             docker compose up -d --build<br>
             docker compose exec api python scripts/init_db.py<br>
-            docker compose exec api python scripts/seed_demo_data.py
+            docker compose exec api python scripts/seed_demo_data.py<br>
+            docker compose exec api python scripts/seed_demo_history.py
           </div>
+          <p>Both seeders are required, and the second one is the one people miss.
+          <code>seed_demo_data.py</code> writes demo accounts and <code>Transaction</code> rows, but
+          a transaction only carries a <code>risk_score</code> once a <code>FraudScore</code> exists
+          — and the trend chart skips every row whose score is null. Run only the first script and
+          the 7-day trend opens on isolated days separated by empty columns.
+          <code>seed_demo_history.py</code> backdates seven days of transactions and writes a real
+          <code>FraudScore</code> for each one, taken from
+          <code>ScoringService.compute_scores</code> on that row's own inputs — no score,
+          classification or threshold is written as a literal. Velocity stays honestly at zero,
+          because a backdated row has no Redis window; the seeded history exercises the amount,
+          merchant and off-hours rules, not the velocity ones.</p>
           <div class="table-scroll">
           <table class="data-table">
             <thead>

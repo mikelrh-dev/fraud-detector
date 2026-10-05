@@ -26,11 +26,17 @@ import {
  * "Legítimo (0-40) / Revisión (41-80) / Fraude (81-100)".
  *
  * Nothing in this product classifies by score range. The threshold is TIERED BY
- * AMOUNT (`src/core/config.py:207-227`: 70 / 50 / 45 / 40 by amount band) and
- * `EnsembleService.classify` calls `score > threshold` fraud
- * (`src/services/ensemble.py:158`). So on a low-amount transaction 76.46 is
- * FRAUDE — and it was drawn inside the amber "Revisión" bar, on the same screen
- * whose table, directly below, called that row Fraude.
+ * AMOUNT (`src/core/config.py:206-227`: 70 / 50 / 45 / 40 by amount band), and
+ * the live verdict is routed on the LAYER scores by
+ * `ScoringService._classify_routed` (`src/services/scoring_service.py:139`,
+ * called at `:312`) rather than on any single number. So on a low-amount
+ * transaction 76.46 is FRAUDE — and it was drawn inside the amber "Revisión"
+ * bar, on the same screen whose table, directly below, called that row Fraude.
+ *
+ * (`EnsembleScorer.classify` in `src/services/ensemble.py` still compares a
+ * score to a threshold, but only on the DEGRADED path — the one taken when the
+ * model artifact failed to load. Citing it here would point a reader at the
+ * path that does not run.)
  *
  * Re-deriving the verdict from the score here would have reproduced the same
  * lie with more code, and it is a scoring decision this component has no

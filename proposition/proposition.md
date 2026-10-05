@@ -104,6 +104,29 @@ Desacoplar la inferencia síncrona (<50ms) de tareas pesadas como el cálculo SH
 ```markdown
 # Mejora 4: Fricción Dinámica & Step-Up Auth
 
+> **NOT YET BUILT / AÚN NO CONSTRUIDO.** The schema half shipped; the score-band
+> routing and the modal did not. Read the status per item before acting:
+>
+> 1. **SHIPPED** — `ScoringResponse.friction_level: str` and `action: str | None`
+>    exist in `src/schemas/scoring.py` today. They are **free-form strings, not
+>    an `Enum`**, and the values are `allow | challenge | block` and
+>    `block_transaction | request_3d_secure | request_sms | None`. The
+>    `ALLOW / CHALLENGE_3DS / CHALLENGE_BIOMETRIC / BLOCK` enum below was
+>    **proposed and not adopted** — do not "fix" the schema to match it.
+> 2. **SUPERSEDED — do not implement as written.** Fixed score bands in
+>    `src/services/ensemble.py` cannot work here: the threshold is tiered by
+>    amount, and classification is routed on the layer scores by
+>    `ScoringService._classify_routed`
+>    (`src/services/scoring_service.py:139`), not on the score. Friction is
+>    already derived from that classification in
+>    `_determine_friction_level` (`src/api/v1/transactions.py:100-131`):
+>    `fraud` -> `block`, and in the `review` band the midpoint
+>    `threshold * 0.875` picks 3D Secure over SMS.
+> 3. **NOT YET BUILT.** `frontend/src/components/TransactionChallengeModal.tsx`
+>    does **not exist**. There is no step-up UI in this repository; the create
+>    flow renders `ScoreResultCard` and a toast. The path below is a
+>    description of work to do, not a file to edit.
+
 ## 🎯 Objetivo
 Transformar el sistema de un modelo binario (Permitir/Bloquear) a un flujo Fintech real. Intervenir transacciones dudosas en el frontend con "Challenges" (ej. biometría, 3DS) en lugar de bloquearlas inmediatamente.
 
@@ -114,16 +137,13 @@ Transformar el sistema de un modelo binario (Permitir/Bloquear) a un flujo Finte
 
 ## 📋 Instrucciones Específicas para el Agente (Aider/Cline)
 
-1.  **Actualizar Schemas Backend (`src/schemas/scoring.py`):**
-    *   Asegurar que `ScoringResponse` incluya el campo `friction_level` o `action` con `Enum`: `ALLOW`, `CHALLENGE_3DS`, `CHALLENGE_BIOMETRIC`, `BLOCK`.
-2.  **Lógica de Umbrales Backend (`src/services/ensemble.py`):**
-    *   Score `0 - 40` -> `action: ALLOW`
-    *   Score `41 - 65` -> `action: CHALLENGE_3DS`
-    *   Score `66 - 80` -> `action: CHALLENGE_BIOMETRIC`
-    *   Score `81 - 100` -> `action: BLOCK`
-3.  **Frontend Modal (`frontend/src/components/TransactionChallengeModal.tsx`):**
-    *   Crear un componente modal en React.
-    *   Si al crear una transacción el endpoint devuelve un `CHALLENGE_*`, no mostrar un simple *toast* de éxito.
+1.  **Actualizar Schemas Backend (`src/schemas/scoring.py`) — YA HECHO:**
+    *   `ScoringResponse` ya incluye `friction_level: str` y `action: str | None`, como strings libres, no como `Enum`. No rehacer.
+2.  **Lógica de Umbrales Backend (`src/services/ensemble.py`) — SUPERADO:**
+    *   NO implementar bandas fijas de score. Ver el punto 2 del aviso: el umbral es por tramo de importe y la clasificación se enruta por capas.
+3.  **Frontend Modal (`frontend/src/components/TransactionChallengeModal.tsx`) — AÚN NO CONSTRUIDO:**
+    *   Crear un componente modal en React. El archivo no existe todavía.
+    *   Si al crear una transacción el endpoint devuelve `friction_level: "challenge"`, no mostrar un simple *toast* de éxito.
     *   Abrir el modal simulando una petición de OTP/3D Secure o escaneo biométrico.
     *   Si el usuario "pasa" el reto simulado, la UI marca la transacción como Legítima forzando una actualización en la vista de transacciones.
 

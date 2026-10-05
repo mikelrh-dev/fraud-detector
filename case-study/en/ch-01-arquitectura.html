@@ -55,7 +55,7 @@
           <title>01 Architecture - Fraud Detector Case Study</title>
 
           <!-- Layer 1: Rule Engine -->
-          <g class="diagram-node" data-target="ch-02-rule-engine.html" data-tip="Layer 1 · 7 deterministic rules · weights 10-35 · capped at 100">
+          <g class="diagram-node" data-target="ch-02-rule-engine.html" data-tip="Layer 1 · 7 deterministic rules · weights 10-60 · capped at 100">
             <title>01 Architecture - Fraud Detector Case Study</title>
             <rect x="30" y="40" width="240" height="80" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
             <text x="150" y="72" text-anchor="middle" font-family="'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif" font-size="15" font-weight="600" fill="#f1f5f9">Rule Engine</text>
@@ -163,12 +163,17 @@
           risk_score = 0.60 × rule_score + 0.25 × ml_score + 0.15 × context_score<br>
           <span class="f-comment">// weights configurable via environment, no retraining needed to tune</span>
         </div>
-        <p>The final score is compared against a dynamic threshold (Chapter 5) to classify each
-        transaction as <strong class="tone-clean">legitimate</strong>,
+        <p>The combined <code>risk_score</code> is what gets published, displayed and persisted — but
+        it does <strong>not</strong> decide the verdict. Classification is <em>routed</em>:
+        <code>rule_score</code> and <code>ml_score</code> are compared against the dynamic threshold
+        (Chapter 5) directly, so a layer speaks for itself instead of first being multiplied down by
+        the very weight it holds. A transaction is
+        <strong class="tone-clean">legitimate</strong>,
         <strong class="tone-warn">review</strong>, or
-        <strong class="tone-critical">fraud</strong>. Flagged transactions are persisted and pushed to
-        async workers that enrich them with LLM reports, SHAP attributions and merchant embedding
-        analysis — without ever blocking the API response path.</p>
+        <strong class="tone-critical">fraud</strong>, and because the routing compares layers rather
+        than their average, an ML-only signal can block on its own. Flagged transactions are
+        persisted and pushed to async workers that enrich them with LLM reports, SHAP attributions
+        and merchant embedding analysis — without ever blocking the API response path.</p>
       </div>
     </section>
 

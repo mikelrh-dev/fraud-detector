@@ -128,12 +128,25 @@ jobs:
       # the command the README itself prints gets a different number, and the
       # README is the project's front page.
       #
+      # The case study quotes the SAME number and was outside this gate, which
+      # is how `case-study/{en,es}/index.html` carried "1218 backend tests" for
+      # an extended period while both READMEs said 1501. Two front doors for one
+      # repository, disagreeing, and no signal. The two checks below close that
+      # gap: identical pattern, identical source of truth (`pytest
+      # --collect-only`), just a third and fourth file.
+      #
       # It lives here and not in tests/docs/ for a concrete reason: collecting
       # the suite loads tests/conftest.py, which raises ValidationError at
       # import without REDIS_PASSWORD. tests/docs/ is a 0.3-second check that
       # needs no environment, and this one needs `pytest tests/ -q` to actually
       # run. Mixing the two would either slow the fast guard to two minutes or
       # make it depend on credentials it has no business needing.
+      #
+      # Note the division of labour with tests/docs/test_case_study_figures.py:
+      # that file derives the endpoint count, the rule weights and the enums FROM
+      # THE CODE and so belongs in the fast per-PR gate. This figure is a
+      # collection count, which cannot be derived without running collection --
+      # so it stays here, where collection already runs.
       - name: Fail if the READMEs quote stale test counts
         env:
           # Present only to satisfy src.core.config.Settings at import; this job
@@ -196,15 +209,24 @@ jobs:
           check README.es.md "$collected (backend )?tests de backend" "$collected tests de backend" 3
           check README.md    "$passed passed"              "$passed passed" 2
           check README.es.md "$passed pasados"              "$passed pasados" 2
+          # The case study. One stat pill per locale, so 1/1 -- not 3. If a
+          # future chapter starts repeating the count, bump these deliberately.
+          check case-study/en/index.html "$collected backend tests" "$collected backend tests" 1
+          check case-study/es/index.html "$collected tests de backend" "$collected tests de backend" 1
           if [ "$drift" -ne 0 ]; then
             echo ""
-            echo "The READMEs quote the backend test count by hand. Re-run"
-            echo "'pytest tests/ -q' and 'pytest tests/ --collect-only -q', then update"
-            echo "ALL the places in both READMEs in the same commit that changed the count."
+            echo "The READMEs and the case study quote the backend test count by hand."
+            echo "Re-run 'pytest tests/ -q' and 'pytest tests/ --collect-only -q', then"
+            echo "update ALL the places in README.md, README.es.md and both case-study"
+            echo "index.html files in the same commit that changed the count."
             echo ""
-            echo "If the READMEs were STRUCTURALLY edited too -- a line added that also"
-            echo "quotes the count -- the expected 3 and 2 above are stale too. Bump them"
-            echo "in this file deliberately rather than loosening the check: that number"
-            echo "is a claim about how often the READMEs repeat themselves."
+            echo "If those documents were STRUCTURALLY edited too -- a line added that"
+            echo "also quotes the count -- the expected 3, 2 and 1 above are stale too."
+            echo "Bump them in this file deliberately rather than loosening the check:"
+            echo "that number is a claim about how often they repeat themselves."
+            echo ""
+            echo "tests/docs/test_case_study_figures.py cross-checks the case study"
+            echo "against README.md on every PR. It cannot check this count itself:"
+            echo "deriving it means running collection."
           fi
           exit $drift

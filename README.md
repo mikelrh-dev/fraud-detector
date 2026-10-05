@@ -12,7 +12,7 @@ Hybrid fraud detection system for financial transactions. A **deterministic rule
 
 > **On the ML model, plainly:** it is trained on a **synthetic corpus** of fraud archetypes generated in this repo — not on PaySim, and not on bank data. The rules decide; the ML layer contributes a calibrated 25%. The measured numbers, and the limits we know about, are in [What the model does and does not do](#what-the-model-does-and-does-not-do).
 
-Every transaction gets a 0–100 risk score, a classification (`legitimate | review | fraud`), SHAP feature attributions, and — when flagged — an async LLM-generated technical report.
+Every transaction gets a 0–100 risk score, a classification (`legitimate | review | fraud`), SHAP feature attributions, and an async LLM-generated technical report. The `fraud:llm` event is staged **unconditionally**, for every scored transaction — unlike `fraud:shap`, which is gated on `classification in ("fraud", "review")`. Plan Ollama capacity at 100% of traffic, not at the flagged fraction.
 
 ## Highlights
 
@@ -394,14 +394,14 @@ fraud-detector/
 ├── src/
 │   ├── api/                # FastAPI: main, rate_limit, v1/ (auth, transactions, alerts, reports, monitoring, audit)
 │   ├── core/               # config, database, redis, security + stream_publisher / stream_manager / stream_dlq
-│   ├── models/             # 12 SQLAlchemy models (transaction, user, fraud_score, fraud_alert, llm_report,
-│   │                       #   ml_model_run, audit_entry, shap_attribution, rule, drift_reference,
+│   ├── models/             # 11 SQLAlchemy models (transaction, user, fraud_score, fraud_alert, llm_report,
+│   │                       #   ml_model_run, audit_entry, shap_attribution, rule, drift_reference, outbox_event)
 │   ├── schemas/            # Pydantic v2 schemas
 │   ├── services/           # rule_engine, feature_engine, ml_model, ensemble, shap_service,
 │   │                       #   graph_service, merchant_embedding_service, velocity_store,
 │   │                       #   llm, drift_service, audit, transaction, auth
 │   └── workers/            # llm_worker, shap_worker, embedding_worker (Redis Streams consumers)
-├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 24 components, vitest + MSW)
+├── frontend/               # React 19 + TS + Vite + Tailwind 4 (8 pages, 25 components, vitest + MSW)
 ├── tests/                  # unit + integration (1501 backend tests)
 ├── scripts/                # init_db, create_admin, generate_synthetic_data, train_xgboost_aligned
 ├── notebooks/              # PaySim exploration / training notebooks
