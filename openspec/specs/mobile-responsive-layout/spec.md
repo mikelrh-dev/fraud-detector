@@ -118,11 +118,24 @@ The system SHALL ensure create-transaction and auth pages are usable at 375px. I
 
 ### Requirement: Dashboard Responsive Skeletons
 
-The system SHALL render skeletons as `grid-cols-1` below `sm`, `sm:grid-cols-N` at `sm+`. Charts MUST maintain height >= 260px on mobile.
+The system SHALL render skeletons as `grid-cols-1` below `lg`, `lg:grid-cols-2` at `lg+`. Charts render at a fixed height of 200px on every viewport.
 
-#### Scenario: Skeleton grid below sm
+<!-- historical: superseded values quoted for traceability only; not normative -->
+This requirement previously read `sm:`/`sm:grid-cols-N` and a `>= 260px` chart
+height. Neither matched the shipped dashboard: the charts use
+`grid-cols-1 lg:grid-cols-2`, and both `ScoreTrendChart` and `ScoreHistogram`
+mount `<ResponsiveContainer width="100%" height={200}>`. No ADR, test or code
+comment records 260px anywhere, so it was an aspiration written into a
+requirements document rather than a decision anyone took.
+<!-- end historical -->
 
-- GIVEN viewport < 640px
+Correcting it downward is a documented product compromise, not a silent one: if
+200px proves too cramped for a phone, the fix belongs in the chart components
+AND here together, not in one of them alone.
+
+#### Scenario: Skeleton grid below lg
+
+- GIVEN viewport < 1024px
 - WHEN skeletons render
 - THEN cards stack single column
 
@@ -130,7 +143,7 @@ The system SHALL render skeletons as `grid-cols-1` below `sm`, `sm:grid-cols-N` 
 
 - GIVEN viewport < 640px
 - WHEN ResponsiveContainer renders
-- THEN height >= 260px
+- THEN height is 200px, the same fixed height used at every viewport
 
 ### Requirement: Global Overflow Guard
 
